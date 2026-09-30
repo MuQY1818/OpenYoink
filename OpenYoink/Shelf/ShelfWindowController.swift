@@ -57,6 +57,7 @@ final class ShelfWindowController: NSObject {
     /// S8: shelf 位置/宽度/autoHide 等布局与行为设置的来源（原
     /// `static let shelfWidth` 占位常量已移除，宽度由此供给）。
     private let settings: SettingsStore
+    private let clipboardHistoryStore: ClipboardHistoryStore
     /// Shelf 数据（S3 起注入 ShelfView 的 @Environment）。
     /// S4: DragContainerView（NSDraggingDestination 桥接）同样持有此 store。
     private let store: ShelfStore
@@ -163,6 +164,11 @@ final class ShelfWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
+        // SwiftUI presentation preferences alone don't set AppKit controls'
+        // appearance inside this custom, non-activating Island panel.
+        if presentationStyle == .island {
+            panel.appearance = NSAppearance(named: .darkAqua)
+        }
         // S4: DragContainerView（NSDraggingDestination）包裹 hosting 视图。
         let hostingController = NSHostingController(
             rootView: ShelfPresentationRootView(
@@ -189,6 +195,7 @@ final class ShelfWindowController: NSObject {
                 .environment(nowPlayingModuleStore)
                 .environment(systemStatusModuleStore)
                 .environment(favoriteFoldersStore)
+                .environment(clipboardHistoryStore)
                 .environment(\.bookmarkService, importCoordinator.bookmarkService)
                 .environment(\.dragOutController, dragOutController)
                 .environment(\.quickLookCoordinator, quickLookCoordinator)
@@ -215,13 +222,15 @@ final class ShelfWindowController: NSObject {
                 isActive: { [weak self] in
                     guard let self else { return false }
                     return self.islandActivityCoordinator.surfaceState.isExpanded
-                        && self.islandActivityCoordinator.selectedModule == .folders
+                        && [.folders, .clipboard].contains(self.islandActivityCoordinator.selectedModule)
                 },
                 canHandle: { [weak self] pasteboard in
-                    self?.favoriteFoldersStore.canImportFolders(from: pasteboard) ?? false
+                    guard let self, self.islandActivityCoordinator.selectedModule == .folders else { return false }
+                    return self.favoriteFoldersStore.canImportFolders(from: pasteboard)
                 },
                 perform: { [weak self] pasteboard in
-                    self?.favoriteFoldersStore.importFolders(from: pasteboard) ?? false
+                    guard let self, self.islandActivityCoordinator.selectedModule == .folders else { return false }
+                    return self.favoriteFoldersStore.importFolders(from: pasteboard)
                 }
             )
             : nil
@@ -275,6 +284,7 @@ final class ShelfWindowController: NSObject {
          recents: RecentItemsService,
          deliveryCoordinator: DeliveryCoordinator,
          dragStartMonitor: DragStartMonitor,
+         clipboardHistoryStore: ClipboardHistoryStore,
          onOpenSettings: @escaping @MainActor () -> Void = {},
          onOpenStorageRecovery: @escaping @MainActor () -> Void = {},
          tutorialTokenForItem: @escaping @MainActor (UUID) -> String? = { _ in nil }) {
@@ -283,6 +293,7 @@ final class ShelfWindowController: NSObject {
         self.importCoordinator = importCoordinator
         self.tempFileService = tempFileService
         self.settings = settings
+        self.clipboardHistoryStore = clipboardHistoryStore
         self.dragStartMonitor = dragStartMonitor
         self.onOpenSettings = onOpenSettings
         let islandActivityCoordinator = IslandActivityCoordinator()
@@ -309,6 +320,10 @@ final class ShelfWindowController: NSObject {
         )
         let transfersModuleRuntime = TransfersModuleRuntime(
             transferStore: importCoordinator.transferStore
+        )
+        // Recording belongs to the app lifecycle, independently of Island.
+        let clipboardRuntime = CallbackIslandModuleRuntime(
+            descriptor: islandModuleRegistry.descriptor(for: .clipboard)!
         )
         let timerModuleRuntime = CallbackIslandModuleRuntime(
             descriptor: islandTimerStore.descriptor,
@@ -344,6 +359,11 @@ final class ShelfWindowController: NSObject {
         self.favoriteFoldersModuleRuntime = favoriteFoldersModuleRuntime
         self.islandModuleContainer = IslandModuleContainer(
             registrations: [
+                IslandModuleRegistration(
+                    descriptor: clipboardRuntime.descriptor,
+                    runtime: clipboardRuntime,
+                    makeContentView: { _ in AnyView(ClipboardHistoryView(isIsland: true)) }
+                ),
                 IslandModuleRegistration(
                     descriptor: shelfRuntime.descriptor,
                     runtime: shelfRuntime,
@@ -874,6 +894,15 @@ final class ShelfWindowController: NSObject {
         if settings.hotKeyEnabled,
            let globalShortcut = settings.hotKeyShortcut,
            HotKeyMonitor.matches(event, shortcut: globalShortcut) {
+            return false
+        }
+
+        if sourcePanel === islandPanel,
+           islandActivityCoordinator.selectedModule == .clipboard {
+            if event.keyCode == 53, modifiers.isEmpty {
+                collapseIsland(animated: true)
+                return true
+            }
             return false
         }
 

@@ -1,6 +1,180 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Saved on this Mac" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved on this Mac" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保存在本机" } }
+      }
+    },
+    "Copied to Clipboard" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copied to Clipboard" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已复制到剪贴板" } }
+      }
+    },
+    "Copy failed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制失败" } }
+      }
+    },
+    "Clipboard History" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clipboard History" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "剪贴板历史" } }
+      }
+    },
+    "Clipboard History…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clipboard History…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "剪贴板历史…" } }
+      }
+    },
+    "Record Clipboard" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Record Clipboard" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "记录剪贴板" } }
+      }
+    },
+    "Pause Recording" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pause Recording" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂停记录" } }
+      }
+    },
+    "Resume Recording" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Resume Recording" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "恢复记录" } }
+      }
+    },
+    "Paused" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Paused" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已暂停" } }
+      }
+    },
+    "Keep History" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Keep History" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "保留时间" } }
+      }
+    },
+    "1 Day" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 Day" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1 天" } }
+      }
+    },
+    "7 Days" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "7 Days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "7 天" } }
+      }
+    },
+    "30 Days" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "30 Days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "30 天" } }
+      }
+    },
+    "Stored only on this Mac, up to 30 text, URL or image items. Password-manager privacy markers and ignored apps are skipped; unmarked sensitive text may still be recorded." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stored only on this Mac, up to 30 text, URL or image items. Password-manager privacy markers and ignored apps are skipped; unmarked sensitive text may still be recorded." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅保存在本机，最多 30 条文字、网址或图片。跳过带隐私标记的密码管理器内容及忽略的应用；未标记的敏感文字仍可能被记录。" } }
+      }
+    },
+    "Turning recording off keeps saved history. Clear history to delete it." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Turning recording off keeps saved history. Clear history to delete it." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭记录不会删除已有历史。删除请使用“清空历史”。" } }
+      }
+    },
+    "Search Clipboard History" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search Clipboard History" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索剪贴板历史" } }
+      }
+    },
+    "Clear Search" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear Search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除搜索" } }
+      }
+    },
+    "No Clipboard History" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Clipboard History" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无剪贴板历史" } }
+      }
+    },
+    "No Results" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Results" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有搜索结果" } }
+      }
+    },
+    "Clear Clipboard History…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear Clipboard History…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空剪贴板历史…" } }
+      }
+    },
+    "Clear Clipboard History?" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear Clipboard History?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空剪贴板历史？" } }
+      }
+    },
+    "Clear History" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear History" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空历史" } }
+      }
+    },
+    "This removes saved history from this Mac, not the current clipboard or shelf items." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This removes saved history from this Mac, not the current clipboard or shelf items." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除本机保存的历史，不影响当前剪贴板和暂存架项目。" } }
+      }
+    },
+    "View Clipboard Item" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View Clipboard Item" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看剪贴板内容" } }
+      }
+    },
+    "Add to Shelf" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add to Shelf" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加入暂存架" } }
+      }
+    },
+    "Delete Clipboard Item" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete Clipboard Item" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除这条历史" } }
+      }
+    },
+    "Close" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭" } }
+      }
+    },
+    "Clipboard history could not be loaded. Clear history to reset it." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clipboard history could not be loaded. Clear history to reset it." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法读取剪贴板历史。清空历史可重置数据。" } }
+      }
+    },
+    "Clipboard history could not be saved." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clipboard history could not be saved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "剪贴板历史保存失败。" } }
+      }
+    },
     "2 min" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "2 min" } },

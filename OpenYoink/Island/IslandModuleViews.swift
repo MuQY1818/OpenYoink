@@ -32,6 +32,7 @@ struct IslandRootView: View {
     @Environment(NowPlayingModuleStore.self) private var nowPlayingStore
     @Environment(SystemStatusModuleStore.self) private var systemStatusStore
     @Environment(FavoriteFoldersStore.self) private var favoriteFoldersStore
+    @Environment(ClipboardHistoryStore.self) private var clipboardHistoryStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isCompactHovering = false
     @State private var isCompactMediaControlHovering = false
@@ -99,6 +100,7 @@ struct IslandRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .preferredColorScheme(.dark)
+        .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("island.root")
         .onChange(of: coordinator.surfaceState, initial: true) { _, state in
@@ -411,6 +413,9 @@ struct IslandRootView: View {
             } else if registry.isEnabled(.folders),
                       coordinator.selectedModule == .folders {
                 Text("Quick Access · \(favoriteFoldersStore.items.count)")
+                    .font(.caption2.weight(.semibold))
+            } else if registry.isEnabled(.clipboard), coordinator.selectedModule == .clipboard {
+                Text(String(localized: "Clipboard History") + " · \(clipboardHistoryStore.entries.count)")
                     .font(.caption2.weight(.semibold))
             } else {
                 Text(String(localized: "OpenYoink Island"))

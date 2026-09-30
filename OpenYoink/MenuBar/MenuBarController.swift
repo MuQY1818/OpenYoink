@@ -15,6 +15,7 @@ final class MenuBarController: NSObject {
     private let onReaddRecent: (RecentEntry) -> Void
     /// 打开设置窗口（由 AppDelegate 的 SettingsWindowController 提供）。
     private let onShowSettings: () -> Void
+    private let onShowClipboardHistory: () -> Void
     /// 可重播的两步真实拖放练习。
     private let onShowQuickStart: () -> Void
     /// 打开公开使用帮助；不改变应用状态。
@@ -40,12 +41,14 @@ final class MenuBarController: NSObject {
          onOpenHelp: @escaping () -> Void,
          onReportIssue: @escaping () -> Void,
          onCheckForUpdates: @escaping () -> Void,
-         onOpenManualUpdate: @escaping () -> Void) {
+         onOpenManualUpdate: @escaping () -> Void,
+         onShowClipboardHistory: @escaping () -> Void = {}) {
         self.isShelfExpanded = isShelfExpanded
         self.recents = recents
         self.onToggleShelf = onToggleShelf
         self.onReaddRecent = onReaddRecent
         self.onShowSettings = onShowSettings
+        self.onShowClipboardHistory = onShowClipboardHistory
         self.onShowQuickStart = onShowQuickStart
         self.onOpenHelp = onOpenHelp
         self.onReportIssue = onReportIssue
@@ -80,6 +83,11 @@ final class MenuBarController: NSObject {
         recentParentItem.title = String(localized: "Recent Items")
         recentParentItem.submenu = NSMenu()
         menu.addItem(recentParentItem)
+
+        let clipboardItem = NSMenuItem(title: String(localized: "Clipboard History…"),
+                                       action: #selector(showClipboardHistory(_:)), keyEquivalent: "")
+        clipboardItem.target = self
+        menu.addItem(clipboardItem)
 
         menu.addItem(.separator())
 
@@ -145,6 +153,10 @@ final class MenuBarController: NSObject {
     /// 焦点处理（activate 前置）由 SettingsWindowController.show() 负责。
     @objc private func showSettings(_ sender: Any?) {
         onShowSettings()
+    }
+
+    @objc private func showClipboardHistory(_ sender: Any?) {
+        onShowClipboardHistory()
     }
 
     @objc private func showQuickStart(_ sender: Any?) {

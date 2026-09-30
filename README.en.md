@@ -31,7 +31,7 @@ edge of your screen or inside the Mac notch, then drag them out wherever they be
 </a>
 
 > [!NOTE]
-> The current stable release is **v1.6.8**. A new side-shelf setting lets you keep the shelf expanded after dropping, preserving the existing default. Drag completion now handles callback ordering without a fixed timeout; Island behavior is unchanged. Thanks to [@Miriam-Eason](https://github.com/Miriam-Eason) for [PR #1](https://github.com/MuQY1818/OpenYoink/pull/1). See the [guide](https://muqy1818.github.io/OpenYoink/en/guide/) for the complete walkthrough.
+> The current stable release is **v1.6.9**. This release adds optional clipboard history for text, URLs, and images with search, preview, copy, and retention controls, and fixes dark Island styling plus the Launchpad icon's oversized square appearance. See the [guide](https://muqy1818.github.io/OpenYoink/en/guide/) for the complete walkthrough.
 
 ## The problem it solves
 
@@ -46,6 +46,7 @@ OpenYoink lives in the menu bar without a Dock icon. It appears when you need it
 - **Two independent entrances:** the classic side shelf and OpenYoink Island can run on their own or together and share the same parking space.
 - **Native Island:** enabled by default for new installs and blended into the Mac camera housing; external and notchless displays fall back to a top pill with Shelf, Transfers, Timer, Battery, System Status, Now Playing, and Quick Access modules. Quick Access keeps favorite folders close, Battery includes live power and a two-minute waveform, and every module can be disabled independently.
 - **Organizes without interruption:** Quick Look, multi-select, marquee selection, stacks, manual ordering, and recent items.
+- **Optional clipboard history:** off by default; search, preview, copy, or add text, HTTP(S) URLs, and images to the shelf. Keep up to 30 entries with pause and retention controls.
 - **Works across your desktop:** multiple displays, Spaces, and full-screen apps, with a per-app ignore list.
 - **Predictable file semantics:** source files are referenced by default and Finder drops only request a copy. Hold `⌘` while importing to use the managed-move flow described in [File safety and lifecycle](#file-safety-and-lifecycle).
 - **Native and focused:** SwiftUI + AppKit, English and Chinese UI, launch at login, and Sparkle updates.
@@ -119,7 +120,8 @@ When dropping a regular file, OpenYoink exposes the file URL with a Chromium-com
 - App Sandbox is enabled. Shelf data and materialised files live in `Application Support/OpenYoink` and can be opened or pruned from **Settings → Storage**.
 - No accounts. No analytics or telemetry. Normal use does not require Accessibility or Input Monitoring permissions. File access comes only from what you actively drag in.
 - Automatic update checks are on by default and can be turned off. They talk only to GitHub Pages / Releases; there is no other background network activity.
-- The current clipboard is read only when you explicitly press the double-tap shortcut to park it.
+- Clipboard history is off by default. When disabled, the clipboard is read only through the explicit double-tap shortcut. Enabling or resuming history captures only new text, HTTP(S) URLs, and images; it does not import old contents or copied files.
+- History is stored as plaintext only on this Mac, never uploaded or synced, with limits of 30 entries and 20 MiB. Choose 1, 7, or 30 days of retention (7 by default). Common password-manager privacy markers and ignored apps are skipped, but unmarked passwords or tokens may still be captured; pause before copying sensitive data. Turning recording off keeps saved history; clearing it deletes the stored history.
 - **Now Playing** is an opt-in Island module. When enabled, it shows the real cover, progress, and media controls using a bundled helper when available, otherwise Apple Music / Spotify AppleScript with a possible Automation prompt. It does not use the network and a failure never affects the shelf or other Island modules.
 - **Quick Access** is an opt-in Island module. It stores security-scoped bookmarks only for folders you add. The default open action asks macOS for the current default file manager rather than hard-coding Finder or QSpace, and removing a favorite never deletes the real folder.
 - Persistence uses security-scoped bookmarks and atomic JSON writes to avoid extra copies of originals and to recover cleanly from partial writes.
@@ -160,7 +162,7 @@ Issues and pull requests are welcome.
 
 ## Roadmap
 
-- [ ] Optional clipboard history with privacy filters
+- [x] Optional clipboard history with privacy filters (v1.6.9)
 - [ ] Handoff and deeper system integration
 
 > The roadmap signals intent, not commitments. Priorities shift with stability needs and user feedback.

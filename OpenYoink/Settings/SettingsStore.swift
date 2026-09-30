@@ -120,6 +120,18 @@ final class SettingsStore {
 
     // MARK: - General
 
+    var clipboardHistoryEnabled: Bool {
+        didSet { defaults.set(clipboardHistoryEnabled, forKey: Keys.clipboardHistoryEnabled) }
+    }
+
+    var clipboardHistoryPaused: Bool {
+        didSet { defaults.set(clipboardHistoryPaused, forKey: Keys.clipboardHistoryPaused) }
+    }
+
+    var clipboardHistoryRetentionDays: Int {
+        didSet { defaults.set(clipboardHistoryRetentionDays, forKey: Keys.clipboardHistoryRetentionDays) }
+    }
+
     /// Edge the shelf attaches to. Default: right.
     var shelfPosition: ShelfPosition {
         didSet { defaults.set(shelfPosition.rawValue, forKey: Keys.shelfPosition) }
@@ -518,6 +530,9 @@ final class SettingsStore {
     private enum Keys {
         private static let prefix = "OpenYoink."
         static let shelfPosition = prefix + "shelfPosition"
+        static let clipboardHistoryEnabled = prefix + "clipboardHistoryEnabled"
+        static let clipboardHistoryPaused = prefix + "clipboardHistoryPaused"
+        static let clipboardHistoryRetentionDays = prefix + "clipboardHistoryRetentionDays"
         static let shelfPresentationMode = prefix + "shelfPresentationMode"
         static let shelfSurfaceSettingsVersion = prefix + "shelfSurfaceSettingsVersion"
         static let classicShelfEnabled = prefix + "classicShelfEnabled"
@@ -604,6 +619,9 @@ final class SettingsStore {
             forKey: Keys.shelfSurfaceSettingsVersion
         )
         defaults.register(defaults: [
+            Keys.clipboardHistoryEnabled: false,
+            Keys.clipboardHistoryPaused: false,
+            Keys.clipboardHistoryRetentionDays: 7,
             Keys.shelfPosition: ShelfPosition.right.rawValue,
             Keys.shelfPresentationMode: ShelfPresentationMode.classic.rawValue,
             Keys.classicShelfEnabled: true,
@@ -635,6 +653,10 @@ final class SettingsStore {
             Keys.ignoredAppBundleIDs: [String](),
         ])
 
+        clipboardHistoryEnabled = defaults.bool(forKey: Keys.clipboardHistoryEnabled)
+        clipboardHistoryPaused = defaults.bool(forKey: Keys.clipboardHistoryPaused)
+        let retentionDays = defaults.integer(forKey: Keys.clipboardHistoryRetentionDays)
+        clipboardHistoryRetentionDays = [1, 7, 30].contains(retentionDays) ? retentionDays : 7
         shelfPosition = ShelfPosition(rawValue: defaults.string(forKey: Keys.shelfPosition) ?? "")
             ?? .right
         let hasPreversionedSurfaceSettings = standardPersistentDomain?[Keys.classicShelfEnabled] != nil

@@ -56,6 +56,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 用户设置（S5 起拖出后移除策略被 DragSessionController 读取；S8 由
     /// SettingsView 编辑）。internal：OpenYoinkApp 的 Settings scene 注入环境用。
     let settingsStore = SettingsStore(defaults: AppDelegate.makeSettingsDefaults())
+    lazy var clipboardHistoryStore: ClipboardHistoryStore = {
+        let history = ClipboardHistoryStore(settings: settingsStore)
+        history.onAddToShelf = { [weak self] content in self?.addHistoryToShelf(content) }
+        history.onShowWindow = { [weak self] in self?.clipboardHistoryWindowController.show() }
+        return history
+    }()
+    private lazy var clipboardHistoryWindowController = ClipboardHistoryWindowController(
+        history: clipboardHistoryStore, settings: settingsStore
+    )
     /// 设置窗口的共享导航状态，允许不可用的托管项目直接打开“存储”页。
     let settingsNavigation = SettingsNavigationModel()
     /// 系统登录项状态（不复制到 UserDefaults；SMAppService 是唯一事实源）。
@@ -101,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                                    recents: recentItemsService,
                                                                    deliveryCoordinator: deliveryCoordinator,
                                                                    dragStartMonitor: dragStartMonitor,
+                                                                   clipboardHistoryStore: clipboardHistoryStore,
                                                                    onOpenSettings: { [weak self] in
                                                                        self?.settingsWindowController.show(pane: .general)
                                                                    },
@@ -126,7 +136,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                                          updateController: updateController,
                                                                          storageManagementController: storageManagementController,
                                                                          navigation: settingsNavigation,
-                                                                         supportController: supportController)
+                                                                         supportController: supportController,
+                                                                         clipboardHistoryStore: clipboardHistoryStore)
     private lazy var menuBarController = MenuBarController(
         isShelfExpanded: { [weak self] in
             self?.shelfPresentationCoordinator.isExpanded ?? false
@@ -155,6 +166,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onOpenManualUpdate: { [weak self] in
             self?.updateController.openManualDownloadPage()
+        },
+        onShowClipboardHistory: { [weak self] in
+            self?.clipboardHistoryWindowController.show()
         }
     )
 
@@ -274,6 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 全新安装与没有 onboardingVersion 键的旧版本升级。
         let hasLegacyInstallEvidence = legacyInstallEvidence()
         _ = menuBarController
+        if !isUITesting { clipboardHistoryStore.start() }
         // EdgeTab: 拉环随启动就位（shelf 初始隐藏，拉环立即在边缘就位）。
         _ = edgeTabController
         // Sparkle: 启动 updater（应用「自动检查」设置后 start；幂等）。
@@ -352,7 +367,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        clipboardHistoryStore.stop()
+        Task { @MainActor in
+            await clipboardHistoryStore.flush()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        clipboardHistoryStore.stop()
         shelfPresentationCoordinator.shutdown()
         onboardingController.applicationWillTerminate()
         do {
@@ -470,6 +495,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Recent items re-add (S10)
+
+    private func addHistoryToShelf(_ content: ClipboardHistoryEntry.Content) {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let item = NSPasteboardItem()
+        switch content {
+        case .text(let value): item.setString(value, forType: .string)
+        case .url(let value): item.setString(value, forType: .URL)
+        case .image(let data, let type): item.setData(data, forType: .init(type))
+        }
+        pasteboard.writeObjects([item])
+        let result = dropImportCoordinator.importItems(from: pasteboard) { [weak self] item in
+            self?.shelfStore.add(item)
+        }
+        guard result.handled else { return }
+        shelfStore.add(contentsOf: result.items)
+        shelfPresentationCoordinator.show(animated: true)
+    }
 
     /// 菜单栏「最近项目」点击重新入架：文件类按路径重建 ShelfItem（含新的
     /// 安全书签；`canReadd` 已在菜单侧确认可访问），URL 直接复原。text/stack
@@ -764,6 +807,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.shelfPresentationCoordinator.applyCurrentMode(animated: true)
             // Sparkle: 「自动检查更新」开关同步（值未变时不写，幂等）。
             self.updateController.applySettings()
+            self.clipboardHistoryStore.prune(force: true)
+            self.clipboardHistoryStore.updateRecording()
         }
     }
 }

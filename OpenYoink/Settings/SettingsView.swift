@@ -272,6 +272,7 @@ private struct StorageSettingsTab: View {
 // MARK: - General
 
 private struct GeneralSettingsTab: View {
+    @Environment(ClipboardHistoryStore.self) private var history
     @Environment(SettingsStore.self) private var settings
     @Environment(LaunchAtLoginController.self) private var launchAtLoginController
     @Environment(UpdateController.self) private var updateController
@@ -451,11 +452,31 @@ private struct GeneralSettingsTab: View {
                         .foregroundStyle(.secondary)
 
                     islandModuleControl("Quick Access", id: .folders)
+                    islandModuleControl("Clipboard History", id: .clipboard)
 
                     Text("Open the Island module library to drag the five pinned positions into order.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Section("Clipboard History") {
+                Toggle("Record Clipboard", isOn: $settings.clipboardHistoryEnabled)
+                    .onChange(of: settings.clipboardHistoryEnabled) { _, _ in history.updateRecording() }
+                Toggle("Pause Recording", isOn: $settings.clipboardHistoryPaused)
+                    .disabled(!settings.clipboardHistoryEnabled)
+                    .onChange(of: settings.clipboardHistoryPaused) { _, _ in history.updateRecording() }
+                Picker("Keep History", selection: $settings.clipboardHistoryRetentionDays) {
+                    Text("1 Day").tag(1)
+                    Text("7 Days").tag(7)
+                    Text("30 Days").tag(30)
+                }
+                .onChange(of: settings.clipboardHistoryRetentionDays) { _, _ in history.prune(force: true) }
+                Text("Stored only on this Mac, up to 30 text, URL or image items. Password-manager privacy markers and ignored apps are skipped; unmarked sensitive text may still be recorded.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("Turning recording off keeps saved history. Clear history to delete it.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Clipboard History…") { history.onShowWindow?() }
             }
 
             Section("Language") {
