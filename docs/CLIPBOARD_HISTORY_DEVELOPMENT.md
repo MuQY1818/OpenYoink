@@ -69,7 +69,7 @@
 - 重跑 622 项应用单元测试、4 项核心测试均通过，Debug/Release 通用构建及签名检查通过。
 - 未运行 UI 自动化或 Computer Use，具体显示效果由用户手工验收。
 
-## 失焦开关显示修复（未发布）
+## 失焦开关显示修复（v1.6.10 / 34）
 
 - 用户反馈记录开关处于开启状态时，Island 失去窗口焦点后蓝色背景变成深灰。
   原生 switch 的非活跃绘制容易被误认为记录已关闭。
@@ -86,4 +86,7 @@
   保留正式 bundle ID 与版本 `1.6.9 (33)`，设置和历史目录不作修改。
   签名按现有社区包逐层重签并通过分发验证，主应用 App Sandbox 保留。
 - 替换前的完整 app 备份保存在
-  `build/LocalReplacementBackups/clipboard-switch.aTEZ6h/`；公开安装包尚未更新。
+  `build/LocalReplacementBackups/clipboard-switch.aTEZ6h/`。
+- 正式发布包版本为 `1.6.10 (34)`；622 项应用测试、4 项核心测试、Debug 构建、
+  Release 通用归档、签名检查及网站构建/SEO 检查通过。
+- 安装包 SHA-256：`7c3f46d729af916cf548416229f7bc38a74e4918fc0c40aa550dd173c6d27369`。

@@ -31,7 +31,7 @@ edge of your screen or inside the Mac notch, then drag them out wherever they be
 </a>
 
 > [!NOTE]
-> The current stable release is **v1.6.9**. This release adds optional clipboard history for text, URLs, and images with search, preview, copy, and retention controls, and fixes dark Island styling plus the Launchpad icon's oversized square appearance. See the [guide](https://muqy1818.github.io/OpenYoink/en/guide/) for the complete walkthrough.
+> The current stable release is **v1.6.10**. The Island clipboard recording switch now keeps its enabled color when the panel loses focus. Optional clipboard history and the icon fixes from v1.6.9 remain available. See the [guide](https://muqy1818.github.io/OpenYoink/en/guide/) for the complete walkthrough.
 
 ## The problem it solves
 
