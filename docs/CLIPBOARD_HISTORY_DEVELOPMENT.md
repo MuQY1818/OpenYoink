@@ -68,3 +68,22 @@
   bundle ID 与上一试用包一致，设置与历史保留；正式软件没有被替换。
 - 重跑 622 项应用单元测试、4 项核心测试均通过，Debug/Release 通用构建及签名检查通过。
 - 未运行 UI 自动化或 Computer Use，具体显示效果由用户手工验收。
+
+## 失焦开关显示修复（未发布）
+
+- 用户反馈记录开关处于开启状态时，Island 失去窗口焦点后蓝色背景变成深灰。
+  原生 switch 的非活跃绘制容易被误认为记录已关闭。
+- 仅 Island 中的记录开关改用自定义 `ToggleStyle`，轨道颜色和滑块位置直接由
+  `clipboardHistoryEnabled` 决定，不依赖 key-window 状态；普通历史窗口仍用原生开关。
+- 通过 Button 保留键盘激活，辅助功能使用原生 Toggle 表示，保留名称、开关值和
+  VoiceOver 操作。没有新增动画，也没有激活应用或强制获得焦点。
+- 手工验收：开启记录、固定 Island 后切换到其他应用，以及切换模块后再次打开历史，
+  开关应始终保持开启颜色与右侧滑块；关闭后应显示灰色与左侧滑块。确认暂停/恢复、
+  原生历史窗口、键盘与 VoiceOver 操作正常。此显示验收不使用 UI 自动化或 Computer Use。
+- 622 项应用单元测试、Debug 构建、Release arm64/x86_64 通用构建及
+  `git diff --check` 通过。用户已确认本机替换后失焦颜色正常；键盘与辅助功能仍待手工验收。
+- 2026-10-02 按用户要求将修复版安装到 `/Applications/OpenYoink.app` 并启动，
+  保留正式 bundle ID 与版本 `1.6.9 (33)`，设置和历史目录不作修改。
+  签名按现有社区包逐层重签并通过分发验证，主应用 App Sandbox 保留。
+- 替换前的完整 app 备份保存在
+  `build/LocalReplacementBackups/clipboard-switch.aTEZ6h/`；公开安装包尚未更新。

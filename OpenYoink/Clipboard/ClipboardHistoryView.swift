@@ -49,8 +49,13 @@ struct ClipboardHistoryView: View {
             .buttonStyle(.borderless)
 
             HStack {
-                Toggle("Record Clipboard", isOn: $settings.clipboardHistoryEnabled)
-                    .toggleStyle(.switch).controlSize(.small).tint(.accentColor)
+                if isIsland {
+                    Toggle("Record Clipboard", isOn: $settings.clipboardHistoryEnabled)
+                        .toggleStyle(IslandClipboardToggleStyle())
+                } else {
+                    Toggle("Record Clipboard", isOn: $settings.clipboardHistoryEnabled)
+                        .toggleStyle(.switch).controlSize(.small).tint(.accentColor)
+                }
                 Spacer()
                 Text(settings.clipboardHistoryPaused && settings.clipboardHistoryEnabled
                      ? String(localized: "Paused") : "\(history.entries.count) / 30")
@@ -142,6 +147,45 @@ struct ClipboardHistoryView: View {
             }
             .foregroundStyle(primaryForeground)
             .padding(20).frame(width: 440, height: 320)
+        }
+    }
+}
+
+/// A focus-independent toggle for the dark, non-activating Island panel.
+/// AppKit's native switch dims its tint when the panel loses key-window focus,
+/// which makes an enabled control look disabled. Keeping the visual state in
+/// SwiftUI leaves the Toggle's semantics and binding intact while making the
+/// enabled/disabled distinction explicit.
+private struct IslandClipboardToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                configuration.label
+                Capsule(style: .continuous)
+                    .fill(configuration.isOn
+                          ? Color.accentColor
+                          : Color.white.opacity(0.16))
+                    .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                        Capsule(style: .continuous)
+                            .fill(Color.white.opacity(0.96))
+                            .frame(width: 26, height: 18)
+                            .padding(2)
+                    }
+                    .frame(width: 44, height: 22)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.45)
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) {
+                configuration.label
+            }
+            .toggleStyle(.switch)
         }
     }
 }
