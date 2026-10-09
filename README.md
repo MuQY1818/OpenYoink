@@ -6,15 +6,15 @@
 
 **随手一拖，先放一下。**
 
-原生 macOS 拖拽暂存架。把文件、文本、图片和链接暂存在屏幕边缘或 Mac 刘海，
-切换到目标位置后再继续拖。
+macOS 文件暂存工具。把文件、文本、图片或链接拖到屏幕侧边或顶部灵动岛，
+切换窗口后，再拖到需要的地方。
 
 <br>
 
 [![最新版本](https://img.shields.io/github/v/release/MuQY1818/OpenYoink?display_name=tag&sort=semver&style=flat-square)](https://github.com/MuQY1818/OpenYoink/releases/latest)
 [![下载量](https://img.shields.io/github/downloads/MuQY1818/OpenYoink/total?style=flat-square)](https://github.com/MuQY1818/OpenYoink/releases)
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?style=flat-square&logo=apple&logoColor=white)](https://developer.apple.com/macos/)
-[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](https://www.swift.org/)
+[![GitHub Stars](https://img.shields.io/github/stars/MuQY1818/OpenYoink?style=flat-square)](https://github.com/MuQY1818/OpenYoink/stargazers)
 [![MIT 许可证](https://img.shields.io/github/license/MuQY1818/OpenYoink?style=flat-square)](LICENSE)
 
 [下载](https://github.com/MuQY1818/OpenYoink/releases/latest) ·
@@ -30,30 +30,23 @@
   <img src="docs/images/banner.jpg" width="100%" alt="OpenYoink — 随手一拖，先放一下">
 </a>
 
-> [!NOTE]
-> 当前稳定版 **v1.6.10** 修复灵动岛内剪贴板记录开关在失去焦点后变灰的问题，开启状态保持清晰可辨。保留 v1.6.9 的可选剪贴板历史与图标修复。完整教程见[使用文档](https://muqy1818.github.io/OpenYoink/guide/)。
+把下载文件夹里的文件发到聊天窗口时，可以先拖进 OpenYoink，松开鼠标，再切到聊天窗口拖出去。
 
-## 它解决什么问题
+OpenYoink 常驻菜单栏，没有 Dock 图标。侧边暂存架和顶部灵动岛可以单独使用，也能一起开，两边的内容是共享的。
 
-在 Finder、浏览器、邮件等应用之间搬东西时，目标窗口往往不在眼前。OpenYoink 给内容一个临时落脚点：先拖进屏幕边缘或 Mac 刘海，切换窗口后再拖到目标位置。
+## 功能
 
-OpenYoink 常驻菜单栏，不显示 Dock 图标。需要时出现，用完后收起。
+- 暂存文件、文件夹、文本、图片和链接。来源应用支持时，也能接收邮件、日历事件和联系人。
+- 按空格预览内容，支持多选、框选、堆叠（Stack）、手动排序和最近项目。
+- 通过边缘拉环、快捷键、鼠标摇动或拖拽唤出；可以按应用关闭自动唤出。
+- 可选剪贴板历史，支持搜索、预览、复制和加入暂存架，默认不记录。
+- 支持多显示器、多个 Space 和全屏应用，提供中英文界面、登录时启动和自动更新。
 
-## 核心亮点
-
-- **接住常用内容**：文件、文件夹、纯文本、富文本、图片、链接，以及邮件、日历事件、联系人。
-- **多种唤出方式**：拖拽时自动出现、边缘拉环、全局快捷键、鼠标摇动手势。
-- **两种独立入口**：经典侧边暂存架与 OpenYoink Island 可单独启用或同时使用，共享同一个暂存空间。
-- **原生 Island**：全新安装默认启用并与 Mac 刘海融合；外接屏或无刘海设备使用顶部悬浮胶囊，含暂存架、传输、计时器、电池、系统状态、正在播放与快速访问模块。快速访问可收藏常用文件夹，电池模块可查看实时功率与两分钟波形，各模块均可独立关闭。
-- **整理而不打断**：Quick Look、多选、框选、Stack、手动排序、最近项目。
-- **可选剪贴板历史**：默认关闭，支持文本、HTTP(S) 网址和图片的搜索、预览、复制与加入暂存架；最多 30 条，支持暂停与保留期限。
-- **适应复杂桌面**：多显示器、多 Space、全屏应用，按应用关闭自动唤出。
-- **可预期的文件语义**：默认引用原文件；拖到 Finder 时只请求复制。按住 `⌘` 拖入启用托管移动，详见[文件安全与生命周期](#文件安全与生命周期)。
-- **原生且克制**：SwiftUI + AppKit，中英文界面，登录时启动，Sparkle 自动更新。
+灵动岛还可以查看传输进度、电池功率、系统状态和正在播放的歌曲，或打开收藏的文件夹。各模块可以单独关闭，详见[灵动岛模块](#灵动岛模块)。
 
 ## 安装
 
-**系统要求：macOS 15 Sequoia 或更高版本。** Release 构建同时面向 Apple Silicon 与 Intel Mac。
+需要 macOS 15 Sequoia 或更高版本，支持 Apple Silicon 和 Intel Mac。
 
 ### Homebrew（推荐）
 
@@ -61,7 +54,7 @@ OpenYoink 常驻菜单栏，不显示 Dock 图标。需要时出现，用完后�
 brew install --cask muqy1818/tap/openyoink
 ```
 
-Homebrew cask 下载对应版本的 GitHub Release DMG，并在安装后移除这一应用的隔离属性，通常不会出现 Gatekeeper 拦截。该步骤不改变安装包签名，也不等同于 Apple 公证。安装后可由 Sparkle 检查后续更新。
+Homebrew 从 GitHub Releases 下载安装包，并在安装后移除 OpenYoink 的隔离属性。这会跳过该应用的 Gatekeeper 隔离检查，但不等于 Apple 公证。
 
 ### 手动安装
 
@@ -70,12 +63,14 @@ Homebrew cask 下载对应版本的 GitHub Release DMG，并在安装后移除�
 3. 首次启动若被 macOS 拦截，在 Finder 中右键 OpenYoink 并选择“打开”，或前往 **系统设置 → 隐私与安全性** 允许打开。
 
 > [!NOTE]
-> GitHub Releases 中的免费社区构建使用 ad-hoc 签名，未经过 Apple 公证，因此首次手动安装可能触发系统提示。Sparkle EdDSA 签名保护的是更新包完整性，不能替代首次下载校验或 Apple 公证。
+> GitHub Releases 提供 ad-hoc 签名的社区构建，尚未经过 Apple 公证，手动安装可能被 macOS 拦截。自动更新使用 Sparkle EdDSA 校验，不能替代首次下载校验或 Apple 公证。
 
 <details>
 <summary>仍然无法打开？</summary>
 
-仅在确认应用来自上面的 OpenYoink 官方 Release 地址后使用。可以先运行 `shasum -a 256 OpenYoink-VERSION.dmg`（把 `VERSION` 换成实际版本号），并与同版本 [Homebrew cask](https://github.com/MuQY1818/homebrew-tap/blob/main/Casks/openyoink.rb) 中的 `sha256` 比对。下面的命令会明确绕过这一个应用的 Gatekeeper 隔离检查：
+先确认安装包来自上面的 GitHub Releases。运行 `shasum -a 256 OpenYoink-VERSION.dmg`（把 `VERSION` 换成实际版本号），与对应版本的 Release 校验值或 [Homebrew cask](https://github.com/MuQY1818/homebrew-tap/blob/main/Casks/openyoink.rb) 中的 `sha256` 比对。
+
+确认来源和校验值后，可以用下面的命令移除 OpenYoink 的隔离属性。这会绕过该应用的 Gatekeeper 隔离检查：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OpenYoink.app
@@ -89,7 +84,7 @@ xattr -dr com.apple.quarantine /Applications/OpenYoink.app
 | -------------- | ------------------------------------------------------ |
 | 显示 / 隐藏    | `⌘⇧Space`、菜单栏菜单，或单击屏幕边缘的拉环           |
 | 添加内容       | 拖到暂存架或边缘拉环上                                 |
-| 移动而非引用   | 按住 `⌘` 拖入文件或文件夹                              |
+| 托管移动       | 按住 `⌘` 拖入；确认副本后将原文件移入废纸篓，[详细说明](#文件安全与生命周期) |
 | 暂存剪贴板     | 连按两次 `⌘⇧Space`                                     |
 | Quick Look     | 选中卡片后按 `Space`，或双击卡片                       |
 | 多选           | 按住 `⌘` 点选，或在空白处拖动框选                      |
@@ -97,34 +92,67 @@ xattr -dr com.apple.quarantine /Applications/OpenYoink.app
 | 调整位置       | 沿屏幕边缘拖动拉环，或在设置中选择位置                 |
 | 开启 / 关闭 Island | 设置 → 通用 → OpenYoink Island                    |
 
-## 支持的内容
+顶部拖拽展开默认关闭，可在设置中开启。侧边暂存架的拖拽唤出独立设置。更多操作见[使用文档](https://muqy1818.github.io/OpenYoink/guide/)。
 
-| 内容                       | OpenYoink 的处理方式                                   |
-| -------------------------- | ------------------------------------------------------ |
-| 文件与文件夹               | 默认保留对原位置的 sandbox bookmark，不复制到暂存架    |
-| 纯文本与链接               | 直接记录在暂存架数据中                                 |
-| 图片、HTML 与 RTF          | 在应用沙箱的托管目录中物化为文件                       |
-| 联系人、日历事件与邮件     | 来源应用提供可读数据时，物化为 `.vcf`、`.ics`、`.eml`  |
+## 灵动岛模块
 
-拖出普通文件时，OpenYoink 提供文件 URL 与 Chromium 兼容的文件名表示，兼容 Finder、Safari 和常见 Chromium 浏览器上传区域；托管移动项目使用可确认落盘的 file promise，交付成功后才离架。是否接受最终仍由目标应用或网站决定。
+新安装默认开启 OpenYoink Island。有刘海的 Mac 使用刘海两侧，无刘海屏幕显示顶部胶囊。
+
+| 模块 | 用途 |
+| --- | --- |
+| 暂存架 | 与侧边暂存架共享内容，支持拖入、拖出、预览和整理 |
+| 传输 | 查看异步文件交付的进度和失败状态 |
+| 计时器 | 预设或自定义倒计时，支持暂停和继续 |
+| 电池 | 查看电量、充放电功率和最近两分钟的功率波形 |
+| 系统状态 | 查看 CPU、内存、网络、磁盘和应用占用 |
+| 正在播放 | 查看歌曲信息、封面和进度，控制播放 |
+| 快速访问 | 收藏文件夹，双击交给系统默认文件管理器打开，支持 Finder、QSpace 等 |
+| 剪贴板历史 | 搜索、预览和复用最近复制的内容 |
+
+正在播放、快速访问和剪贴板历史模块默认关闭，可以按需开启。开启剪贴板模块不会自动开启记录。
 
 ## 文件安全与生命周期
 
-- **普通拖入**只保存对原位置的引用。移除卡片或选择“拖出后移除”不会删除原文件；若原文件被移动、删除或磁盘离线，卡片会显示不可用，直到 bookmark 再次解析。
-- **按住 `⌘` 拖入**时，OpenYoink 先把内容复制到应用沙箱的托管目录并确认副本存在，再把原文件移入废纸篓。任一步失败都保留原文件并回退为普通引用。原文件仅在废纸篓尚未清空时可恢复。
-- **托管移动项目拖出成功**后，目标位置收到文件，暂存架卡片和托管副本随即删除；不受普通项目的“拖出后处理”设置影响。取消或交付失败时，项目与副本会保留以便重试。
-- **文本与链接**随卡片保存，移除时一并清除。图片、富文本、邮件等物化文件在卡片被手动或按策略移除后会失去引用，下次启动的安全清理中删除；也可以在 **设置 → 存储** 立即查看和清理。
+普通拖入只保存原文件的引用，不移动原文件。移除卡片或开启“拖出后移除”也不会删除原文件。拖到 Finder 时只请求复制，最终是否接收由目标应用决定。
 
-## 隐私与设计
+> [!WARNING]
+> 按住 `⌘` 拖入会启用托管移动：先复制到应用沙箱，确认副本后，再把原文件移入废纸篓。失败时保留原文件并回退为普通引用。原文件只能在废纸篓尚未清空时恢复。
 
-- 启用 App Sandbox；暂存架数据和物化文件保存在沙箱内的 `Application Support/OpenYoink`，可在 **设置 → 存储** 打开数据目录或清理未使用文件。
-- 无账号、无分析统计或遥测上报。正常使用不要求辅助功能或输入监控权限；文件访问范围来自用户主动拖入的内容。
-- 自动更新检查默认开启，可在设置中关闭。检查更新会访问 GitHub Pages / Releases；当前版本没有其他后台联网功能。
-- 剪贴板历史默认关闭；未开启时只有执行“连按两次快捷键暂存剪贴板”才会读取当前内容。开启或恢复记录后只接收新复制的文本、HTTP(S) 网址和图片，不追溯旧内容，不记录文件复制。
-- 剪贴板历史仅在本机以明文保存，最多 30 条、总计 20 MiB，可保留 1 / 7 / 30 天（默认 7 天），不上传或同步。会跳过常见密码管理器隐私标记和忽略应用，但未标记的密码或令牌仍可能被记录；复制敏感内容前请暂停。关闭记录保留已有历史，清空才会删除保存的数据。
-- “正在播放”是可选的 Island 模块，默认关闭。启用后显示真实封面、播放进度与媒体控制，优先使用本地捆绑的 helper；helper 不可用时才尝试 Apple Music / Spotify AppleScript，并可能请求“自动化”权限。该模块不联网，失效也不会影响暂存架和其他 Island 模块。
-- “快速访问”是可选的 Island 模块，默认关闭。它只保存用户主动添加文件夹的 security-scoped bookmark；默认打开时由 macOS 选择当前默认文件管理器，不硬编码 Finder 或 QSpace，移除收藏不会删除真实文件夹。
-- 持久化采用 security-scoped bookmarks 与原子 JSON 写入，减少不必要的原文件复制和部分写入造成的快照损坏风险。
+托管移动项目交付成功后，卡片和沙箱内副本才会删除，不受普通项目的“拖出后处理”设置影响。取消或交付失败会保留卡片和副本，供下次重试。
+
+<details>
+<summary>不同内容如何保存、何时清理</summary>
+
+| 内容                       | OpenYoink 的处理方式                                   |
+| -------------------------- | ------------------------------------------------------ |
+| 文件与文件夹               | 保存原文件位置的访问授权（sandbox bookmark），默认不复制 |
+| 纯文本与链接               | 直接记录在暂存架数据中                                 |
+| 图片、HTML 与 RTF          | 保存为应用沙箱内的文件                                 |
+| 联系人、日历事件与邮件     | 来源应用提供可读数据时，保存为 `.vcf`、`.ics`、`.eml`  |
+
+若原文件被移动、删除或所在磁盘离线，卡片会显示不可用，直到文件引用重新解析成功。
+
+文本和链接随卡片保存，移除时一并清除。图片、富文本、邮件等生成的文件在卡片移除后，通常在下次启动时清理；也可以在“设置 → 存储”查看和清理未使用文件。
+
+普通文件拖出提供文件 URL 和 Chromium 兼容的文件名表示；托管移动使用 file promise，收到目标写入确认后才离架。兼容性仍取决于目标应用或网站。
+
+</details>
+
+## 隐私与权限
+
+- 不需要账号，不收集分析数据或遥测。内容保存在本机沙箱内的 `Application Support/OpenYoink`。
+- 应用启用 App Sandbox，只访问你主动拖入或选择的文件。正常使用不要求辅助功能或输入监控权限。
+- 自动更新检查默认开启，可以关闭。应用的后台联网用于访问 GitHub Pages / Releases 检查和下载更新。
+- 正在播放模块不联网，优先使用本地 helper，备用 Apple Music / Spotify AppleScript 可能请求“自动化”权限。模块失效不影响暂存架。
+- 快速访问只保存你添加的文件夹引用。移除收藏不会删除真实文件夹，默认打开方式交给 macOS 决定。
+
+### 剪贴板历史
+
+记录默认关闭。没有开启时，只有连按两次快捷键暂存剪贴板才读取当前内容。开启或恢复后，只记录新复制的文本、HTTP(S) 网址和 PNG/TIFF 图片，不追溯旧内容，也不记录复制的文件。
+
+历史在本机以明文保存，不上传、不同步。最多保存 30 条、总计 20 MiB，可保留 1、7 或 30 天，默认 7 天。关闭记录会保留已有历史，清空才会删除它们。
+
+会跳过常见密码管理器的隐私标记和忽略应用，但无法识别所有敏感内容。复制密码或令牌前，请先暂停记录。
 
 ## 从源码构建
 
@@ -148,30 +176,33 @@ xcodebuild \
   -only-testing:OpenYoinkTests
 ```
 
-本地构建无需设置 `DEVELOPMENT_TEAM`。项目使用 SwiftUI 渲染界面，以 AppKit 管理窗口、拖放和全局事件；测试覆盖持久化、拖入拖出、快捷键、触发器和布局等核心行为。
+使用 Swift 6、SwiftUI 和 AppKit。本地构建无需设置 `DEVELOPMENT_TEAM`，上面的测试命令只运行应用单元测试，不运行 UI 自动化。
 
-维护者可通过 [`Scripts/make-release.sh`](Scripts/make-release.sh) 生成 Developer ID + 公证的正式构建，或显式使用 `--adhoc` 生成免费社区构建。脚本不会在签名失败时静默降级发布模式。
+发布脚本见 [`Scripts/make-release.sh`](Scripts/make-release.sh)：支持 Developer ID 签名与公证，或显式传入 `--adhoc` 生成社区构建。签名失败不会自动降级。
 
 ## 参与项目
 
-欢迎提交 [Issue](https://github.com/MuQY1818/OpenYoink/issues) 和 Pull Request。
+遇到问题或有功能建议，可以提 [Issue](https://github.com/MuQY1818/OpenYoink/issues)。报告问题时请附上 macOS 版本、OpenYoink 版本和复现步骤；截图中不要包含私人文件或剪贴板内容。
 
-- **Bug 报告**请附上 macOS 版本、OpenYoink 版本、复现步骤和预期行为。
-- **较大的功能改动**建议先开 Issue 讨论，避免双方在目标上产生偏差。
-- **提交前**请运行完整测试，并保持改动聚焦、说明清楚。
+也欢迎 Pull Request。较大的改动先开 Issue 讨论，代码提交前请运行完整单元测试。
 
-## Roadmap
+## Star History
 
-- [x] 可选的剪贴板历史与隐私过滤（v1.6.9）
-- [ ] Handoff 与更深的系统集成
+项目 Star 数量随时间的变化：
 
-> Roadmap 表示探索方向，不承诺具体版本或时间；优先级会根据稳定性和用户反馈调整。
+<a href="https://www.star-history.com/?repos=MuQY1818%2FOpenYoink&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MuQY1818/OpenYoink&amp;type=Date&amp;theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=MuQY1818/OpenYoink&amp;type=Date">
+    <img src="https://api.star-history.com/svg?repos=MuQY1818/OpenYoink&amp;type=Date" width="800" alt="OpenYoink 在 GitHub 上的 Star 数量变化">
+  </picture>
+</a>
 
 ## 致谢与许可
 
-OpenYoink 是独立的开源实现，与商业应用 Yoink 及其开发者没有隶属、授权或背书关系。自动更新由 [Sparkle](https://sparkle-project.org/) 提供。
+OpenYoink 采用 [MIT License](LICENSE)。这是独立的开源项目，与商业应用 Yoink 及其开发者无隶属关系。
 
-第三方组件与许可证见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。项目基于 [MIT License](LICENSE) 开源。
+自动更新使用 [Sparkle](https://sparkle-project.org/)，Star 趋势图由 [Star History](https://www.star-history.com/) 提供。第三方组件与许可证见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 <br>
 

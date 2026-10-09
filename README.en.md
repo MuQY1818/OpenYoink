@@ -6,15 +6,15 @@
 
 **Drag it. Park it. Drop it later.**
 
-A native drag-and-drop shelf for macOS. Park files, text, images, and links at the
-edge of your screen or inside the Mac notch, then drag them out wherever they belong.
+A temporary shelf for macOS. Drop files, text, images, or links at the screen edge
+or in the notch, switch windows, then drag them to their destination.
 
 <br>
 
 [![Latest release](https://img.shields.io/github/v/release/MuQY1818/OpenYoink?display_name=tag&sort=semver&style=flat-square)](https://github.com/MuQY1818/OpenYoink/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/MuQY1818/OpenYoink/total?style=flat-square)](https://github.com/MuQY1818/OpenYoink/releases)
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?style=flat-square&logo=apple&logoColor=white)](https://developer.apple.com/macos/)
-[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](https://www.swift.org/)
+[![GitHub Stars](https://img.shields.io/github/stars/MuQY1818/OpenYoink?style=flat-square)](https://github.com/MuQY1818/OpenYoink/stargazers)
 [![MIT license](https://img.shields.io/github/license/MuQY1818/OpenYoink?style=flat-square)](LICENSE)
 
 [Download](https://github.com/MuQY1818/OpenYoink/releases/latest) ·
@@ -30,30 +30,23 @@ edge of your screen or inside the Mac notch, then drag them out wherever they be
   <img src="docs/images/banner.jpg" width="100%" alt="OpenYoink — Drag it. Park it. Drop it later.">
 </a>
 
-> [!NOTE]
-> The current stable release is **v1.6.10**. The Island clipboard recording switch now keeps its enabled color when the panel loses focus. Optional clipboard history and the icon fixes from v1.6.9 remain available. See the [guide](https://muqy1818.github.io/OpenYoink/en/guide/) for the complete walkthrough.
+To send a file from Downloads to a chat, drop it in OpenYoink first. Let go of the mouse, switch to the chat window, then drag it out.
 
-## The problem it solves
+OpenYoink lives in the menu bar without a Dock icon. Use the side shelf, the notch interface, or both. They share the same contents.
 
-When you move something between Finder, a browser, Mail, and other apps, the destination is often buried behind another window or Space. OpenYoink gives the content a temporary parking spot: drag it to a screen edge or the Mac notch, switch windows, and continue the drag to its destination.
+## Features
 
-OpenYoink lives in the menu bar without a Dock icon. It appears when you need it and gets out of the way when you are done.
+- Store files, folders, text, images, and links. Mail messages, calendar events, and contacts are supported when the source app provides them.
+- Preview with Space, select multiple items, group them into stacks, reorder them, or return to recent items.
+- Open the shelf with an edge tab, a shortcut, a mouse-shake gesture, or a drag. Automatic triggers can be disabled per app.
+- Optional clipboard history with search, preview, copy, and add-to-shelf actions. Recording is off by default.
+- Multiple displays, Spaces, and full-screen apps; English and Chinese UI; launch at login and automatic updates.
 
-## Highlights
-
-- **Accepts everyday content:** files, folders, plain and rich text, images, links, plus mail messages, calendar events, contacts, and more.
-- **Appears your way:** automatically when dragging, from an edge tab, with a global shortcut, or after a mouse-shake gesture.
-- **Two independent entrances:** the classic side shelf and OpenYoink Island can run on their own or together and share the same parking space.
-- **Native Island:** enabled by default for new installs and blended into the Mac camera housing; external and notchless displays fall back to a top pill with Shelf, Transfers, Timer, Battery, System Status, Now Playing, and Quick Access modules. Quick Access keeps favorite folders close, Battery includes live power and a two-minute waveform, and every module can be disabled independently.
-- **Organizes without interruption:** Quick Look, multi-select, marquee selection, stacks, manual ordering, and recent items.
-- **Optional clipboard history:** off by default; search, preview, copy, or add text, HTTP(S) URLs, and images to the shelf. Keep up to 30 entries with pause and retention controls.
-- **Works across your desktop:** multiple displays, Spaces, and full-screen apps, with a per-app ignore list.
-- **Predictable file semantics:** source files are referenced by default and Finder drops only request a copy. Hold `⌘` while importing to use the managed-move flow described in [File safety and lifecycle](#file-safety-and-lifecycle).
-- **Native and focused:** SwiftUI + AppKit, English and Chinese UI, launch at login, and Sparkle updates.
+The notch interface also shows transfers, battery power, system status, and music, and can open favorite folders. Modules can be turned off individually. See [Island modules](#island-modules).
 
 ## Install
 
-**Requires macOS 15 Sequoia or later.** Release builds target both Apple Silicon and Intel Macs.
+Requires macOS 15 Sequoia or later. Supports Apple Silicon and Intel Macs.
 
 ### Homebrew (recommended)
 
@@ -61,7 +54,7 @@ OpenYoink lives in the menu bar without a Dock icon. It appears when you need it
 brew install --cask muqy1818/tap/openyoink
 ```
 
-The Homebrew cask downloads the matching GitHub Release DMG and removes this app's quarantine attribute after installation, so it normally avoids a Gatekeeper block. This does not change the package signature or make the build notarized by Apple. OpenYoink can check for later updates through Sparkle.
+Homebrew downloads the package from GitHub Releases and removes OpenYoink's quarantine attribute after installation. This bypasses quarantine checks for this app; it does not mean the build is notarized by Apple.
 
 ### Manual installation
 
@@ -70,12 +63,14 @@ The Homebrew cask downloads the matching GitHub Release DMG and removes this app
 3. If macOS blocks the first launch, right-click OpenYoink in Finder and choose **Open**, or allow it under **System Settings → Privacy & Security**.
 
 > [!NOTE]
-> Free community builds on GitHub Releases are ad-hoc signed but not notarized by Apple, so a first-time manual installation may trigger a system warning. Sparkle's EdDSA signature protects packages delivered by the updater; it does not replace verification of the first download or Apple notarization.
+> Community builds on GitHub Releases are ad-hoc signed and not notarized by Apple. macOS may block a manual installation. Automatic updates use Sparkle EdDSA verification, which does not replace verification of the first download or Apple notarization.
 
 <details>
 <summary>Still unable to open the app?</summary>
 
-Use this only after confirming that the app came from the official OpenYoink Release URL above. You can first run `shasum -a 256 OpenYoink-VERSION.dmg` (replace `VERSION` with the release number) and compare it with the `sha256` for the same version in the [Homebrew cask](https://github.com/MuQY1818/homebrew-tap/blob/main/Casks/openyoink.rb). The command below explicitly bypasses Gatekeeper's quarantine check for this app:
+First confirm that the package came from GitHub Releases above. Run `shasum -a 256 OpenYoink-VERSION.dmg` (replace `VERSION` with the release number), then compare it with the checksum in the matching release notes or [Homebrew cask](https://github.com/MuQY1818/homebrew-tap/blob/main/Casks/openyoink.rb).
+
+After checking the source and checksum, you can remove OpenYoink's quarantine attribute with the command below. This bypasses Gatekeeper's quarantine check for this app:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OpenYoink.app
@@ -89,7 +84,7 @@ xattr -dr com.apple.quarantine /Applications/OpenYoink.app
 | -------------------- | ---------------------------------------------------------- |
 | Show / hide          | `⌘⇧Space`, the menu bar item, or click the screen edge tab |
 | Add content          | Drop onto the shelf or the edge tab                        |
-| Move instead of copy | Hold `⌘` while importing a file or folder                  |
+| Managed move         | Hold `⌘` while importing; the original goes to the Trash after a copy is confirmed. [Details](#file-safety-and-lifecycle) |
 | Park clipboard       | Press `⌘⇧Space` twice                                      |
 | Quick Look           | Select a card and press `Space`, or double-click           |
 | Multi-select         | Hold `⌘` and click, or marquee-select an empty area       |
@@ -97,34 +92,67 @@ xattr -dr com.apple.quarantine /Applications/OpenYoink.app
 | Reposition           | Drag the edge tab, or pick a position in Settings          |
 | Enable / disable Island | Settings → General → OpenYoink Island                    |
 
-## Supported content
+Drag-to-expand at the top of the screen is off by default and can be enabled in Settings. Side-shelf drag triggers are configured separately. See the [guide](https://muqy1818.github.io/OpenYoink/en/guide/) for more.
+
+## Island modules
+
+OpenYoink Island is enabled for new installs. On a Mac with a notch, content sits on either side of it. Other displays use a floating pill at the top.
+
+| Module | What it does |
+| --- | --- |
+| Shelf | Shares content with the side shelf, including drag-and-drop, preview, and organization |
+| Transfers | Shows asynchronous file delivery progress and failures |
+| Timer | Preset or custom countdowns, with pause and resume |
+| Battery | Battery level, charging/discharging power, and a two-minute power graph |
+| System Status | CPU, memory, network, disk, and app usage |
+| Now Playing | Track information, artwork, progress, and playback controls |
+| Quick Access | Favorite folders; double-click to open in the system's default file manager, including Finder or QSpace |
+| Clipboard History | Search, preview, and reuse recently copied content |
+
+Now Playing, Quick Access, and Clipboard History modules are off by default. Enabling the clipboard module does not turn on recording.
+
+## File safety and lifecycle
+
+Regular imports reference the original file without moving it. Removing a card or choosing "remove after drop" does not delete the original. Drops onto Finder request a copy; the destination decides whether to accept it.
+
+> [!WARNING]
+> Holding `⌘` while importing uses managed move: OpenYoink copies the content into its sandbox, confirms the copy, then moves the original to the Trash. If a step fails, it keeps the original and falls back to a regular reference. The original is recoverable only until the Trash is emptied.
+
+For managed moves, the shelf card and sandbox copy are deleted only after the destination confirms delivery, regardless of the regular "after drop" policy. Failed or cancelled drops keep both for retry.
+
+<details>
+<summary>How each content type is stored and cleaned up</summary>
 
 | Content                          | How OpenYoink handles it                                  |
 | -------------------------------- | --------------------------------------------------------- |
 | Files and folders                | Keeps a sandbox bookmark to the original location         |
 | Plain text and links             | Stored directly in the shelf data                         |
-| Images, HTML, RTF                | Materialised into files in the app sandbox                |
+| Images, HTML, RTF                | Saved as files in the app sandbox                         |
 | Contacts, events, mail messages  | Saved as `.vcf`, `.ics`, `.eml` when the source provides them |
 
-When dropping a regular file, OpenYoink exposes the file URL with a Chromium-compatible filename so Finder, Safari, and most Chromium upload fields accept it. Managed-move drops use a confirmed file promise and only leave the shelf after the destination confirms the write. The destination always has the final say.
+If the original file is moved, deleted, or on an offline disk, its card is unavailable until the reference resolves again.
 
-## File safety and lifecycle
+Text and links are stored with their cards and cleared when the cards are removed. Files created for images, rich text, and mail are normally cleaned up on the next launch after their cards are removed. You can also review and clear unused files in **Settings → Storage**.
 
-- **Regular import** keeps a reference to the original location. Removing a card or choosing "remove after drop" never deletes the original file. If the file is moved, deleted, or its disk is offline, the card becomes unavailable until the bookmark resolves again.
-- **Hold `⌘` while importing** and OpenYoink copies the file into the sandbox-managed folder, confirms the copy, then moves the original to the Trash. Any failure leaves the original in place and falls back to a regular reference. The original is only recoverable while the Trash is not yet emptied.
-- **Managed-move drops** remove the shelf card and the sandbox copy only after the destination confirms receipt, regardless of the regular "after drop" policy. A failed or cancelled drop keeps the card and the copy for retry.
-- **Text and links** live with the card and are cleared when you remove it. Materialised files lose their reference once the card is removed (manually or by policy) and are cleaned up on the next launch; you can also clear them on demand in **Settings → Storage**.
+Regular file drops provide a file URL and a Chromium-compatible filename. Managed moves use a file promise and wait for confirmation of the destination write. Compatibility depends on the receiving app or website.
 
-## Privacy by design
+</details>
 
-- App Sandbox is enabled. Shelf data and materialised files live in `Application Support/OpenYoink` and can be opened or pruned from **Settings → Storage**.
-- No accounts. No analytics or telemetry. Normal use does not require Accessibility or Input Monitoring permissions. File access comes only from what you actively drag in.
-- Automatic update checks are on by default and can be turned off. They talk only to GitHub Pages / Releases; there is no other background network activity.
-- Clipboard history is off by default. When disabled, the clipboard is read only through the explicit double-tap shortcut. Enabling or resuming history captures only new text, HTTP(S) URLs, and images; it does not import old contents or copied files.
-- History is stored as plaintext only on this Mac, never uploaded or synced, with limits of 30 entries and 20 MiB. Choose 1, 7, or 30 days of retention (7 by default). Common password-manager privacy markers and ignored apps are skipped, but unmarked passwords or tokens may still be captured; pause before copying sensitive data. Turning recording off keeps saved history; clearing it deletes the stored history.
-- **Now Playing** is an opt-in Island module. When enabled, it shows the real cover, progress, and media controls using a bundled helper when available, otherwise Apple Music / Spotify AppleScript with a possible Automation prompt. It does not use the network and a failure never affects the shelf or other Island modules.
-- **Quick Access** is an opt-in Island module. It stores security-scoped bookmarks only for folders you add. The default open action asks macOS for the current default file manager rather than hard-coding Finder or QSpace, and removing a favorite never deletes the real folder.
-- Persistence uses security-scoped bookmarks and atomic JSON writes to avoid extra copies of originals and to recover cleanly from partial writes.
+## Privacy and permissions
+
+- No account, analytics, or telemetry. Content stays in the local sandbox under `Application Support/OpenYoink`.
+- App Sandbox is enabled. File access comes from content you drag in or choose. Normal use does not require Accessibility or Input Monitoring permissions.
+- Automatic update checks are on by default and can be disabled. The app's background network requests go to GitHub Pages / Releases to check for and download updates.
+- Now Playing does not use the network. It prefers a local helper; its Apple Music / Spotify AppleScript fallback may request Automation permission. A module failure does not affect the shelf.
+- Quick Access stores references only to folders you add. Removing a favorite does not delete the folder, and macOS chooses the default app for opening it.
+
+### Clipboard history
+
+Recording is off by default. While it is disabled, OpenYoink reads the clipboard only when you double-press the shortcut to save it. Enabling or resuming recording captures only newly copied text, HTTP(S) URLs, and PNG/TIFF images, not existing clipboard content or copied files.
+
+History is stored as plaintext on this Mac, without uploads or sync. Limits are 30 entries and 20 MiB total. Choose 1, 7, or 30 days of retention, with 7 days as the default. Turning recording off keeps existing history; clearing it deletes the saved entries.
+
+Common password-manager privacy markers and ignored apps are skipped, but not all sensitive content can be detected. Pause recording before copying passwords or tokens.
 
 ## Build from source
 
@@ -148,30 +176,33 @@ xcodebuild \
   -only-testing:OpenYoinkTests
 ```
 
-Local builds do not require a `DEVELOPMENT_TEAM`. SwiftUI renders the interface, AppKit owns the windows, drag-and-drop, and global events. The tests cover persistence, drop-in / drop-out, shortcuts, triggers, and layout.
+Built with Swift 6, SwiftUI, and AppKit. Local builds do not require a `DEVELOPMENT_TEAM`. The test command above runs app unit tests, not UI automation.
 
-Maintainers can use [`Scripts/make-release.sh`](Scripts/make-release.sh) to produce a Developer ID + notarised release build, or pass `--adhoc` to produce a free community build. The script never silently falls back to a less secure signing mode.
+[`Scripts/make-release.sh`](Scripts/make-release.sh) supports Developer ID signing and notarization, or an explicit `--adhoc` community build. Signing failures do not trigger an automatic fallback.
 
 ## Contributing
 
-Issues and pull requests are welcome.
+For bugs or feature suggestions, open an [issue](https://github.com/MuQY1818/OpenYoink/issues). Include your macOS version, OpenYoink version, and steps to reproduce. Please keep private files and clipboard content out of screenshots.
 
-- **Bug reports** should include macOS version, OpenYoink version, reproduction steps, and expected behaviour.
-- **Larger changes** should open an issue first so we agree on scope before code lands.
-- **Before submitting**, please run the full test suite and keep the change focused with a clear description.
+Pull requests are welcome too. Discuss larger changes in an issue first, and run the full unit test suite before submitting code.
 
-## Roadmap
+## Star history
 
-- [x] Optional clipboard history with privacy filters (v1.6.9)
-- [ ] Handoff and deeper system integration
+GitHub stars over time:
 
-> The roadmap signals intent, not commitments. Priorities shift with stability needs and user feedback.
+<a href="https://www.star-history.com/?repos=MuQY1818%2FOpenYoink&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MuQY1818/OpenYoink&amp;type=Date&amp;theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=MuQY1818/OpenYoink&amp;type=Date">
+    <img src="https://api.star-history.com/svg?repos=MuQY1818/OpenYoink&amp;type=Date" width="800" alt="OpenYoink GitHub stars over time">
+  </picture>
+</a>
 
 ## Credits and license
 
-OpenYoink is an independent open-source implementation. It is not affiliated with, endorsed by, or derived from the commercial Yoink app. Automatic updates are powered by [Sparkle](https://sparkle-project.org/).
+OpenYoink is released under the [MIT License](LICENSE). It is an independent open-source project, not affiliated with the commercial Yoink app or its developers.
 
-Third-party components and licenses are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The project is released under the [MIT License](LICENSE).
+Updates use [Sparkle](https://sparkle-project.org/); the star chart is provided by [Star History](https://www.star-history.com/). Third-party components and licenses are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 <br>
 
