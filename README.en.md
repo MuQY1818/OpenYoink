@@ -188,8 +188,6 @@ Pull requests are welcome too. Discuss larger changes in an issue first, and run
 
 ## Star history
 
-GitHub stars over time:
-
 <a href="https://www.star-history.com/?repos=MuQY1818%2FOpenYoink&amp;type=date">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MuQY1818/OpenYoink&amp;type=Date&amp;theme=dark">

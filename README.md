@@ -188,8 +188,6 @@ xcodebuild \
 
 ## Star History
 
-项目 Star 数量随时间的变化：
-
 <a href="https://www.star-history.com/?repos=MuQY1818%2FOpenYoink&amp;type=date">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MuQY1818/OpenYoink&amp;type=Date&amp;theme=dark">
