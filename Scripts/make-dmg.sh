@@ -13,6 +13,8 @@
 #
 # 签名/公证：本脚本不改 app 签名。正式发布由 make-release.sh 在 Xcode
 # Developer ID 归档后调用本脚本，再对最终 DMG 签名、公证和装订。
+# DMG_LAYOUT_TEMPLATE：已有安装包的 .DS_Store；设置后复用其窗口布局，
+# 直接生成压缩 DMG，打包过程中不操作 Finder。
 
 set -euo pipefail
 
@@ -39,6 +41,10 @@ if [ ! -f "$BACKGROUND_SRC" ]; then
     echo "生成背景图…"
     swift "$REPO_ROOT/Scripts/generate-dmg-background.swift"
 fi
+if [ -n "${DMG_LAYOUT_TEMPLATE:-}" ] && [ ! -f "$DMG_LAYOUT_TEMPLATE" ]; then
+    echo "error: 安装包布局模板不存在：$DMG_LAYOUT_TEMPLATE" >&2
+    exit 1
+fi
 
 echo "==> 准备 staging"
 rm -rf "$STAGE"
@@ -46,6 +52,16 @@ mkdir -p "$STAGE/.background"
 cp -R "$APP_PATH" "$STAGE/OpenYoink.app"
 ln -s /Applications "$STAGE/Applications"
 cp "$BACKGROUND_SRC" "$STAGE/.background/background.png"
+
+if [ -n "${DMG_LAYOUT_TEMPLATE:-}" ]; then
+    echo "==> 复用安装包布局"
+    cp "$DMG_LAYOUT_TEMPLATE" "$STAGE/.DS_Store"
+    hdiutil create -srcfolder "$STAGE" -volname "OpenYoink" -fs HFS+ \
+        -format UDZO -imagekey zlib-level=9 -ov "$FINAL_DMG" >/dev/null
+    rm -rf "$STAGE"
+    echo "==> 完成：$FINAL_DMG"
+    exit 0
+fi
 
 echo "==> 创建读写 DMG"
 rm -f "$RW_DMG" "$FINAL_DMG"

@@ -3,7 +3,7 @@
 本清单只用于人工验收。自动验证限定为 `xcodebuild build` 和
 `xcodebuild test ... -only-testing:OpenYoinkTests`，不运行 UI 自动化。
 
-## 网页媒体恢复修复（未发布）
+## v1.7.1 / build 36：网页媒体恢复
 
 - 在 ego 播放 Bilibili 视频，切换视频与播放/暂停后，展开“正在播放”应显示当前会话。
 - 有效会话暂时缺少标题时显示浏览器名称；标题到达后更新，播放按钮与可用的进度信息保留。
