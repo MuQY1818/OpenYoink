@@ -407,7 +407,9 @@ final class ShelfWindowController: NSObject {
                 IslandModuleRegistration(
                     descriptor: mediaModuleRuntime.descriptor,
                     runtime: mediaModuleRuntime,
-                    makeContentView: { _ in AnyView(IslandModuleScrollView { IslandNowPlayingView() }) }
+                    makeContentView: { _ in
+                        AnyView(IslandModuleScrollView(fillsViewport: true) { IslandNowPlayingView() })
+                    }
                 ),
                 IslandModuleRegistration(
                     descriptor: favoriteFoldersModuleRuntime.descriptor,

@@ -2,12 +2,22 @@ import SwiftUI
 
 /// A bounded module viewport for content that can exceed the Island height.
 struct IslandModuleScrollView<Content: View>: View {
+    var fillsViewport = false
     @ViewBuilder var content: Content
     var body: some View {
-        ScrollView(.vertical) {
-            content.frame(maxWidth: .infinity, alignment: .top).padding(.vertical, 1)
+        GeometryReader { viewport in
+            ScrollView(.vertical) {
+                content
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    // A short module can use the entire viewport while longer
+                    // content still scrolls. Include the inset in that height
+                    // so fitting content does not acquire a tiny scroll range.
+                    .frame(minHeight: fillsViewport ? max(0, viewport.size.height - 2) : nil,
+                           alignment: .top)
+                    .padding(.vertical, 1)
+            }
+            .scrollIndicators(.automatic)
         }
-        .scrollIndicators(.automatic)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
