@@ -158,6 +158,9 @@ struct IslandRootView: View {
 
     private func samplingContextChanged() {
         NotificationCenter.default.post(name: .openYoinkResourcePolicyDidChange, object: nil)
+        if coordinator.surfaceState.isExpanded, coordinator.selectedModule == .media {
+            nowPlayingStore.refresh()
+        }
     }
 
     private var collapsedSurfaceHeight: CGFloat {

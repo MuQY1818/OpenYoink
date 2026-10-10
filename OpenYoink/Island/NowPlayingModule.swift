@@ -19,7 +19,10 @@ struct NowPlayingSnapshot: Equatable, Sendable {
     var elapsedTime: TimeInterval? = nil
     var playbackRate: Double = 0
 
-    static func decodeAdapterPayload(_ data: Data) -> Self? {
+    static func decodeAdapterPayload(
+        _ data: Data,
+        sourceDisplayName: (String) -> String? = { _ in nil }
+    ) -> Self? {
         guard let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
         let payload: [String: Any]
         if let wrapper = object as? [String: Any],
@@ -30,14 +33,24 @@ struct NowPlayingSnapshot: Equatable, Sendable {
         } else {
             return nil
         }
-        guard let title = payload["title"] as? String,
-              !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
+        let sourceName = (payload["bundleIdentifier"] as? String)
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         let rate = finiteNumber(payload["playbackRate"]) ?? 0
-        let playing = (payload["playing"] as? Bool)
+        let reportedPlaying = (payload["playing"] as? Bool)
             ?? (payload["isPlaying"] as? Bool)
-            ?? (rate > 0)
+            ?? finiteNumber(payload["playbackRate"]).map { $0 > 0 }
+        let title: String
+        if let reportedTitle = payload["title"] as? String,
+           !reportedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            title = reportedTitle
+        } else {
+            // A real media session can publish its client and state before its
+            // title. An empty payload must still mean that playback has ended.
+            guard reportedPlaying != nil,
+                  sourceName != nil || (finiteNumber(payload["processIdentifier"]) ?? 0) > 0
+            else { return nil }
+            title = sourceName.flatMap(sourceDisplayName) ?? String(localized: "Now Playing")
+        }
         let artworkData: Data?
         if let encodedArtwork = payload["artworkData"] as? String,
            encodedArtwork.utf8.count <= 12_000_000 {
@@ -49,8 +62,8 @@ struct NowPlayingSnapshot: Equatable, Sendable {
         return .init(title: title,
                      artist: payload["artist"] as? String,
                      album: payload["album"] as? String,
-                     isPlaying: playing,
-                     sourceName: payload["bundleIdentifier"] as? String,
+                     isPlaying: reportedPlaying ?? false,
+                     sourceName: sourceName,
                      artworkData: artworkData,
                      duration: seconds(in: payload,
                                        regularKey: "duration",
@@ -125,7 +138,12 @@ protocol NowPlayingSource: AnyObject {
     func start(onSnapshot: @escaping @MainActor (NowPlayingSnapshot?) -> Void,
                onFailure: @escaping @MainActor () -> Void)
     func stop()
+    func refresh()
     func send(_ command: NowPlayingCommand) async -> Bool
+}
+
+extension NowPlayingSource {
+    func refresh() {}
 }
 
 /// The formal Island media module remains locally processed and opt-in. Its
@@ -199,7 +217,8 @@ final class NowPlayingModuleStore: IslandModule {
             if var next = nextSnapshot,
                let previous = self.snapshot,
                next.title == previous.title,
-               next.artist == previous.artist {
+               next.artist == previous.artist,
+               next.sourceName == previous.sourceName {
                 if next.artworkData == nil { next.artworkData = previous.artworkData }
                 if next.duration == nil { next.duration = previous.duration }
                 nextSnapshot = next
@@ -225,6 +244,12 @@ final class NowPlayingModuleStore: IslandModule {
         if let resourceToken { NotificationCenter.default.removeObserver(resourceToken) }
         resourceToken = nil
         suspendSource()
+    }
+
+    func refresh() {
+        guard isEnabled, ResourceUsageState.shared.samplingAllowed else { return }
+        if source == nil { start() }
+        source?.refresh()
     }
 
     private func suspendSource() {

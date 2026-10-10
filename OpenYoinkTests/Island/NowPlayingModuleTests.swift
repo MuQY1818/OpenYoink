@@ -27,6 +27,28 @@ final class NowPlayingModuleTests: XCTestCase {
         XCTAssertNil(NowPlayingSnapshot.decodeAdapterPayload(blank))
     }
 
+    func testUntitledBrowserSessionUsesPlayerNameAndKeepsControlsMetadata() throws {
+        for title in ["", "\"title\":null,", "\"title\":\"  \","] {
+            let data = Data("{\(title)\"bundleIdentifier\":\"com.citrolabs.ego.lite\",\"processIdentifier\":1397,\"playing\":true,\"duration\":100,\"elapsedTime\":12}".utf8)
+            let snapshot = try XCTUnwrap(NowPlayingSnapshot.decodeAdapterPayload(data) { _ in "ego lite" })
+            XCTAssertEqual(snapshot.title, "ego lite")
+            XCTAssertTrue(snapshot.isPlaying)
+            XCTAssertEqual(snapshot.sourceName, "com.citrolabs.ego.lite")
+            XCTAssertEqual(snapshot.duration, 100)
+            XCTAssertEqual(snapshot.elapsedTime, 12)
+        }
+    }
+
+    func testUntitledSessionNeedsAClientAndPlaybackState() throws {
+        for payload in ["null", "{}", "{\"playing\":true}",
+                        "{\"bundleIdentifier\":\"browser\"}",
+                        "{\"processIdentifier\":0,\"playing\":true}"] {
+            XCTAssertNil(NowPlayingSnapshot.decodeAdapterPayload(Data(payload.utf8)))
+        }
+        let pidOnly = Data("{\"processIdentifier\":1397,\"playing\":false}".utf8)
+        XCTAssertNotNil(NowPlayingSnapshot.decodeAdapterPayload(pidOnly))
+    }
+
     func testMalformedOutputIsIsolated() {
         XCTAssertNil(NowPlayingSnapshot.decodeAdapterPayload(Data([0xFF, 0x00])))
     }
@@ -175,6 +197,81 @@ final class NowPlayingModuleTests: XCTestCase {
         XCTAssertEqual(primary.stopCount, 1)
         XCTAssertEqual(fallback.startCount, 1)
         XCTAssertFalse(failed)
+        source.stop()
+    }
+
+    func testRefreshReachesOnlyTheActiveSource() {
+        let primary = FakeSource()
+        let fallback = FakeSource()
+        let source = FallbackNowPlayingSource(primary: primary, fallback: fallback)
+        source.refresh()
+        XCTAssertEqual(primary.refreshCount, 0)
+        source.start(onSnapshot: { _ in }, onFailure: {})
+        source.refresh()
+        XCTAssertEqual(primary.refreshCount, 1)
+        primary.fail?()
+        source.refresh()
+        XCTAssertEqual(primary.refreshCount, 1)
+        XCTAssertEqual(fallback.refreshCount, 1)
+        source.stop()
+        source.refresh()
+        XCTAssertEqual(fallback.refreshCount, 1)
+    }
+
+    func testOldPrimaryCallbacksCannotSwitchOrOverwriteRestartedSource() {
+        let primary = FakeSource()
+        let fallback = FakeSource()
+        let source = FallbackNowPlayingSource(primary: primary, fallback: fallback)
+        var title: String?
+        source.start(onSnapshot: { title = $0?.title }, onFailure: {})
+        let oldSnapshot = primary.snapshot
+        let oldFailure = primary.fail
+        source.stop()
+        source.start(onSnapshot: { title = $0?.title }, onFailure: {})
+        primary.snapshot?(.init(title: "new", artist: nil, album: nil, isPlaying: true, sourceName: nil))
+        oldSnapshot?(.init(title: "stale", artist: nil, album: nil, isPlaying: true, sourceName: nil))
+        oldFailure?()
+        XCTAssertEqual(title, "new")
+        XCTAssertEqual(fallback.startCount, 0)
+        source.stop()
+    }
+
+    func testPrimarySnapshotAfterFallbackCannotReplaceCurrentPlayer() {
+        let primary = FakeSource()
+        let fallback = FakeSource()
+        let source = FallbackNowPlayingSource(primary: primary, fallback: fallback)
+        var title: String?
+        source.start(onSnapshot: { title = $0?.title }, onFailure: {})
+        primary.fail?()
+        fallback.snapshot?(.init(title: "fallback", artist: nil, album: nil, isPlaying: true, sourceName: nil))
+        primary.snapshot?(.init(title: "late primary", artist: nil, album: nil, isPlaying: true, sourceName: nil))
+        XCTAssertEqual(title, "fallback")
+        source.stop()
+    }
+
+    func testModuleRefreshDoesNotEnableDisabledModule() {
+        let source = FakeSource()
+        let store = NowPlayingModuleStore(sourceFactory: { source })
+        store.refresh()
+        XCTAssertEqual(source.startCount, 0)
+        store.start()
+        store.refresh()
+        XCTAssertEqual(source.refreshCount, 1)
+        store.stop()
+        store.refresh()
+        XCTAssertEqual(source.refreshCount, 1)
+    }
+
+    func testMatchingTitlesFromDifferentPlayersDoNotReuseArtworkOrDuration() {
+        let source = FakeSource()
+        let store = NowPlayingModuleStore(sourceFactory: { source })
+        store.start()
+        source.snapshot?(.init(title: "Track", artist: nil, album: nil, isPlaying: true,
+                               sourceName: "music", artworkData: Data([1]), duration: 120))
+        source.snapshot?(.init(title: "Track", artist: nil, album: nil, isPlaying: true, sourceName: "browser"))
+        XCTAssertNil(store.snapshot?.artworkData)
+        XCTAssertNil(store.snapshot?.duration)
+        store.stop()
     }
 
     func testModuleStopReleasesSourceAndClearsActivity() {
@@ -233,6 +330,132 @@ final class NowPlayingModuleTests: XCTestCase {
         store.stop()
     }
 
+    func testAdapterRepairReadRecoversMissingStreamEventAndCoalescesRequests() async throws {
+        let fixture = try AdapterFixture(getOutput: "{\"title\":\"Recovered browser video\",\"playing\":true,\"bundleIdentifier\":\"browser\"}")
+        let source = MediaRemoteAdapterSource(assets: fixture.assets)
+        defer { source.stop(); fixture.remove() }
+        let recovered = expectation(description: "repair read publishes browser session")
+        source.start(onSnapshot: { snapshot in
+            if snapshot?.title == "Recovered browser video" { recovered.fulfill() }
+        }, onFailure: { XCTFail("fixture source should stay available") })
+        try await fixture.waitForFile("get-started")
+        for _ in 0..<5 { source.refresh() }
+        XCTAssertEqual(try String(contentsOf: fixture.url("get-started"), encoding: .utf8), "get\n")
+        try fixture.releaseGet()
+        await fulfillment(of: [recovered], timeout: 3)
+    }
+
+    func testAdapterRepairReadCannotOverwriteNewerStreamEvent() async throws {
+        let fixture = try AdapterFixture(getOutput: "{\"title\":\"Stale video\",\"playing\":true}")
+        let source = MediaRemoteAdapterSource(assets: fixture.assets)
+        defer { source.stop(); fixture.remove() }
+        let live = expectation(description: "newer stream event")
+        let stale = expectation(description: "stale repair read must be discarded")
+        stale.isInverted = true
+        source.start(onSnapshot: { snapshot in
+            if snapshot?.title == "Live video" { live.fulfill() }
+            if snapshot?.title == "Stale video" { stale.fulfill() }
+        }, onFailure: { XCTFail("fixture source should stay available") })
+        try await fixture.waitForFile("get-started")
+        try fixture.emit("{\"type\":\"data\",\"payload\":{\"title\":\"Live video\",\"playing\":true}}")
+        await fulfillment(of: [live], timeout: 3)
+        try fixture.releaseGet()
+        try await fixture.waitForFile("get-finished")
+        await fulfillment(of: [stale], timeout: 0.2)
+    }
+
+    func testAdapterEmptyRepairReadClearsEndedSession() async throws {
+        let fixture = try AdapterFixture(getOutput: "null")
+        let source = MediaRemoteAdapterSource(assets: fixture.assets)
+        defer { source.stop(); fixture.remove() }
+        let live = expectation(description: "stream publishes playing video")
+        let cleared = expectation(description: "repair read clears ended session")
+        var receivedVideo = false
+        source.start(onSnapshot: { snapshot in
+            if snapshot != nil { receivedVideo = true; live.fulfill() }
+            else if receivedVideo { cleared.fulfill() }
+        }, onFailure: { XCTFail("fixture source should stay available") })
+        try await fixture.waitForFile("get-started")
+        try fixture.emit("{\"type\":\"data\",\"payload\":{\"title\":\"Video\",\"playing\":true}}")
+        await fulfillment(of: [live], timeout: 3)
+        // Complete the older read first; the next explicit read observes the
+        // ended session without requiring a stream notification.
+        try fixture.releaseGet()
+        try await fixture.waitForFile("get-finished")
+        // The callback queue must finish before requesting the next read.
+        for _ in 0..<20 {
+            source.refresh()
+            try await Task.sleep(for: .milliseconds(10))
+            if try String(contentsOf: fixture.url("get-started"), encoding: .utf8).split(separator: "\n").count > 1 { break }
+        }
+        await fulfillment(of: [cleared], timeout: 3)
+    }
+
+    private struct AdapterFixture {
+        let root: URL
+        let assets: MediaRemoteAdapterAssets
+
+        init(getOutput: String) throws {
+            root = FileManager.default.temporaryDirectory.appendingPathComponent("OpenYoinkMediaTest-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let script = root.appendingPathComponent("adapter.pl")
+            // A deterministic local subprocess stands in for the OS adapter.
+            // Gates control ordering; no real player or UI is accessed.
+            try Data(#"""
+            use strict;
+            use warnings;
+            use Time::HiRes qw(usleep);
+            my $root = $ARGV[0];
+            my $command = $ARGV[2];
+            $| = 1;
+            exit 0 if $command eq 'test';
+            die 'missing untitled-session option' unless grep { $_ eq '--allow-missing-title' } @ARGV;
+            if ($command eq 'get') {
+                open my $marker, '>>', "$root/get-started" or die $!;
+                print $marker "get\n";
+                close $marker;
+                usleep(1000) until -e "$root/get-release";
+                open my $output, '<', "$root/get-output" or die $!;
+                print do { local $/; <$output> };
+                close $output;
+                open my $done, '>', "$root/get-finished" or die $!;
+                close $done;
+                exit 0;
+            }
+            if ($command eq 'stream') {
+                open my $input, '<', "$root/stream-input" or die $!;
+                while (1) {
+                    while (my $line = <$input>) { print $line; }
+                    seek($input, 0, 1);
+                    usleep(1000);
+                }
+            }
+            exit 1;
+            """#.utf8).write(to: script)
+            try Data((getOutput + "\n").utf8).write(to: root.appendingPathComponent("get-output"))
+            try Data().write(to: root.appendingPathComponent("stream-input"))
+            assets = .init(scriptURL: script, frameworkURL: root, testClientURL: root)
+        }
+
+        func url(_ name: String) -> URL { root.appendingPathComponent(name) }
+        func releaseGet() throws { try Data().write(to: url("get-release")) }
+        func emit(_ line: String) throws {
+            let handle = try FileHandle(forWritingTo: url("stream-input"))
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data((line + "\n").utf8))
+        }
+        func waitForFile(_ name: String) async throws {
+            for _ in 0..<300 {
+                if FileManager.default.fileExists(atPath: url(name).path) { return }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTFail("adapter fixture did not create " + name)
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        func remove() { try? FileManager.default.removeItem(at: root) }
+    }
+
     private final class FakeSource: NowPlayingSource {
         var supportsTransportControls = true
         var supportsSeeking = true
@@ -240,6 +463,7 @@ final class NowPlayingModuleTests: XCTestCase {
         var commands: [NowPlayingCommand] = []
         var startCount = 0
         var stopCount = 0
+        var refreshCount = 0
         var snapshot: ((NowPlayingSnapshot?) -> Void)?
         var fail: (() -> Void)?
 
@@ -251,6 +475,7 @@ final class NowPlayingModuleTests: XCTestCase {
         }
 
         func stop() { stopCount += 1 }
+        func refresh() { refreshCount += 1 }
         func send(_ command: NowPlayingCommand) async -> Bool {
             commands.append(command)
             return sendResult

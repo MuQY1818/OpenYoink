@@ -52,7 +52,10 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
     private let assets: MediaRemoteAdapterAssets
     private var probeProcess: Process?
     private var streamProcess: Process?
+    private var refreshProcess: Process?
+    private var refreshTimeoutTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
+    private var snapshotRevision: UInt64 = 0
     private var stdoutBuffer = JSONLineBuffer()
     private var failureCount = 0
     private var invalidPayloadCount = 0
@@ -84,12 +87,14 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
         isReady = false
         retryTask?.cancel()
         retryTask = nil
+        cancelRefresh()
         if let process = probeProcess {
             process.terminationHandler = nil
             if process.isRunning { process.terminate() }
         }
         probeProcess = nil
         if let process = streamProcess {
+            process.terminationHandler = nil
             (process.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
             if process.isRunning { process.terminate() }
         }
@@ -98,6 +103,70 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
         invalidPayloadCount = 0
         onSnapshot = nil
         onFailure = nil
+    }
+
+    func refresh() {
+        guard !stopped, isReady, refreshProcess == nil else { return }
+        let process = Process()
+        let stdout = Pipe()
+        let revision = snapshotRevision
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+        // The stream supplies artwork; the repair read stays small and cheap.
+        process.arguments = commonArguments + ["get", "--no-artwork", "--allow-missing-title"]
+        process.standardOutput = stdout
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            refreshProcess = process
+        } catch {
+            return
+        }
+        refreshTimeoutTask = Task { @MainActor [weak self, weak process] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, let self, let process,
+                  self.refreshProcess === process else { return }
+            self.cancelRefresh()
+        }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let data = stdout.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let status = process.terminationStatus
+            Task { @MainActor in
+                guard let self, !self.stopped, self.refreshProcess === process else { return }
+                self.refreshProcess = nil
+                self.refreshTimeoutTask?.cancel()
+                self.refreshTimeoutTask = nil
+                // A newer stream event always wins over an in-flight repair read.
+                guard status == 0, self.snapshotRevision == revision else { return }
+                if let snapshot = self.decodeSnapshot(data) {
+                    self.snapshotRevision &+= 1
+                    self.onSnapshot?(snapshot)
+                } else if let object = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed),
+                          object is NSNull || (object as? [String: Any])?.isEmpty == true {
+                    self.snapshotRevision &+= 1
+                    self.onSnapshot?(nil)
+                }
+            }
+        }
+    }
+
+    private func cancelRefresh() {
+        refreshTimeoutTask?.cancel()
+        refreshTimeoutTask = nil
+        if let process = refreshProcess, process.isRunning { process.terminate() }
+        refreshProcess = nil
+    }
+
+    private func decodeSnapshot(_ data: Data) -> NowPlayingSnapshot? {
+        NowPlayingSnapshot.decodeAdapterPayload(data) { bundleID in
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+                return app.localizedName
+            }
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID),
+                  let bundle = Bundle(url: url) else { return nil }
+            return (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+                ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+        }
     }
 
     func send(_ command: NowPlayingCommand) async -> Bool {
@@ -152,8 +221,8 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
     }
 
     private func probeDidFinish(_ process: Process, status: Int32) {
-        guard !stopped else { return }
-        if probeProcess === process { probeProcess = nil }
+        guard !stopped, probeProcess === process else { return }
+        probeProcess = nil
         if status == 0 {
             launchStream()
         } else {
@@ -164,25 +233,30 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
     private func launchStream() {
         let process = Process()
         let stdout = Pipe()
-        let stderr = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
         process.arguments = commonArguments + [
-            "stream", "--no-diff", "--debounce=250",
+            "stream", "--no-diff", "--debounce=250", "--allow-missing-title",
         ]
         process.standardOutput = stdout
-        process.standardError = stderr
-        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        process.standardError = FileHandle.nullDevice
+        stdout.fileHandleForReading.readabilityHandler = { [weak self, weak process] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            Task { @MainActor in self?.consume(data) }
+            Task { @MainActor in
+                guard let self, let process, !self.stopped, self.streamProcess === process else { return }
+                self.consume(data)
+            }
         }
-        process.terminationHandler = { [weak self] _ in
-            Task { @MainActor in self?.streamDidTerminate() }
+        process.terminationHandler = { [weak self] process in
+            Task { @MainActor in self?.streamDidTerminate(process) }
         }
         do {
             try process.run()
             streamProcess = process
+            stdoutBuffer = JSONLineBuffer()
+            invalidPayloadCount = 0
             isReady = true
+            refresh()
         } catch {
             stdout.fileHandleForReading.readabilityHandler = nil
             scheduleRetryOrFail()
@@ -202,11 +276,15 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
                 }
                 continue
             }
-            invalidPayloadCount = 0
-            failureCount = 0
             if payload.isEmpty {
+                invalidPayloadCount = 0
+                failureCount = 0
+                snapshotRevision &+= 1
                 onSnapshot?(nil)
-            } else if let snapshot = NowPlayingSnapshot.decodeAdapterPayload(line) {
+            } else if let snapshot = decodeSnapshot(line) {
+                invalidPayloadCount = 0
+                failureCount = 0
+                snapshotRevision &+= 1
                 onSnapshot?(snapshot)
             } else {
                 invalidPayloadCount += 1
@@ -218,9 +296,10 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
         }
     }
 
-    private func streamDidTerminate() {
-        guard !stopped else { return }
+    private func streamDidTerminate(_ process: Process) {
+        guard !stopped, streamProcess === process else { return }
         isReady = false
+        cancelRefresh()
         if let pipe = streamProcess?.standardOutput as? Pipe {
             pipe.fileHandleForReading.readabilityHandler = nil
         }
@@ -414,6 +493,7 @@ final class FallbackNowPlayingSource: NowPlayingSource {
     private let primary: NowPlayingSource
     private let fallback: NowPlayingSource
     private var active: NowPlayingSource?
+    private var generation: UInt64 = 0
     private var stopped = true
     private var snapshotHandler: (@MainActor (NowPlayingSnapshot?) -> Void)?
     private var failureHandler: (@MainActor () -> Void)?
@@ -435,16 +515,25 @@ final class FallbackNowPlayingSource: NowPlayingSource {
                onFailure: @escaping @MainActor () -> Void) {
         guard stopped else { return }
         stopped = false
+        generation &+= 1
+        let currentGeneration = generation
         snapshotHandler = onSnapshot
         failureHandler = onFailure
         active = primary
-        primary.start(onSnapshot: onSnapshot, onFailure: { [weak self] in
-            self?.startFallback()
+        primary.start(onSnapshot: { [weak self] snapshot in
+            guard let self, !self.stopped, self.generation == currentGeneration,
+                  self.active === self.primary else { return }
+            self.snapshotHandler?(snapshot)
+        }, onFailure: { [weak self] in
+            guard let self, !self.stopped, self.generation == currentGeneration,
+                  self.active === self.primary else { return }
+            self.startFallback()
         })
     }
 
     func stop() {
         stopped = true
+        generation &+= 1
         primary.stop()
         fallback.stop()
         active = nil
@@ -457,11 +546,25 @@ final class FallbackNowPlayingSource: NowPlayingSource {
         return await active.send(command)
     }
 
+    func refresh() {
+        guard !stopped else { return }
+        active?.refresh()
+    }
+
     private func startFallback() {
-        guard !stopped, let snapshotHandler, let failureHandler else { return }
+        guard !stopped else { return }
         primary.stop()
         active = fallback
-        fallback.start(onSnapshot: snapshotHandler, onFailure: failureHandler)
+        let currentGeneration = generation
+        fallback.start(onSnapshot: { [weak self] snapshot in
+            guard let self, !self.stopped, self.generation == currentGeneration,
+                  self.active === self.fallback else { return }
+            self.snapshotHandler?(snapshot)
+        }, onFailure: { [weak self] in
+            guard let self, !self.stopped, self.generation == currentGeneration,
+                  self.active === self.fallback else { return }
+            self.failureHandler?()
+        })
     }
 }
 
