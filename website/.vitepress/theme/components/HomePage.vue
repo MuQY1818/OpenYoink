@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { withBase } from 'vitepress'
 import MacDemo from './MacDemo.vue'
+import ProductFilm from './ProductFilm.vue'
 
 const downloadURL = 'https://github.com/MuQY1818/OpenYoink/releases/latest'
 const repository = 'https://github.com/MuQY1818/OpenYoink'
@@ -41,6 +42,7 @@ const guides = [
         <span>OpenYoink</span>
       </a>
       <nav>
+        <a href="#film">看短片</a>
         <a href="#try">在线体验</a>
         <a :href="withBase('/guide/')">使用文档</a>
         <a :href="repository">GitHub</a>
@@ -73,23 +75,7 @@ const guides = [
             <li>Apple Silicon 与 Intel</li>
           </ul>
 
-          <figure class="oy-hero-media">
-            <div class="oy-media-bar" aria-hidden="true">
-              <span class="oy-traffic"><i></i><i class="y"></i><i class="g"></i></span>
-              <b>真实录屏 · 选中，拖入屏幕边缘，再拖出</b>
-              <span class="oy-media-bar-side"></span>
-            </div>
-            <video
-              :src="withBase('/images/usage-demo.mp4')"
-              :poster="withBase('/images/usage-demo-poster.jpg')"
-              autoplay
-              muted
-              loop
-              playsinline
-              aria-label="OpenYoink 真实使用录屏：选中文件拖入屏幕右侧的暂存架，切换到目标窗口后再拖出"
-            ></video>
-          </figure>
-          <p class="oy-hero-caption">真实录屏，未做加速处理。暂存内容在侧边架与 Island 之间同步。</p>
+          <ProductFilm />
         </div>
       </section>
 

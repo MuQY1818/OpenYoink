@@ -27,3 +27,9 @@ features:
   - title: Local by design
     details: No account or analytics. Your shelf remains on your Mac.
 ---
+
+<script setup>
+import ProductFilm from '../.vitepress/theme/components/ProductFilm.vue'
+</script>
+
+<ProductFilm language="en" />
