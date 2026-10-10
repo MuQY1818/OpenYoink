@@ -109,6 +109,7 @@ final class ShelfWindowController: NSObject {
     let nowPlayingModuleStore: NowPlayingModuleStore
     let systemStatusModuleStore: SystemStatusModuleStore
     let favoriteFoldersStore: FavoriteFoldersStore
+    let favoriteFolderDropCoordinator: FavoriteFolderDropCoordinator
     let islandModuleContainer: IslandModuleContainer
     private let transfersModuleRuntime: TransfersModuleRuntime
     private let timerModuleRuntime: CallbackIslandModuleRuntime
@@ -195,6 +196,7 @@ final class ShelfWindowController: NSObject {
                 .environment(nowPlayingModuleStore)
                 .environment(systemStatusModuleStore)
                 .environment(favoriteFoldersStore)
+                .environment(favoriteFolderDropCoordinator)
                 .environment(clipboardHistoryStore)
                 .environment(\.bookmarkService, importCoordinator.bookmarkService)
                 .environment(\.dragOutController, dragOutController)
@@ -224,14 +226,15 @@ final class ShelfWindowController: NSObject {
                     return self.islandActivityCoordinator.surfaceState.isExpanded
                         && [.folders, .clipboard].contains(self.islandActivityCoordinator.selectedModule)
                 },
-                canHandle: { [weak self] pasteboard in
+                canHandle: { [weak self] context in
                     guard let self, self.islandActivityCoordinator.selectedModule == .folders else { return false }
-                    return self.favoriteFoldersStore.canImportFolders(from: pasteboard)
+                    return self.favoriteFolderDropCoordinator.update(context)
                 },
-                perform: { [weak self] pasteboard in
+                perform: { [weak self] context in
                     guard let self, self.islandActivityCoordinator.selectedModule == .folders else { return false }
-                    return self.favoriteFoldersStore.importFolders(from: pasteboard)
-                }
+                    return self.favoriteFolderDropCoordinator.perform(context)
+                },
+                reset: { [weak self] in self?.favoriteFolderDropCoordinator.resetTarget() }
             )
             : nil
         panel.contentView = DragContainerView(
@@ -300,10 +303,15 @@ final class ShelfWindowController: NSObject {
         let islandModuleRegistry = IslandModuleRegistry()
         let islandTimerStore = IslandTimerStore(defaults: settings.defaultsStore)
         let powerSourceMonitor = PowerSourceMonitor(
+            isSelectedAndExpanded: {
+                islandActivityCoordinator.surfaceState.isExpanded && islandActivityCoordinator.selectedModule == .battery
+            },
             fullChargeAlertEnabled: { settings.islandFullChargeAlertEnabled }
         )
         let nowPlayingModuleStore = NowPlayingModuleStore(
-            sourceFactory: { NowPlayingSourceFactory.bundled() }
+            sourceFactory: { NowPlayingSourceFactory.bundled(isSelectedAndExpanded: {
+                islandActivityCoordinator.surfaceState.isExpanded && islandActivityCoordinator.selectedModule == .media
+            }) }
         )
         let systemStatusModuleStore = SystemStatusModuleStore(
             isSelectedAndExpanded: {
@@ -315,6 +323,8 @@ final class ShelfWindowController: NSObject {
             persistence: FavoriteFoldersPersistenceController(),
             bookmarkService: importCoordinator.bookmarkService
         )
+        let favoriteFolderDropCoordinator = FavoriteFolderDropCoordinator(folders: favoriteFoldersStore,
+                                                                          bookmarks: importCoordinator.bookmarkService)
         let shelfRuntime = CallbackIslandModuleRuntime(
             descriptor: islandModuleRegistry.descriptor(for: .shelf)!
         )
@@ -343,7 +353,7 @@ final class ShelfWindowController: NSObject {
         let favoriteFoldersModuleRuntime = CallbackIslandModuleRuntime(
             descriptor: islandModuleRegistry.descriptor(for: .folders)!,
             start: { favoriteFoldersStore.start() },
-            stop: { favoriteFoldersStore.stop() }
+            stop: { favoriteFoldersStore.stop(); favoriteFolderDropCoordinator.cancelCopy() }
         )
         self.islandActivityCoordinator = islandActivityCoordinator
         self.islandModuleRegistry = islandModuleRegistry
@@ -352,6 +362,7 @@ final class ShelfWindowController: NSObject {
         self.nowPlayingModuleStore = nowPlayingModuleStore
         self.systemStatusModuleStore = systemStatusModuleStore
         self.favoriteFoldersStore = favoriteFoldersStore
+        self.favoriteFolderDropCoordinator = favoriteFolderDropCoordinator
         self.transfersModuleRuntime = transfersModuleRuntime
         self.timerModuleRuntime = timerModuleRuntime
         self.batteryModuleRuntime = batteryModuleRuntime
@@ -381,12 +392,12 @@ final class ShelfWindowController: NSObject {
                 IslandModuleRegistration(
                     descriptor: timerModuleRuntime.descriptor,
                     runtime: timerModuleRuntime,
-                    makeContentView: { _ in AnyView(IslandTimerView()) }
+                    makeContentView: { _ in AnyView(IslandModuleScrollView { IslandTimerView() }) }
                 ),
                 IslandModuleRegistration(
                     descriptor: batteryModuleRuntime.descriptor,
                     runtime: batteryModuleRuntime,
-                    makeContentView: { _ in AnyView(IslandBatteryView()) }
+                    makeContentView: { _ in AnyView(IslandModuleScrollView { IslandBatteryView() }) }
                 ),
                 IslandModuleRegistration(
                     descriptor: systemStatusModuleStore.descriptor,
@@ -396,7 +407,7 @@ final class ShelfWindowController: NSObject {
                 IslandModuleRegistration(
                     descriptor: mediaModuleRuntime.descriptor,
                     runtime: mediaModuleRuntime,
-                    makeContentView: { _ in AnyView(IslandNowPlayingView()) }
+                    makeContentView: { _ in AnyView(IslandModuleScrollView { IslandNowPlayingView() }) }
                 ),
                 IslandModuleRegistration(
                     descriptor: favoriteFoldersModuleRuntime.descriptor,
@@ -455,6 +466,9 @@ final class ShelfWindowController: NSObject {
         }
         powerSourceMonitor.onActivity = { [weak self] activity in
             self?.batteryModuleRuntime.replaceActivity(activity)
+        }
+        favoriteFolderDropCoordinator.onActivity = { [weak self] activity in
+            self?.favoriteFoldersModuleRuntime.replaceActivity(activity)
         }
         nowPlayingModuleStore.onActivity = { [weak self] activity in
             self?.mediaModuleRuntime.replaceActivity(activity)
@@ -533,6 +547,7 @@ final class ShelfWindowController: NSObject {
     // MARK: - Public API
 
     func shutdown() {
+        favoriteFolderDropCoordinator.cancelCopy()
         quickActionLayoutTask?.cancel()
         islandHoverTask?.cancel()
         islandLayoutTask?.cancel()
@@ -885,6 +900,7 @@ final class ShelfWindowController: NSObject {
     /// QL 面板为 key 时键盘事件由 QL 自己接管（空格/Esc 关闭、方向键翻页），
     /// 不会到达这里。
     private func handleItemKeyDown(_ event: NSEvent, in sourcePanel: ShelfPanel) -> Bool {
+        if let editor = sourcePanel.firstResponder as? NSTextView, editor.isFieldEditor { return false }
         var modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         modifiers.subtract([.capsLock, .function, .numericPad])
 
@@ -926,6 +942,8 @@ final class ShelfWindowController: NSObject {
 
         if modifiers == .command {
             switch event.charactersIgnoringModifiers?.lowercased() {
+            case "z":
+                return store.undoLastRemoval()
             case "a":
                 selectAllVisibleItems()
                 return true
@@ -1008,7 +1026,7 @@ final class ShelfWindowController: NSObject {
     }
 
     private func visibleKeyboardItems() -> [ShelfItem] {
-        interaction.visibleItems(in: store.items)
+        interaction.visibleItems(in: store.visibleItems)
     }
 
     private func focusedItem() -> ShelfItem? {
@@ -1059,7 +1077,7 @@ final class ShelfWindowController: NSObject {
         if interaction.expandedStackID != nil {
             interaction.childSelection = Set(visible.map(\.id))
         } else {
-            store.selectAll()
+            store.setSelection(Set(visible.map(\.id)))
         }
         if interaction.focusedItemID == nil {
             interaction.focusedItemID = visible[0].id
@@ -1127,10 +1145,10 @@ final class ShelfWindowController: NSObject {
         guard !items.isEmpty else { return false }
         let ids = Set(items.map(\.id))
         if let stackID = interaction.expandedStackID {
-            guard store.removeChildren(ids: ids, fromStack: stackID) else { return false }
+            guard store.removeChildrenForUser(ids: ids, fromStack: stackID) else { return false }
             interaction.childSelection.subtract(ids)
         } else {
-            store.remove(ids: ids)
+            store.removeForUser(ids: ids)
         }
         interaction.normalize(for: store.items)
         quickLookCoordinator.refreshPreview(contextItem: focusedItem())
@@ -1152,6 +1170,7 @@ final class ShelfWindowController: NSObject {
             itemCount: store.items.count,
             hasActivity: importCoordinator.transferStore.hasVisibleActivity,
             hasQuickActions: hasVisibleQuickActions,
+            hasSearchControls: true,
             mouseLocation: NSEvent.mouseLocation,
             screens: Self.screenGeometries(),
             persistedCustomFrame: settings.customShelfFrame,

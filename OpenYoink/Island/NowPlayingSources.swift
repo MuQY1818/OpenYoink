@@ -268,10 +268,16 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
 @MainActor
 final class AppleScriptNowPlayingSource: NowPlayingSource {
     private var pollingTask: Task<Void, Never>?
+    private let isSelectedAndExpanded: @MainActor () -> Bool
+    private var resourceToken: NSObjectProtocol?
+    init(isSelectedAndExpanded: @escaping @MainActor () -> Bool = { false }) {
+        self.isSelectedAndExpanded = isSelectedAndExpanded
+    }
     private var currentBundleID: String?
     private var onSnapshot: (@MainActor (NowPlayingSnapshot?) -> Void)?
     private var onFailure: (@MainActor () -> Void)?
     private var executionFailureCount = 0
+    private var pollingGeneration: UInt64 = 0
 
     var supportsTransportControls: Bool { currentBundleID != nil }
     var supportsSeeking: Bool { currentBundleID != nil }
@@ -281,17 +287,36 @@ final class AppleScriptNowPlayingSource: NowPlayingSource {
         guard pollingTask == nil else { return }
         self.onSnapshot = onSnapshot
         self.onFailure = onFailure
+        resourceToken = NotificationCenter.default.addObserver(forName: .openYoinkResourcePolicyDidChange,
+                                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.restartPolling() }
+        }
+        restartPolling()
+    }
+
+    private func restartPolling() {
+        pollingGeneration &+= 1
+        let generation = pollingGeneration
+        pollingTask?.cancel()
+        pollingTask = nil
+        guard onSnapshot != nil, ResourceUsageState.shared.samplingAllowed else { return }
         pollingTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                await self?.refresh()
-                try? await Task.sleep(for: .seconds(2))
+                await self?.refresh(generation: generation)
+                guard let self else { return }
+                try? await Task.sleep(for: ResourceUsagePolicy.mediaInterval(
+                    isExpanded: self.isSelectedAndExpanded(), isConstrained: ResourceUsageState.shared.isConstrained,
+                    hasPlayer: self.currentBundleID != nil))
             }
         }
     }
 
     func stop() {
+        pollingGeneration &+= 1
         pollingTask?.cancel()
         pollingTask = nil
+        if let resourceToken { NotificationCenter.default.removeObserver(resourceToken) }
+        resourceToken = nil
         currentBundleID = nil
         executionFailureCount = 0
         onSnapshot = nil
@@ -319,7 +344,7 @@ final class AppleScriptNowPlayingSource: NowPlayingSource {
         }
     }
 
-    private func refresh() async {
+    private func refresh(generation: UInt64) async {
         let candidates = [
             ("com.apple.Music", "Music"),
             ("com.spotify.client", "Spotify"),
@@ -341,7 +366,9 @@ final class AppleScriptNowPlayingSource: NowPlayingSource {
                     (player position as text)
             end tell
             """
-            guard let output = await Self.execute(script) else { continue }
+            let response = await Self.execute(script)
+            guard generation == pollingGeneration, !Task.isCancelled else { return }
+            guard let output = response else { continue }
             executedSuccessfully = true
             guard !output.isEmpty else { continue }
             let parts = output.components(separatedBy: .newlines)
@@ -440,8 +467,8 @@ final class FallbackNowPlayingSource: NowPlayingSource {
 
 @MainActor
 enum NowPlayingSourceFactory {
-    static func bundled() -> NowPlayingSource? {
-        let fallback = AppleScriptNowPlayingSource()
+    static func bundled(isSelectedAndExpanded: @escaping @MainActor () -> Bool = { false }) -> NowPlayingSource? {
+        let fallback = AppleScriptNowPlayingSource(isSelectedAndExpanded: isSelectedAndExpanded)
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/perl"),
               let assets = MediaRemoteAdapterAssets.bundled() else { return fallback }
         return FallbackNowPlayingSource(primary: MediaRemoteAdapterSource(assets: assets),

@@ -145,6 +145,8 @@ final class DragOutController {
 @MainActor
 final class DragSessionController: NSObject, NSDraggingSource {
     private let contents: DragOutContents
+    var itemsForFolderCopy: [ShelfItem] { contents.items }
+    var acceptedByFolderCopy = false
     private let sessionID: UUID
     private let store: ShelfStore
     private let settings: SettingsStore
@@ -197,6 +199,14 @@ final class DragSessionController: NSObject, NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession,
                          endedAt screenPoint: NSPoint,
                          operation: NSDragOperation) {
+        completeDrag(operation: operation)
+    }
+
+    func completeDrag(operation: NSDragOperation) {
+        if acceptedByFolderCopy {
+            delivery?.noteSessionEnded(id: sessionID, accepted: false)
+            return
+        }
         guard operation != [] else {
             delivery?.noteSessionEnded(id: sessionID, accepted: false)
             return
@@ -514,6 +524,7 @@ final class DeliveryCoordinator {
     }
 
     private func finalizeManagedItem(_ item: ShelfItem, destination: URL) {
+        store.invalidateUndoForDeliveredItem(item.id)
         if let path = item.path {
             do {
                 try tempFileService.removeMaterializedFile(at: URL(fileURLWithPath: path))

@@ -151,6 +151,9 @@ final class NowPlayingModuleStore: IslandModule {
 
     private let sourceFactory: @MainActor () -> NowPlayingSource?
     private var source: NowPlayingSource?
+    @ObservationIgnored nonisolated(unsafe) private var resourceToken: NSObjectProtocol?
+    private var isEnabled = false
+    private var sourceGeneration: UInt64 = 0
     private var pendingSeek: PendingSeek?
     private var seekFailureCounts: [String: Int] = [:]
     private var seekUnsupportedSources: Set<String> = []
@@ -163,7 +166,24 @@ final class NowPlayingModuleStore: IslandModule {
         self.sourceFactory = sourceFactory
     }
 
+    deinit {
+        if let resourceToken { NotificationCenter.default.removeObserver(resourceToken) }
+    }
+
     func start() {
+        isEnabled = true
+        if resourceToken == nil {
+            _ = ResourceUsageState.shared
+            resourceToken = NotificationCenter.default.addObserver(forName: .openYoinkResourcePolicyDidChange,
+                                                                   object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.isEnabled else { return }
+                    if ResourceUsageState.shared.samplingAllowed { self.start() }
+                    else { self.suspendSource() }
+                }
+            }
+        }
+        guard ResourceUsageState.shared.samplingAllowed else { return }
         guard source == nil else { return }
         availability = .probing
         guard let source = sourceFactory() else {
@@ -171,8 +191,10 @@ final class NowPlayingModuleStore: IslandModule {
             return
         }
         self.source = source
+        sourceGeneration &+= 1
+        let generation = sourceGeneration
         source.start(onSnapshot: { [weak self] incomingSnapshot in
-            guard let self else { return }
+            guard let self, self.isEnabled, self.sourceGeneration == generation else { return }
             var nextSnapshot = incomingSnapshot
             if var next = nextSnapshot,
                let previous = self.snapshot,
@@ -188,7 +210,8 @@ final class NowPlayingModuleStore: IslandModule {
             self.availability = .available
             self.publishActivity()
         }, onFailure: { [weak self] in
-            guard let self else { return }
+            guard let self, self.isEnabled, self.sourceGeneration == generation else { return }
+            self.sourceGeneration &+= 1
             self.source?.stop()
             self.source = nil
             self.snapshot = nil
@@ -198,6 +221,14 @@ final class NowPlayingModuleStore: IslandModule {
     }
 
     func stop() {
+        isEnabled = false
+        if let resourceToken { NotificationCenter.default.removeObserver(resourceToken) }
+        resourceToken = nil
+        suspendSource()
+    }
+
+    private func suspendSource() {
+        sourceGeneration &+= 1
         source?.stop()
         source = nil
         snapshot = nil

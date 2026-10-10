@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct FavoriteFoldersModuleView: View {
     @Environment(FavoriteFoldersStore.self) private var store
+    @Environment(FavoriteFolderDropCoordinator.self) private var copyCoordinator
     @Environment(DropTargetState.self) private var dropTargetState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -60,6 +61,26 @@ struct FavoriteFoldersModuleView: View {
                 notice(message: noticeMessage, isError: store.noticeIsError)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            HStack(spacing: 6) {
+                Image(systemName: "folder.badge.plus")
+                Text("Drop a folder here to add a favorite")
+                Spacer(minLength: 0)
+            }
+            .font(.caption).foregroundStyle(IslandVisualStyle.secondaryText)
+            .padding(8)
+            .background(copyCoordinator.target == .addFavorite ? IslandVisualStyle.selectedFill : IslandVisualStyle.cardFill,
+                        in: RoundedRectangle(cornerRadius: 7))
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { copyCoordinator.addFrame = $0 }
+
+            if copyCoordinator.isCopying {
+                HStack(spacing: 8) {
+                    ProgressView(value: Double(copyCoordinator.completed), total: Double(max(1, copyCoordinator.total)))
+                    Text("\(copyCoordinator.completed) / \(copyCoordinator.total)").font(.caption.monospacedDigit())
+                    Button("Cancel") { copyCoordinator.cancelCopy() }.buttonStyle(.plain)
+                }
+            } else if let message = copyCoordinator.message {
+                Text(message).font(.caption).foregroundStyle(IslandVisualStyle.secondaryText).lineLimit(2)
+            }
 
             if store.items.isEmpty {
                 IslandEmptyState(
@@ -80,15 +101,26 @@ struct FavoriteFoldersModuleView: View {
                                     renameTargetID = item.id
                                 }
                             )
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                                copyCoordinator.tileFrames[item.id] = $0
+                            }
+                            .onDisappear { copyCoordinator.tileFrames.removeValue(forKey: item.id) }
                         }
                     }
                     .padding(.vertical, 1)
                 }
                 .scrollIndicators(.automatic)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { copyCoordinator.viewport = $0 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(2)
+        .onDisappear {
+            copyCoordinator.tileFrames.removeAll()
+            copyCoordinator.viewport = .zero
+            copyCoordinator.addFrame = .zero
+            copyCoordinator.resetTarget()
+        }
         .overlay {
             if dropTargetState.isTargeted {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -183,6 +215,7 @@ struct FavoriteFoldersModuleView: View {
 
 private struct FavoriteFolderTile: View {
     @Environment(FavoriteFoldersStore.self) private var store
+    @Environment(FavoriteFolderDropCoordinator.self) private var copyCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var isHovering = false
@@ -263,7 +296,7 @@ private struct FavoriteFolderTile: View {
 
     private var tileBackground: some View {
         RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(isSelected
+            .fill(isSelected || copyCoordinator.target == .folder(item.id)
                   ? IslandVisualStyle.selectedFill
                   : Color.white.opacity(isHovering ? 0.075 : 0.045))
     }
@@ -272,7 +305,7 @@ private struct FavoriteFolderTile: View {
         RoundedRectangle(cornerRadius: 7, style: .continuous)
             .strokeBorder(
                 isUnavailable ? Color.orange.opacity(0.42)
-                    : isSelected ? Color.accentColor.opacity(0.62)
+                    : isSelected || copyCoordinator.target == .folder(item.id) ? Color.accentColor.opacity(0.62)
                     : IslandVisualStyle.hairline,
                 lineWidth: 1
             )

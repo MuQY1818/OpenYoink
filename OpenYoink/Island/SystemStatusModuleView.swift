@@ -3,6 +3,7 @@ import SwiftUI
 
 struct IslandSystemStatusView: View {
     @Environment(SystemStatusModuleStore.self) private var store
+    @State private var detailAlert: IslandActivity?
 
     private let columns = [
         GridItem(.flexible(), spacing: 8),
@@ -65,6 +66,15 @@ struct IslandSystemStatusView: View {
             applicationList
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .alert(detailAlert?.title ?? "", isPresented: Binding(
+            get: { detailAlert != nil }, set: { if !$0 { detailAlert = nil } }
+        )) {
+            Button("OK", role: .cancel) { detailAlert = nil }
+            Button("Ignore Once") {
+                if let detailAlert { store.ignoreAlert(id: detailAlert.id) }
+                detailAlert = nil
+            }
+        } message: { Text(detailAlert?.detail ?? "") }
     }
 
     private func metricCard(
@@ -123,7 +133,7 @@ struct IslandSystemStatusView: View {
                                     .lineLimit(1)
                             }
                         }
-                        Button("View Details") {}
+                        Button("View Details") { detailAlert = alert }
                             .buttonStyle(.plain)
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(Color.accentColor)

@@ -4,6 +4,29 @@ import XCTest
 
 @MainActor
 final class PowerSourceMonitorTests: XCTestCase {
+    func testStartingWhileLockedResumesSamplingOnUnlockAndStaysStoppedAfterStop() async {
+        var allowed = false
+        var reads = 0
+        let monitor = PowerSourceMonitor(samplingAllowed: { allowed }, snapshotProvider: {
+            reads += 1
+            return .init(hasBattery: true, percentage: 80, isCharging: false, isConnectedToPower: false)
+        })
+        monitor.start()
+        monitor.start()
+        XCTAssertEqual(reads, 0)
+        allowed = true
+        NotificationCenter.default.post(name: .openYoinkResourcePolicyDidChange, object: nil)
+        for _ in 0..<20 where reads == 0 { await Task.yield() }
+        XCTAssertEqual(reads, 1)
+        XCTAssertTrue(monitor.snapshot.hasBattery)
+        monitor.stop()
+        monitor.refresh()
+        NotificationCenter.default.post(name: .openYoinkResourcePolicyDidChange, object: nil)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(reads, 1)
+        XCTAssertFalse(monitor.isRunning)
+    }
+
     func testSnapshotParsesCapacityAndPowerState() {
         let snapshot = PowerSourceMonitor.snapshot(from: [
             kIOPSCurrentCapacityKey: 45,

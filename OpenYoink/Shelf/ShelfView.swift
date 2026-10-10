@@ -72,6 +72,7 @@ struct ShelfView: View {
     @State private var marqueeCurrent: CGPoint?
     /// ⌘ 起拖（追加模式）时的基底选中集合；非追加为空白。
     @State private var marqueeBaseSelection: Set<UUID> = []
+    @FocusState private var searchFocused: Bool
 
     /// 卡片弹入/让位动画（§3：spring, response 0.35, damping 0.7）。
     static let cardAnimation = Animation.spring(response: 0.35, dampingFraction: 0.7)
@@ -89,8 +90,10 @@ struct ShelfView: View {
             .overlay(alignment: .topLeading) { marqueeOverlay }
             .onChange(of: store.items) {
                 dropTargetState.reset()
-                interaction.normalize(for: store.items)
+                interaction.normalize(for: store.visibleItems)
             }
+            .onChange(of: store.searchQuery) { normalizeSearch() }
+            .onChange(of: store.contentFilter) { normalizeSearch() }
             .onChange(of: transferStore.currentTask, initial: true) { _, task in
                 announcementCenter?.announce(task: task)
             }
@@ -150,6 +153,7 @@ struct ShelfView: View {
             if presentationStyle == .classic {
                 header
             }
+            searchControls
             if transferStore.hasVisibleActivity {
                 ShelfActivityStrip(onPerformRecovery: performRecovery)
                     .transition(reduceMotion
@@ -158,6 +162,9 @@ struct ShelfView: View {
             }
             if store.items.isEmpty {
                 ShelfEmptyState()
+            } else if store.visibleItems.isEmpty {
+                Text("No Results").foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 itemGrid
             }
@@ -220,6 +227,44 @@ struct ShelfView: View {
         settings.shelfPosition == .custom
     }
 
+    private var searchControls: some View {
+        @Bindable var store = store
+        return VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Button { searchFocused = true } label: {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .help(Text("Search Shelf")).accessibilityLabel("Search Shelf")
+                TextField("Search Shelf", text: $store.searchQuery)
+                    .textFieldStyle(.plain).focused($searchFocused)
+                    .onKeyPress(.escape) { store.searchQuery = ""; searchFocused = false; return .handled }
+                if !store.searchQuery.isEmpty {
+                    Button { store.searchQuery = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .help(Text("Clear Search")).accessibilityLabel("Clear Search")
+                }
+            }
+            .padding(6).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            HStack {
+                Picker("Content Type", selection: $store.contentFilter) {
+                    ForEach(ShelfContentFilter.allCases) { Text($0.title).tag($0) }
+                }.labelsHidden().controlSize(.small)
+                Spacer(minLength: 2)
+                Button { _ = store.undoLastRemoval() } label: { Image(systemName: "arrow.uturn.backward") }
+                    .disabled(!store.canUndoRemoval)
+                    .help(Text("Undo Remove (⌘Z)")).accessibilityLabel("Undo Remove")
+            }
+        }.font(.caption).buttonStyle(.plain)
+    }
+
+    private func normalizeSearch() {
+        let visible = store.visibleItems
+        store.setSelection(store.selection.intersection(Set(visible.map(\.id))))
+        interaction.normalize(for: visible)
+        gridGeometry.cardFrames = gridGeometry.cardFrames.filter { frame in visible.contains { $0.id == frame.key } }
+        dropTargetState.reset()
+    }
+
     private var countCaption: String {
         store.selection.isEmpty
             ? "\(store.items.count)"
@@ -231,7 +276,7 @@ struct ShelfView: View {
     private var itemGrid: some View {
         ScrollView(.vertical) {
             LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
-                ForEach(store.items) { item in
+                ForEach(store.visibleItems) { item in
                     gridCell(for: item)
                         .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
@@ -282,7 +327,7 @@ struct ShelfView: View {
                 isExpanded: interaction.expandedStackID == item.id,
                 onSelect: { additive in select(item.id, additive: additive) },
                 onToggleExpanded: { toggleStackExpansion(item.id) },
-                onRemove: { store.remove(ids: [item.id]) },
+                onRemove: { store.removeForUser(ids: [item.id]) },
                 onRecover: { toggleStackExpansion(item.id) },
                 onCopy: {
                     copyToClipboard(ShelfActionSelectionResolver.contextualItems(
@@ -300,7 +345,7 @@ struct ShelfView: View {
                 isSelected: store.selection.contains(item.id),
                 isKeyboardFocused: interaction.focusedItemID == item.id,
                 onSelect: { additive in select(item.id, additive: additive) },
-                onRemove: { store.remove(ids: [item.id]) },
+                onRemove: { store.removeForUser(ids: [item.id]) },
                 onRecover: { itemRecoveryController?.recover(item) },
                 onCopy: item.availability == .available
                     ? {
@@ -457,7 +502,7 @@ struct ShelfView: View {
                         // UX4: 子项 ✕ 从 stack 移除；stack 解散/消失后本浮层
                         // 因 item(withID:) 返回 nil 自动收起。
                         onRemoveChild: { childID in
-                            store.removeChild(childID, fromStack: stackID)
+                            store.removeChildrenForUser(ids: [childID], fromStack: stackID)
                         },
                         onRecoverChild: { child in
                             itemRecoveryController?.recover(child)

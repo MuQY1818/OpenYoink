@@ -7,6 +7,16 @@ import XCTest
 /// （Carbon RegisterEventHotKey 注册与 NSEvent 全局事件分发依赖运行中的
 /// WindowServer / 应用事件循环，无法无头单测；见 HotKeyMonitor 文档注释。）
 final class HotKeyMonitorTests: XCTestCase {
+    func testCarbonEventsReachOnlyTheirRegisteredShortcut() {
+        let shelf = EventHotKeyID(signature: 0x4F59_484B, id: 1)
+        let clipboard = EventHotKeyID(signature: 0x4F59_484B, id: 2)
+        XCTAssertTrue(HotKeyMonitor.matches(shelf, registeredIdentifier: 1))
+        XCTAssertFalse(HotKeyMonitor.matches(shelf, registeredIdentifier: 2))
+        XCTAssertTrue(HotKeyMonitor.matches(clipboard, registeredIdentifier: 2))
+        XCTAssertFalse(HotKeyMonitor.matches(clipboard, registeredIdentifier: 1))
+        XCTAssertFalse(HotKeyMonitor.matches(EventHotKeyID(signature: 0x1234, id: 2), registeredIdentifier: 2))
+    }
+
     private func shortcut(keyCode: UInt32 = 49,
                           command: Bool = false,
                           shift: Bool = false,

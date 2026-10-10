@@ -1,6 +1,652 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "History storage is full. Remove a favorite or an image to record more.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "History storage is full. Remove a favorite or an image to record more." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "历史记录空间已满。移除收藏或图片后可继续记录。" } }
+      }
+    },
+    "Content Type": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content Type"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容类型"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
+    "Favorites": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorites"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏"
+          }
+        }
+      }
+    },
+    "Links": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Links"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接"
+          }
+        }
+      }
+    },
+    "Images": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Images"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片"
+          }
+        }
+      }
+    },
+    "Files & Folders": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files & Folders"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件与文件夹"
+          }
+        }
+      }
+    },
+    "Search Shelf": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search Shelf"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索暂存架"
+          }
+        }
+      }
+    },
+    "Undo Remove": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo Remove"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销移除"
+          }
+        }
+      }
+    },
+    "Undo Remove (⌘Z)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo Remove (⌘Z)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销移除（⌘Z）"
+          }
+        }
+      }
+    },
+    "You can keep up to 30 favorites.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can keep up to 30 favorites."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多可以收藏 30 项。"
+          }
+        }
+      }
+    },
+    "History Limit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History Limit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史条数"
+          }
+        }
+      }
+    },
+    "History Shortcut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History Shortcut"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史快捷键"
+          }
+        }
+      }
+    },
+    "Add Favorite": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Favorite"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加收藏"
+          }
+        }
+      }
+    },
+    "Choose a history shortcut different from the shelf shortcut.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a history shortcut different from the shelf shortcut."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剪贴板历史快捷键不能与暂存架快捷键相同。"
+          }
+        }
+      }
+    },
+    "Favorites do not expire. Up to 30 favorites and 20 MiB total are kept on this Mac. Privacy markers and ignored apps are skipped; unmarked sensitive text may still be recorded.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorites do not expire. Up to 30 favorites and 20 MiB total are kept on this Mac. Privacy markers and ignored apps are skipped; unmarked sensitive text may still be recorded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏项不会过期，最多 30 项；全部历史合计最多 20 MiB，保存在本机。会跳过隐私标记和忽略的应用，未标记的敏感内容仍可能被记录。"
+          }
+        }
+      }
+    },
+    "Workflow Presets": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workflow Presets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用预设"
+          }
+        }
+      }
+    },
+    "Apply a Preset…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply a Preset…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用预设…"
+          }
+        }
+      }
+    },
+    "File Shelf": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File Shelf"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件暂存"
+          }
+        }
+      }
+    },
+    "Files & Clipboard": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files & Clipboard"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件与剪贴板"
+          }
+        }
+      }
+    },
+    "Full Toolbox": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full Toolbox"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整工具箱"
+          }
+        }
+      }
+    },
+    "Use the side shelf for files. Island and its background modules are turned off.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the side shelf for files. Island and its background modules are turned off."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用侧边暂存架收放文件，关闭灵动岛及其后台模块。"
+          }
+        }
+      }
+    },
+    "Enable the side shelf and Island with Shelf, Transfers and Clipboard History. Recording stays under your control.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable the side shelf and Island with Shelf, Transfers and Clipboard History. Recording stays under your control."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启侧边暂存架和灵动岛，启用暂存架、传输和剪贴板历史模块。剪贴板记录仍由你单独决定。"
+          }
+        }
+      }
+    },
+    "Enable all built-in Island modules. Clipboard recording stays under your control.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable all built-in Island modules. Clipboard recording stays under your control."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用所有内置灵动岛模块，剪贴板记录仍由你单独决定。"
+          }
+        }
+      }
+    },
+    "Presets change modules and reveal behavior. Your files, history and recording choice are kept.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Presets change modules and reveal behavior. Your files, history and recording choice are kept."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预设会调整模块和展开方式，保留文件、历史以及剪贴板记录的选择。"
+          }
+        }
+      }
+    },
+    "Apply Workflow Preset?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply Workflow Preset?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用使用预设？"
+          }
+        }
+      }
+    },
+    "Apply": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用"
+          }
+        }
+      }
+    },
+    "Configure side shelf and Island reveal behavior in Triggers.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure side shelf and Island reveal behavior in Triggers."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "侧边暂存架和灵动岛的展开方式可在“触发器”中设置。"
+          }
+        }
+      }
+    },
+    "Side Shelf Reveal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Side Shelf Reveal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "侧边暂存架展开"
+          }
+        }
+      }
+    },
+    "Preview side shelf on hover": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview side shelf on hover"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "悬停预览侧边暂存架"
+          }
+        }
+      }
+    },
+    "Drag the edge tab to reposition it. File drag reveal is configured below.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag the edge tab to reposition it. File drag reveal is configured below."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拖动侧边拉环可调整位置，文件拖拽展开在下方设置。"
+          }
+        }
+      }
+    },
+    "Island Reveal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Island Reveal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "灵动岛展开"
+          }
+        }
+      }
+    },
+    "Top drag reveal is off by default to keep browser tabs unobstructed. Clicking Island always works.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top drag reveal is off by default to keep browser tabs unobstructed. Clicking Island always works."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顶部拖拽展开默认关闭，避免挡住浏览器标签页。随时可以点击灵动岛展开。"
+          }
+        }
+      }
+    },
+    "Drop a folder here to add a favorite": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drop a folder here to add a favorite"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将文件夹拖到这里添加收藏"
+          }
+        }
+      }
+    },
+    "File Already Exists": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File Already Exists"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件已存在"
+          }
+        }
+      }
+    },
+    "Keep Both": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep Both"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留两份"
+          }
+        }
+      }
+    },
+    "Cancel Copy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Copy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消复制"
+          }
+        }
+      }
+    },
+    "The existing file will not be overwritten.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The existing file will not be overwritten."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有文件不会被覆盖。"
+          }
+        }
+      }
+    },
+    "Folder copy complete": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder copy complete"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件夹复制完成"
+          }
+        }
+      }
+    },
+    "Copying files…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copying files…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在复制文件…"
+          }
+        }
+      }
+    },
+    "Copied: %lld · Skipped: %lld · Failed: %lld · Cancelled: %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied: %lld · Skipped: %lld · Failed: %lld · Cancelled: %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制：%lld · 已跳过：%lld · 失败：%lld · 已取消：%lld"
+          }
+        }
+      }
+    },
     "Saved on this Mac" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved on this Mac" } },

@@ -9,6 +9,7 @@ final class ClipboardHistoryStore {
     private(set) var isLoading = true
     private(set) var errorMessage: String?
     private(set) var noticeMessage: String?
+    var shortcutRegistrationError: String?
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let pasteboard: NSPasteboard
     @ObservationIgnored private let persistence: ClipboardHistoryPersistence
@@ -20,6 +21,7 @@ final class ClipboardHistoryStore {
     @ObservationIgnored private var canWrite = true
     @ObservationIgnored private var isStarted = false
     @ObservationIgnored private var lastPrune = Date.distantPast
+    @ObservationIgnored nonisolated(unsafe) private var resourceToken: NSObjectProtocol?
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let sourceIsIgnored: () -> Bool
     var onAddToShelf: ((ClipboardHistoryEntry.Content) -> Void)?
@@ -36,12 +38,18 @@ final class ClipboardHistoryStore {
             IgnoreListService.frontmostAppIsIgnored(in: settings.ignoredAppBundleIDs)
         }
         lastChangeCount = pasteboard.changeCount
+        _ = ResourceUsageState.shared
+        resourceToken = NotificationCenter.default.addObserver(forName: .openYoinkResourcePolicyDidChange,
+                                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.updateRecording() }
+        }
     }
 
     deinit {
         pollTask?.cancel()
         loadTask?.cancel()
         saveTask?.cancel()
+        if let resourceToken { NotificationCenter.default.removeObserver(resourceToken) }
     }
 
     func start() {
@@ -52,7 +60,8 @@ final class ClipboardHistoryStore {
                     let loaded = try await persistence.load()
                     guard let self, !Task.isCancelled else { return }
                     if revision == 0 {
-                        entries = ClipboardHistoryPolicy.trimmed(loaded, now: now(), retentionDays: settings.clipboardHistoryRetentionDays)
+                        entries = ClipboardHistoryPolicy.trimmed(loaded, now: now(), retentionDays: settings.clipboardHistoryRetentionDays,
+                                                                 entryLimit: settings.clipboardHistoryEntryLimit)
                         if entries != loaded { persist() }
                     }
                 } catch {
@@ -84,7 +93,8 @@ final class ClipboardHistoryStore {
 
     func updateRecording() {
         prune()
-        guard isStarted, !isLoading, settings.clipboardHistoryEnabled, !settings.clipboardHistoryPaused else {
+        guard isStarted, !isLoading, settings.clipboardHistoryEnabled, !settings.clipboardHistoryPaused,
+              ResourceUsageState.shared.samplingAllowed else {
             stopPolling()
             return
         }
@@ -121,7 +131,13 @@ final class ClipboardHistoryStore {
             content = ClipboardHistoryEntry.Content.url(value).isValid ? .url(value) : .text(value)
         }
         guard pasteboard.changeCount == changeCount, let content, content.isValid else { return }
-        entries = ClipboardHistoryPolicy.inserting(content, into: entries, now: now(), retentionDays: settings.clipboardHistoryRetentionDays)
+        let next = ClipboardHistoryPolicy.inserting(content, into: entries, now: now(), retentionDays: settings.clipboardHistoryRetentionDays,
+                                                     entryLimit: settings.clipboardHistoryEntryLimit)
+        guard next.contains(where: { $0.content == content }) else {
+            noticeMessage = String(localized: "History storage is full. Remove a favorite or an image to record more.")
+            return
+        }
+        entries = next
         persist()
     }
 
@@ -160,16 +176,33 @@ final class ClipboardHistoryStore {
         persist(immediately: true)
     }
 
-    func filteredEntries(query: String) -> [ClipboardHistoryEntry] {
+    func setFavorite(_ favorite: Bool, id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        if favorite && !entries[index].isFavorite,
+           entries.filter(\.isFavorite).count >= ClipboardHistoryPolicy.maximumFavorites {
+            noticeMessage = String(localized: "You can keep up to 30 favorites.")
+            return
+        }
+        entries[index].isFavorite = favorite
+        prune(force: true)
+        persist()
+    }
+
+    func filteredEntries(query: String, filter: ClipboardContentFilter = .all) -> [ClipboardHistoryEntry] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return entries }
-        return entries.filter { $0.content.searchText.localizedCaseInsensitiveContains(query) }
+        return entries.filter {
+            filter.includes($0) && (query.isEmpty || $0.content.searchText.localizedCaseInsensitiveContains(query))
+        }.sorted {
+            if $0.isFavorite != $1.isFavorite { return $0.isFavorite }
+            return $0.copiedAt > $1.copiedAt
+        }
     }
 
     func prune(force: Bool = false) {
         guard force || now().timeIntervalSince(lastPrune) >= 60 else { return }
         lastPrune = now()
-        let trimmed = ClipboardHistoryPolicy.trimmed(entries, now: now(), retentionDays: settings.clipboardHistoryRetentionDays)
+        let trimmed = ClipboardHistoryPolicy.trimmed(entries, now: now(), retentionDays: settings.clipboardHistoryRetentionDays,
+                                                     entryLimit: settings.clipboardHistoryEntryLimit)
         guard entries != trimmed else { return }
         entries = trimmed
         persist()

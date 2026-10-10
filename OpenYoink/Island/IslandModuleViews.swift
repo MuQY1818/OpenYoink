@@ -33,6 +33,7 @@ struct IslandRootView: View {
     @Environment(SystemStatusModuleStore.self) private var systemStatusStore
     @Environment(FavoriteFoldersStore.self) private var favoriteFoldersStore
     @Environment(ClipboardHistoryStore.self) private var clipboardHistoryStore
+    @Environment(FavoriteFolderDropCoordinator.self) private var folderCopy
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isCompactHovering = false
     @State private var isCompactMediaControlHovering = false
@@ -103,6 +104,16 @@ struct IslandRootView: View {
         .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("island.root")
+        .alert("File Already Exists", isPresented: Binding(
+            get: { folderCopy.conflictName != nil },
+            set: { if !$0 { folderCopy.decideConflict(.cancel) } }
+        )) {
+            Button("Keep Both") { folderCopy.decideConflict(.keepBoth) }
+            Button("Skip") { folderCopy.decideConflict(.skip) }
+            Button("Cancel Copy", role: .cancel) { folderCopy.decideConflict(.cancel) }
+        } message: {
+            Text((folderCopy.conflictName ?? "") + "\n" + String(localized: "The existing file will not be overwritten."))
+        }
         .onChange(of: coordinator.surfaceState, initial: true) { _, state in
             guard renderedSurfaceState != state else { return }
             if reduceMotion {
@@ -128,6 +139,8 @@ struct IslandRootView: View {
         .onChange(of: nowPlayingStore.snapshot?.artworkData, initial: true) { _, data in
             mediaAccent = ArtworkAccentExtractor.accent(from: data)
         }
+        .onChange(of: coordinator.selectedModule) { samplingContextChanged() }
+        .onChange(of: coordinator.surfaceState) { samplingContextChanged() }
     }
 
     private func surfaceAnimation(for state: IslandSurfaceState) -> Animation {
@@ -141,6 +154,10 @@ struct IslandRootView: View {
             duration: IslandMotion.collapseContentDuration,
             extraBounce: 0
         )
+    }
+
+    private func samplingContextChanged() {
+        NotificationCenter.default.post(name: .openYoinkResourcePolicyDidChange, object: nil)
     }
 
     private var collapsedSurfaceHeight: CGFloat {
@@ -436,7 +453,7 @@ struct IslandRootView: View {
             moduleContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .id(coordinator.selectedModule)
-                .transition(.opacity)
+                .clipped()
                 .padding(.horizontal, 14)
                 .padding(.bottom, 14)
         }
@@ -903,88 +920,6 @@ private struct IslandSurfaceShape: InsettableShape {
     }
 }
 
-struct IslandSelectedAccessibilityModifier: ViewModifier {
-    let selected: Bool
-
-    func body(content: Content) -> some View {
-        if selected {
-            content.accessibilityAddTraits(.isSelected)
-        } else {
-            content
-        }
-    }
-}
-
-enum IslandVisualStyle {
-    static let primaryText = Color.white
-    static let secondaryText = Color.white.opacity(0.68)
-    static let tertiaryText = Color.white.opacity(0.46)
-    static let controlFill = Color.white.opacity(0.09)
-    static let selectedFill = Color.accentColor.opacity(0.22)
-    static let cardFill = Color.white.opacity(0.055)
-    static let hairline = Color.white.opacity(0.08)
-}
-
-struct IslandPressFeedbackStyle: ButtonStyle {
-    let reduceMotion: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.72 : 1)
-            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.96)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12),
-                       value: configuration.isPressed)
-    }
-}
-
-struct IslandProgressTrack: View {
-    let progress: Double
-    var tint: Color = .accentColor
-
-    var body: some View {
-        GeometryReader { proxy in
-            let clamped = min(max(progress, 0), 1)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.13))
-                Capsule()
-                    .fill(tint)
-                    .frame(width: proxy.size.width * clamped)
-            }
-        }
-        .frame(height: 4)
-        .accessibilityValue(Text("\(Int(min(max(progress, 0), 1) * 100)) percent"))
-    }
-}
-
-struct IslandModuleHeader: View {
-    let title: LocalizedStringKey
-    let subtitle: String?
-    let systemImage: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.88))
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(Color.white.opacity(0.08)))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.46))
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 8)
-        }
-        .frame(height: 34)
-    }
-}
 
 private struct IslandModuleLibraryView: View {
     @Environment(SettingsStore.self) private var settings
@@ -1070,7 +1005,7 @@ private struct IslandModuleLibraryView: View {
                 set: { settings.setIslandModuleEnabled($0, id: descriptor.id) }
             ))
             .labelsHidden()
-            .toggleStyle(.switch)
+            .toggleStyle(IslandClipboardToggleStyle())
             .controlSize(.mini)
         }
         .padding(.horizontal, 10)
@@ -1098,29 +1033,6 @@ private struct IslandModuleLibraryView: View {
     }
 }
 
-struct IslandEmptyState: View {
-    let title: LocalizedStringKey
-    let message: LocalizedStringKey
-    let systemImage: String
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(.white.opacity(0.42))
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.9))
-            Text(message)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.white.opacity(0.46))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .frame(maxWidth: 270)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
 
 
 

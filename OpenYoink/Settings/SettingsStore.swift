@@ -132,6 +132,17 @@ final class SettingsStore {
         didSet { defaults.set(clipboardHistoryRetentionDays, forKey: Keys.clipboardHistoryRetentionDays) }
     }
 
+    var clipboardHistoryEntryLimit: Int {
+        didSet { defaults.set(clipboardHistoryEntryLimit, forKey: Keys.clipboardHistoryEntryLimit) }
+    }
+    var clipboardHistoryShortcut: HotKeyShortcut? {
+        didSet {
+            if let data = try? JSONEncoder().encode(clipboardHistoryShortcut) {
+                defaults.set(data, forKey: Keys.clipboardHistoryShortcut)
+            }
+        }
+    }
+
     /// Edge the shelf attaches to. Default: right.
     var shelfPosition: ShelfPosition {
         didSet { defaults.set(shelfPosition.rawValue, forKey: Keys.shelfPosition) }
@@ -533,6 +544,8 @@ final class SettingsStore {
         static let clipboardHistoryEnabled = prefix + "clipboardHistoryEnabled"
         static let clipboardHistoryPaused = prefix + "clipboardHistoryPaused"
         static let clipboardHistoryRetentionDays = prefix + "clipboardHistoryRetentionDays"
+        static let clipboardHistoryEntryLimit = prefix + "clipboardHistoryEntryLimit"
+        static let clipboardHistoryShortcut = prefix + "clipboardHistoryShortcut"
         static let shelfPresentationMode = prefix + "shelfPresentationMode"
         static let shelfSurfaceSettingsVersion = prefix + "shelfSurfaceSettingsVersion"
         static let classicShelfEnabled = prefix + "classicShelfEnabled"
@@ -657,6 +670,13 @@ final class SettingsStore {
         clipboardHistoryPaused = defaults.bool(forKey: Keys.clipboardHistoryPaused)
         let retentionDays = defaults.integer(forKey: Keys.clipboardHistoryRetentionDays)
         clipboardHistoryRetentionDays = [1, 7, 30].contains(retentionDays) ? retentionDays : 7
+        let entryLimit = defaults.integer(forKey: Keys.clipboardHistoryEntryLimit)
+        clipboardHistoryEntryLimit = ClipboardHistoryPolicy.supportedEntryLimits.contains(entryLimit) ? entryLimit : 30
+        if let data = defaults.data(forKey: Keys.clipboardHistoryShortcut) {
+            clipboardHistoryShortcut = (try? JSONDecoder().decode(HotKeyShortcut?.self, from: data)) ?? nil
+        } else {
+            clipboardHistoryShortcut = HotKeyShortcut(keyCode: 9, command: true, shift: true, option: false, control: false)
+        }
         shelfPosition = ShelfPosition(rawValue: defaults.string(forKey: Keys.shelfPosition) ?? "")
             ?? .right
         let hasPreversionedSurfaceSettings = standardPersistentDomain?[Keys.classicShelfEnabled] != nil

@@ -203,6 +203,36 @@ final class NowPlayingModuleTests: XCTestCase {
         store.stop()
     }
 
+    func testLateSourceCallbackCannotRestartStoppedModuleOrOverwriteNewSource() {
+        let source = FakeSource()
+        let store = NowPlayingModuleStore(sourceFactory: { source })
+        store.start()
+        let oldCallback = source.snapshot
+        let oldFailure = source.fail
+        store.stop()
+        oldCallback?(.init(title: "late", artist: nil, album: nil, isPlaying: true, sourceName: nil))
+        XCTAssertNil(store.snapshot)
+        store.start()
+        source.snapshot?(.init(title: "new", artist: nil, album: nil, isPlaying: true, sourceName: nil))
+        oldCallback?(.init(title: "stale", artist: nil, album: nil, isPlaying: true, sourceName: nil))
+        oldFailure?()
+        XCTAssertEqual(store.snapshot?.title, "new")
+        XCTAssertEqual(store.availability, .available)
+        store.stop()
+    }
+
+    func testFailedSourceCannotPublishLateSnapshot() {
+        let source = FakeSource()
+        let store = NowPlayingModuleStore(sourceFactory: { source })
+        store.start()
+        let callback = source.snapshot
+        source.fail?()
+        callback?(.init(title: "late", artist: nil, album: nil, isPlaying: true, sourceName: nil))
+        XCTAssertNil(store.snapshot)
+        XCTAssertEqual(store.availability, .unavailable)
+        store.stop()
+    }
+
     private final class FakeSource: NowPlayingSource {
         var supportsTransportControls = true
         var supportsSeeking = true

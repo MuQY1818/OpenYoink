@@ -243,6 +243,7 @@ final class StorageManagementController {
         protectedPaths.formUnion(managedMoveJournal?.protectedManagedPaths() ?? [])
         protectedPaths.formUnion(pendingImportJournal?.protectedPaths() ?? [])
         protectedPaths.formUnion(additionalProtectedPaths())
+        protectedPaths.formUnion(shelfStore.undoProtectedPaths)
         let result = tempFileService.cleanupOrphans(keepingPaths: protectedPaths)
         if result.removedItemCount == 0 {
             statusMessage = String(localized: "No unused files were found.")

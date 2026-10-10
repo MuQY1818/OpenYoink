@@ -361,6 +361,15 @@ final class FavoriteFoldersStore {
         persist()
     }
 
+    func copyDestinationBookmark(for id: UUID) -> Data? {
+        guard let item = items.first(where: { $0.id == id }),
+              let url = try? bookmarkService.resolve(item.bookmark).url else { return nil }
+        return bookmarkService.withSecurityScopedAccess(to: url) {
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return nil }
+            return item.bookmark
+        }
+    }
+
     func move(_ sourceID: UUID, before destinationID: UUID) {
         guard sourceID != destinationID,
               let source = items.firstIndex(where: { $0.id == sourceID }),

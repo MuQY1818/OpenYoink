@@ -521,6 +521,13 @@ final class SystemStatusModuleStore: IslandModuleRuntime {
         registerNotifications()
         startMemoryPressureMonitoring()
         startBatteryMonitoring()
+        restartSampling()
+    }
+
+    private func restartSampling() {
+        samplingTask?.cancel()
+        samplingTask = nil
+        guard isRunning, ResourceUsageState.shared.samplingAllowed else { return }
         samplingTask = Task { @MainActor [weak self] in
             while let self, !Task.isCancelled, self.isRunning {
                 await self.refresh()
@@ -550,8 +557,10 @@ final class SystemStatusModuleStore: IslandModuleRuntime {
     }
 
     func refresh() async {
-        guard isRunning else { return }
-        snapshot = await provider.sample()
+        guard isRunning, ResourceUsageState.shared.samplingAllowed else { return }
+        let next = await provider.sample()
+        guard isRunning, !Task.isCancelled, ResourceUsageState.shared.samplingAllowed else { return }
+        snapshot = next
         if let eventMemoryPressure { snapshot.memoryPressure = eventMemoryPressure }
         evaluateWarnings()
     }
@@ -585,6 +594,12 @@ final class SystemStatusModuleStore: IslandModuleRuntime {
                 MainActor.assumeIsolated { self?.requestImmediateRefresh() }
             }
         }
+        _ = ResourceUsageState.shared
+        notificationTokens.append(NotificationCenter.default.addObserver(
+            forName: .openYoinkResourcePolicyDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.restartSampling() }
+        })
     }
 
     private func unregisterNotifications() {

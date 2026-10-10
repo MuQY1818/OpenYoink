@@ -128,17 +128,28 @@ final class PowerSourceMonitor: IslandModule {
     private(set) var snapshot: Snapshot = .unavailable
     private(set) var powerHistory: [BatteryPowerSample] = []
     private(set) var isRunning = false
+    @ObservationIgnored private let isSelectedAndExpanded: @MainActor () -> Bool
+    @ObservationIgnored private let samplingAllowed: @MainActor () -> Bool
+    @ObservationIgnored private let snapshotProvider: @MainActor () -> Snapshot
+    @ObservationIgnored nonisolated(unsafe) private var resourceToken: NSObjectProtocol?
     var onActivity: (@MainActor (IslandActivity?) -> Void)?
     var onStateChange: (@MainActor () -> Void)?
 
     init(now: @escaping @MainActor () -> Date = Date.init,
+         isSelectedAndExpanded: @escaping @MainActor () -> Bool = { false },
+         samplingAllowed: @escaping @MainActor () -> Bool = { ResourceUsageState.shared.samplingAllowed },
+         snapshotProvider: @escaping @MainActor () -> Snapshot = { PowerSourceMonitor.readSnapshot() },
          fullChargeAlertEnabled: @escaping @MainActor () -> Bool = { false }) {
         self.nowProvider = now
+        self.isSelectedAndExpanded = isSelectedAndExpanded
+        self.samplingAllowed = samplingAllowed
+        self.snapshotProvider = snapshotProvider
         self.fullChargeAlertEnabled = fullChargeAlertEnabled
     }
 
     deinit {
         pollingTask?.cancel()
+        if let resourceToken { NotificationCenter.default.removeObserver(resourceToken) }
         if let runLoopSource {
             CFRunLoopSourceInvalidate(runLoopSource)
         }
@@ -147,11 +158,19 @@ final class PowerSourceMonitor: IslandModule {
     func start() {
         guard !isRunning else { return }
         isRunning = true
-        refresh()
+        _ = ResourceUsageState.shared
+        resourceToken = NotificationCenter.default.addObserver(forName: .openYoinkResourcePolicyDidChange,
+                                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.restartPolling() }
+        }
+        restartPolling()
+    }
+
+    private func registerPowerNotificationsIfNeeded() {
         // Desktops and external-only displays have no battery transitions to
         // observe. Keep the unavailable snapshot visible without retaining an
         // otherwise idle run-loop source.
-        guard snapshot.hasBattery else { return }
+        guard snapshot.hasBattery, runLoopSource == nil else { return }
         let context = Unmanaged.passUnretained(self).toOpaque()
         guard let unmanaged = IOPSNotificationCreateRunLoopSource({ context in
             guard let context else { return }
@@ -165,9 +184,20 @@ final class PowerSourceMonitor: IslandModule {
         let source = unmanaged.takeRetainedValue()
         runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    }
+
+    private func restartPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
+        guard isRunning, samplingAllowed() else { return }
+        refresh()
+        guard snapshot.hasBattery else { return }
+        registerPowerNotificationsIfNeeded()
         pollingTask = Task { @MainActor [weak self] in
             while let self, self.isRunning, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
+                let interval = ResourceUsagePolicy.batteryInterval(isExpanded: self.isSelectedAndExpanded(),
+                                                                   isConstrained: ResourceUsageState.shared.isConstrained)
+                try? await Task.sleep(for: interval)
                 guard !Task.isCancelled else { break }
                 self.refresh()
             }
@@ -179,6 +209,8 @@ final class PowerSourceMonitor: IslandModule {
         isRunning = false
         pollingTask?.cancel()
         pollingTask = nil
+        if let resourceToken { NotificationCenter.default.removeObserver(resourceToken) }
+        resourceToken = nil
         if let runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
             CFRunLoopSourceInvalidate(runLoopSource)
@@ -188,7 +220,8 @@ final class PowerSourceMonitor: IslandModule {
     }
 
     func refresh() {
-        process(Self.readSnapshot())
+        guard isRunning, samplingAllowed() else { return }
+        process(snapshotProvider())
     }
 
     /// Internal deterministic seam for pure unit tests and future power-event

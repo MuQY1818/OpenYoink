@@ -68,9 +68,10 @@ enum ShelfLayoutEngine {
                               panelWidth: CGFloat,
                               visibleHeight: CGFloat,
                               hasActivity: Bool = false,
-                              hasQuickActions: Bool = false) -> CGFloat {
+                              hasQuickActions: Bool = false,
+                              hasSearchControls: Bool = false) -> CGFloat {
         let cap = visibleHeight * maximumHeightFraction
-        let activityHeight = hasActivity ? activityStripHeight : 0
+        let activityHeight = (hasActivity ? activityStripHeight : 0) + (hasSearchControls ? 60 : 0)
         guard itemCount > 0 else { return min(emptyStateHeight + activityHeight, cap) }
         let quickActionHeight = hasQuickActions ? quickActionBarHeight : 0
         let columns = columnCount(forPanelWidth: panelWidth)
@@ -287,6 +288,7 @@ enum ShelfLayoutEngine {
                             itemCount: Int,
                             hasActivity: Bool = false,
                             hasQuickActions: Bool = false,
+                            hasSearchControls: Bool = false,
                             mouseLocation: CGPoint,
                             screens: [ScreenGeometry],
                             persistedCustomFrame: CGRect?,
@@ -300,7 +302,8 @@ enum ShelfLayoutEngine {
                                        panelWidth: width,
                                        visibleHeight: screen.visibleFrame.height,
                                        hasActivity: hasActivity,
-                                       hasQuickActions: hasQuickActions)
+                                       hasQuickActions: hasQuickActions,
+                                       hasSearchControls: hasSearchControls)
             // left/right 必有 edge frame（nil 仅 custom 返回），兜底同防护分支。
             return edgeAttachedFrame(position: position, width: width, height: height,
                                      visibleFrame: screen.visibleFrame, edgeOffset: edgeOffset)

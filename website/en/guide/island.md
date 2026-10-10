@@ -18,7 +18,7 @@ Click the compact Island to expand it. Top-edge drag approach stays off by defau
 
 v1.6.9 adds optional clipboard history through the menu bar window or Island module library. Displaying the module does not enable recording. Turn recording on in **Settings → General → Clipboard History** to capture new text, HTTP(S) URLs, and PNG/TIFF images; old clipboard contents and copied files are not imported.
 
-Search, preview, copy, add to the shelf, delete, clear, pause, or resume your history. Keep up to 30 entries and 20 MiB, with 1, 7, or 30 days of retention (7 by default). Disabling recording keeps existing history; clearing deletes stored history without changing the current clipboard or shelf.
+Search, filter by type, favorite, preview, copy, add to the shelf, delete, clear, pause, or resume your history. Open it with `⌘⇧V` (configurable). Choose 30, 100, or 300 ordinary entries (30 by default), with 1, 7, or 30 days of retention (7 by default). Up to 30 additional favorites do not expire; all contents share a 20 MiB budget. Disabling recording keeps existing history; clearing deletes history and favorites without changing the current clipboard or shelf.
 
 ::: warning Local storage and sensitive content
 History is stored as plaintext in the app sandbox, never uploaded or synced. Common password-manager privacy markers and ignored apps are skipped, but unmarked passwords or tokens may still be recorded. Pause recording before copying sensitive data.

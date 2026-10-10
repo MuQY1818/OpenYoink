@@ -89,6 +89,7 @@ final class HotKeyMonitor {
     /// 初始化），而 @Observable 宏又不允许 lazy 属性，故改为按需构造。
     private var actionBox: HotKeyActionBox?
     private var enabled = false
+    private let hotKeyIdentifier: UInt32
 
     /// UX3: 单击动作（toggle shelf）。
     private let onPress: @MainActor @Sendable () -> Void
@@ -113,10 +114,12 @@ final class HotKeyMonitor {
     private nonisolated static let hotKeySignature = OSType(0x4F59_484B)
 
     init(shortcut: SettingsStore.HotKeyShortcut? = .default,
+         hotKeyIdentifier: UInt32 = 1,
          doublePressWindow: TimeInterval = 0.3,
          onPress: @escaping @MainActor @Sendable () -> Void,
          onDoublePress: @escaping @MainActor @Sendable () -> Void) {
         self.shortcut = shortcut
+        self.hotKeyIdentifier = hotKeyIdentifier
         self.onPress = onPress
         self.onDoublePress = onDoublePress
         self.discriminator = DoublePressDiscriminator(window: doublePressWindow)
@@ -192,7 +195,7 @@ final class HotKeyMonitor {
     /// retain/release 逐次平衡。
     private func requireActionBox() -> HotKeyActionBox {
         if let actionBox { return actionBox }
-        let box = HotKeyActionBox { [weak self] in
+        let box = HotKeyActionBox(identifier: hotKeyIdentifier) { [weak self] in
             self?.handlePress()
         }
         actionBox = box
@@ -207,7 +210,7 @@ final class HotKeyMonitor {
             registrationError = nil
             return
         }
-        let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: 1)
+        let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: hotKeyIdentifier)
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(shortcut.keyCode,
                                          Self.carbonModifiers(for: shortcut),
@@ -298,17 +301,27 @@ final class HotKeyMonitor {
 
     // MARK: - Matching & modifier mapping (pure, unit-testable)
 
-    /// Carbon event callback. Only our own hot key is ever registered with
-    /// this handler, so any delivery is ours. The callback is a plain C
+    /// Carbon event callback. Multiple monitors share the dispatcher, so
+    /// each handler must check the signature and registration ID. The callback is a plain C
     /// function without actor isolation; the action hops to the MainActor
     /// explicitly instead of assuming a thread.
-    private nonisolated static let carbonEventHandler: EventHandlerUPP = { _, _, userData in
-        guard let userData else { return OSStatus(eventNotHandledErr) }
+    private nonisolated static let carbonEventHandler: EventHandlerUPP = { _, event, userData in
+        guard let userData, let event else { return OSStatus(eventNotHandledErr) }
         let box = Unmanaged<HotKeyActionBox>.fromOpaque(userData).takeUnretainedValue()
+        var identifier = EventHotKeyID()
+        guard GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                nil, MemoryLayout<EventHotKeyID>.size, nil, &identifier) == noErr,
+              matches(identifier, registeredIdentifier: box.identifier) else {
+            return OSStatus(eventNotHandledErr)
+        }
         Task { @MainActor in
             box.action()
         }
         return noErr
+    }
+
+    nonisolated static func matches(_ eventID: EventHotKeyID, registeredIdentifier: UInt32) -> Bool {
+        eventID.signature == hotKeySignature && eventID.id == registeredIdentifier
     }
 
     /// Maps the persisted shortcut to Carbon modifier bits (`cmdKey` etc.).
@@ -343,8 +356,10 @@ final class HotKeyMonitor {
 /// `Unmanaged` across install/remove of the event handler.
 private final class HotKeyActionBox: @unchecked Sendable {
     let action: @MainActor @Sendable () -> Void
+    let identifier: UInt32
 
-    init(_ action: @escaping @MainActor @Sendable () -> Void) {
+    init(identifier: UInt32, _ action: @escaping @MainActor @Sendable () -> Void) {
         self.action = action
+        self.identifier = identifier
     }
 }

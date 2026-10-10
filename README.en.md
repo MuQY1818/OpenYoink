@@ -39,7 +39,7 @@ OpenYoink lives in the menu bar without a Dock icon. Use the side shelf, the not
 - Store files, folders, text, images, and links. Mail messages, calendar events, and contacts are supported when the source app provides them.
 - Preview with Space, select multiple items, group them into stacks, reorder them, or return to recent items.
 - Open the shelf with an edge tab, a shortcut, a mouse-shake gesture, or a drag. Automatic triggers can be disabled per app.
-- Optional clipboard history with search, preview, copy, and add-to-shelf actions. Recording is off by default.
+- Optional clipboard history with favorites, type filters, search, preview, copy, and add-to-shelf actions. Recording is off by default.
 - Multiple displays, Spaces, and full-screen apps; English and Chinese UI; launch at login and automatic updates.
 
 The notch interface also shows transfers, battery power, system status, and music, and can open favorite folders. Modules can be turned off individually. See [Island modules](#island-modules).
@@ -86,6 +86,8 @@ xattr -dr com.apple.quarantine /Applications/OpenYoink.app
 | Add content          | Drop onto the shelf or the edge tab                        |
 | Managed move         | Hold `⌘` while importing; the original goes to the Trash after a copy is confirmed. [Details](#file-safety-and-lifecycle) |
 | Park clipboard       | Press `⌘⇧Space` twice                                      |
+| Clipboard history    | `⌘⇧V`, configurable in Settings                           |
+| Search / undo remove | `⌘F` / `⌘Z` (manual card removal only)                    |
 | Quick Look           | Select a card and press `Space`, or double-click           |
 | Multi-select         | Hold `⌘` and click, or marquee-select an empty area       |
 | Remove               | Hover and click `×`, press `Delete`, or use the context menu |
@@ -106,7 +108,7 @@ OpenYoink Island is enabled for new installs. On a Mac with a notch, content sit
 | Battery | Battery level, charging/discharging power, and a two-minute power graph |
 | System Status | CPU, memory, network, disk, and app usage |
 | Now Playing | Track information, artwork, progress, and playback controls |
-| Quick Access | Favorite folders; double-click to open in the system's default file manager, including Finder or QSpace |
+| Quick Access | Favorite folders; double-click to open in the default file manager, or drop files onto a folder to copy them with progress and a name-conflict prompt |
 | Clipboard History | Search, preview, and reuse recently copied content |
 
 Now Playing, Quick Access, and Clipboard History modules are off by default. Enabling the clipboard module does not turn on recording.
@@ -150,7 +152,9 @@ Regular file drops provide a file URL and a Chromium-compatible filename. Manage
 
 Recording is off by default. While it is disabled, OpenYoink reads the clipboard only when you double-press the shortcut to save it. Enabling or resuming recording captures only newly copied text, HTTP(S) URLs, and PNG/TIFF images, not existing clipboard content or copied files.
 
-History is stored as plaintext on this Mac, without uploads or sync. Limits are 30 entries and 20 MiB total. Choose 1, 7, or 30 days of retention, with 7 days as the default. Turning recording off keeps existing history; clearing it deletes the saved entries.
+History is stored as plaintext on this Mac, without uploads or sync. Choose 30, 100, or 300 ordinary entries (30 by default), with 1, 7, or 30 days of retention (7 by default). Up to 30 additional favorites do not expire. All contents share a 20 MiB budget. Turning recording off keeps existing history; clearing it deletes the saved entries.
+
+General settings offer File Shelf, Files & Clipboard, and Full Toolbox presets. They change modules and reveal behavior without enabling clipboard recording or deleting data. Side shelf and Island reveal controls are together in Triggers.
 
 Common password-manager privacy markers and ignored apps are skipped, but not all sensitive content can be detected. Pause recording before copying passwords or tokens.
 

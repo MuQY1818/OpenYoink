@@ -6,8 +6,17 @@ import AppKit
 @MainActor
 struct DragContainerDropOverride {
     let isActive: @MainActor () -> Bool
-    let canHandle: @MainActor (NSPasteboard) -> Bool
-    let perform: @MainActor (NSPasteboard) -> Bool
+    let canHandle: @MainActor (DragContainerDropContext) -> Bool
+    let perform: @MainActor (DragContainerDropContext) -> Bool
+    var reset: @MainActor () -> Void = {}
+}
+
+@MainActor
+struct DragContainerDropContext {
+    let pasteboard: NSPasteboard
+    let location: CGPoint
+    let isInternal: Bool
+    let internalItems: [ShelfItem]?
 }
 
 /// 拖入悬停/插入位置状态，由 `DragContainerView`（NSDraggingDestination）驱动，
@@ -109,8 +118,7 @@ final class DragContainerView: NSView {
         currentDestinationSequenceNumber = sender.draggingSequenceNumber
         onDestinationEntered(sender.draggingSequenceNumber)
         if let dropOverride, dropOverride.isActive() {
-            guard sender.draggingSource == nil,
-                  dropOverride.canHandle(sender.draggingPasteboard) else {
+            guard dropOverride.canHandle(dropContext(sender)) else {
                 dropTargetState.reset()
                 return []
             }
@@ -137,8 +145,7 @@ final class DragContainerView: NSView {
         // this idempotent registration also covers entering before that delivery.
         onDestinationEntered(sender.draggingSequenceNumber)
         if let dropOverride, dropOverride.isActive() {
-            guard sender.draggingSource == nil,
-                  dropOverride.canHandle(sender.draggingPasteboard) else {
+            guard dropOverride.canHandle(dropContext(sender)) else {
                 dropTargetState.reset()
                 return []
             }
@@ -163,6 +170,7 @@ final class DragContainerView: NSView {
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
         dropTargetState.reset()
+        dropOverride?.reset()
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -173,8 +181,9 @@ final class DragContainerView: NSView {
         var accepted = false
         defer { onDestinationEnded(sender.draggingSequenceNumber, accepted) }
         if let dropOverride, dropOverride.isActive() {
-            guard dropOverride.canHandle(sender.draggingPasteboard) else { return false }
-            accepted = dropOverride.perform(sender.draggingPasteboard)
+            guard dropOverride.canHandle(dropContext(sender)) else { return false }
+            accepted = dropOverride.perform(dropContext(sender))
+            if accepted { (sender.draggingSource as? DragSessionController)?.acceptedByFolderCopy = true }
             return accepted
         }
         // F-05: 落下瞬间以实时修饰键判定模式（⌘ = 剪切移入）。
@@ -213,13 +222,22 @@ final class DragContainerView: NSView {
         guard currentDestinationSequenceNumber == sender.draggingSequenceNumber else { return }
         currentDestinationSequenceNumber = nil
         dropTargetState.reset()
+        dropOverride?.reset()
     }
 
     override func concludeDragOperation(_ sender: NSDraggingInfo?) {
         dropTargetState.reset()
+        dropOverride?.reset()
     }
 
     // MARK: - Helpers
+
+    private func dropContext(_ sender: NSDraggingInfo) -> DragContainerDropContext {
+        .init(pasteboard: sender.draggingPasteboard,
+              location: CGPoint(x: sender.draggingLocation.x, y: bounds.height - sender.draggingLocation.y),
+              isInternal: sender.draggingSource != nil,
+              internalItems: (sender.draggingSource as? DragSessionController)?.itemsForFolderCopy)
+    }
 
     /// F-05: 读取实时修饰键（`NSEvent.modifierFlags`，拖拽会话期间随 ⌘ 按放
     /// 变化）刷新悬停模式；只含 fileURL 的拖放才可能为 .move。

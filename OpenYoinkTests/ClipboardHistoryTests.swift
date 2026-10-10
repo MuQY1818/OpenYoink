@@ -330,4 +330,86 @@ final class ClipboardHistoryTests: XCTestCase {
         } catch {}
         XCTAssertEqual(try Data(contentsOf: url), data)
     }
+
+    func testFavoriteSurvivesExpiryLimitAndDuplicateCopy() async throws {
+        try await start()
+        write("keep forever")
+        history.poll()
+        let id = try XCTUnwrap(history.entries.first?.id)
+        history.setFavorite(true, id: id)
+        clock += 31 * 86_400
+        history.prune(force: true)
+        XCTAssertEqual(history.entries.map(\.id), [id])
+        for i in 0..<35 { clock += 1; write("ordinary \(i)"); history.poll() }
+        XCTAssertEqual(history.entries.count, 31)
+        write("keep forever"); history.poll()
+        XCTAssertEqual(history.entries.first?.id, id)
+        XCTAssertEqual(history.entries.first?.isFavorite, true)
+        XCTAssertEqual(history.filteredEntries(query: "", filter: .favorites).count, 1)
+        await history.flush()
+        let loaded = try await ClipboardHistoryPersistence(directoryURL: directory).load()
+        XCTAssertEqual(loaded.first?.isFavorite, true)
+    }
+
+    func testUnfavoriteExpiredEntryRemovesItAndFiltersMatchType() async throws {
+        try await start()
+        write("old"); history.poll()
+        let id = try XCTUnwrap(history.entries.first?.id)
+        history.setFavorite(true, id: id)
+        clock += 8 * 86_400
+        history.setFavorite(false, id: id)
+        XCTAssertTrue(history.entries.isEmpty)
+        write("plain"); history.poll()
+        write("https://example.com"); history.poll()
+        XCTAssertEqual(history.filteredEntries(query: "", filter: .text).count, 1)
+        XCTAssertEqual(history.filteredEntries(query: "EXAMPLE", filter: .links).count, 1)
+        XCTAssertTrue(history.filteredEntries(query: "", filter: .images).isEmpty)
+    }
+
+    func testConfiguredLimitRoundTripsAndDoesNotEvictFavorites() async throws {
+        settings.clipboardHistoryEntryLimit = 100
+        XCTAssertEqual(SettingsStore(defaults: defaults).clipboardHistoryEntryLimit, 100)
+        try await start()
+        for i in 0..<105 { clock += 1; write("\(i)"); history.poll() }
+        XCTAssertEqual(history.entries.count, 100)
+        settings.clipboardHistoryEntryLimit = 30
+        history.prune(force: true)
+        XCTAssertEqual(history.entries.count, 30)
+        let entries = (0..<305).map { ClipboardHistoryEntry(copiedAt: clock, content: .text("\($0)")) }
+        XCTAssertEqual(ClipboardHistoryPolicy.trimmed(entries, now: clock, retentionDays: 7, entryLimit: 300).count, 300)
+    }
+
+    func testOldHistoryMigratesAndImagesAreNotRewrittenOnTextSave() async throws {
+        struct OldEntry: Encodable { let id: UUID; let copiedAt: Date; let content: ClipboardHistoryEntry.Content }
+        struct OldSnapshot: Encodable { let version: Int; let entries: [OldEntry] }
+        let data = try imageData()
+        let id = UUID()
+        let url = directory.appendingPathComponent("clipboard-history.json")
+        try JSONEncoder().encode(OldSnapshot(version: 1, entries: [OldEntry(id: id, copiedAt: clock,
+            content: .image(data, type: "public.png"))])).write(to: url)
+        let persistence = ClipboardHistoryPersistence(directoryURL: directory)
+        let entries = try await persistence.load()
+        XCTAssertEqual(entries.first?.isFavorite, false)
+        try await persistence.save(entries, revision: 1)
+        let imageURL = directory.appendingPathComponent("ClipboardImages/\(id.uuidString).image")
+        let firstModified = try imageURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        try await persistence.save(entries + [ClipboardHistoryEntry(content: .text("added"))], revision: 2)
+        XCTAssertEqual(try imageURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, firstModified)
+        let loaded = try await persistence.load()
+        XCTAssertEqual(loaded.first?.content, .image(data, type: "public.png"))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        XCTAssertEqual(json["version"] as? Int, 2)
+        XCTAssertLessThan(try Data(contentsOf: url).count, 1024)
+        try await persistence.save([], revision: 3)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: imageURL.path))
+    }
+
+    func testFavoritesAreBoundedAndCannotBeEvictedByNewHistory() {
+        let favorites = (0..<30).map { ClipboardHistoryEntry(copiedAt: clock - 100 * 86_400,
+            content: .text("favorite \($0)"), isFavorite: true) }
+        let entries = ClipboardHistoryPolicy.inserting(.text("new"), into: favorites, now: clock,
+                                                       retentionDays: 1, entryLimit: 30)
+        XCTAssertEqual(entries.filter(\.isFavorite).count, 30)
+        XCTAssertEqual(entries.count, 31)
+    }
 }

@@ -22,6 +22,76 @@ final class ShelfStore {
     }
 
     private let persistence: PersistenceController?
+    var searchQuery = ""
+    var contentFilter: ShelfContentFilter = .all
+    var visibleItems: [ShelfItem] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return items.filter { contentFilter.matches($0, query: query) }
+    }
+    private struct RemovalChange {
+        let index: Int
+        let before: ShelfItem
+        let after: ShelfItem?
+    }
+    private var removalUndo: [[RemovalChange]] = []
+    var canUndoRemoval: Bool { !removalUndo.isEmpty }
+    var undoProtectedPaths: Set<String> {
+        Set(removalUndo.flatMap { $0.flatMap { DragPayloadBuilder.flattenedItems([$0.before]).compactMap(\.path) } })
+    }
+
+    /// Only explicit card removal is undoable; delivered files are never restored.
+    @discardableResult
+    func removeForUser(ids: Set<UUID>) -> [ShelfItem] {
+        let before = items
+        let removed = remove(ids: ids)
+        rememberRemoval(before: before)
+        return removed
+    }
+
+    @discardableResult
+    func removeChildrenForUser(ids: Set<UUID>, fromStack stackID: UUID) -> Bool {
+        let before = items
+        let changed = removeChildren(ids: ids, fromStack: stackID)
+        if changed { rememberRemoval(before: before) }
+        return changed
+    }
+
+    private func rememberRemoval(before: [ShelfItem]) {
+        let changes = before.enumerated().compactMap { index, item -> RemovalChange? in
+            let after = items.first { $0.id == item.id }
+                ?? (item.kind == .stack ? items.first { candidate in (item.children ?? []).contains { $0.id == candidate.id } } : nil)
+            return after == item ? nil : RemovalChange(index: index, before: item, after: after)
+        }
+        guard !changes.isEmpty else { return }
+        removalUndo.append(changes)
+        if removalUndo.count > 20 { removalUndo.removeFirst() }
+    }
+
+    @discardableResult
+    func undoLastRemoval() -> Bool {
+        guard let changes = removalUndo.popLast() else { return false }
+        var restored = false
+        for change in changes {
+            if let after = change.after {
+                guard let index = items.firstIndex(where: { $0 == after }) else { continue }
+                items[index] = change.before
+            } else {
+                let ids = Set(DragPayloadBuilder.flattenedItems([change.before]).map(\.id))
+                guard itemRecursively(withID: change.before.id) == nil,
+                      ids.allSatisfy({ itemRecursively(withID: $0) == nil }) else { continue }
+                items.insert(change.before, at: min(change.index, items.count))
+            }
+            restored = true
+        }
+        if restored { persist() }
+        return restored
+    }
+
+    func invalidateUndoForDeliveredItem(_ id: UUID) {
+        removalUndo.removeAll { changes in
+            changes.contains { DragPayloadBuilder.flattenedItems([$0.before]).contains { $0.id == id } }
+        }
+    }
 
     /// UX5/UX6: items 变更回调（每次触发持久化的项目变更后调用 —— 增、删、
     /// 移动、stack 操作、update）。ShelfWindowController 据此做紧凑高度动画
@@ -200,6 +270,7 @@ final class ShelfStore {
     /// 用已经成功写入磁盘的恢复快照替换运行期内容。调用方必须先调用
     /// PersistenceController.saveNow；这里不再安排第二次异步写入。
     func replaceWithPersistedItems(_ restoredItems: [ShelfItem]) {
+        removalUndo.removeAll()
         items = restoredItems
         selection.removeAll()
         onItemsDidChange?()

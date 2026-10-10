@@ -7,6 +7,8 @@ struct ClipboardHistoryView: View {
     @Environment(ClipboardHistoryStore.self) private var history
     @Environment(SettingsStore.self) private var settings
     @State private var query = ""
+    @State private var filter: ClipboardContentFilter = .all
+    @FocusState private var searchFocused: Bool
     @State private var confirmsClear = false
     @State private var preview: ClipboardHistoryEntry?
 
@@ -26,7 +28,11 @@ struct ClipboardHistoryView: View {
         @Bindable var settings = settings
         VStack(spacing: 10) {
             HStack(spacing: 8) {
-                Label("Clipboard History", systemImage: "doc.on.clipboard").font(.headline)
+                if isIsland {
+                    IslandModuleHeader(title: "Clipboard History", subtitle: nil, systemImage: "doc.on.clipboard")
+                } else {
+                    Label("Clipboard History", systemImage: "doc.on.clipboard").font(.headline)
+                }
                 Spacer(minLength: 4)
                 if settings.clipboardHistoryEnabled {
                     Button {
@@ -58,7 +64,7 @@ struct ClipboardHistoryView: View {
                 }
                 Spacer()
                 Text(settings.clipboardHistoryPaused && settings.clipboardHistoryEnabled
-                     ? String(localized: "Paused") : "\(history.entries.count) / 30")
+                     ? String(localized: "Paused") : "\(history.entries.filter { !$0.isFavorite }.count) / \(settings.clipboardHistoryEntryLimit)")
                     .font(.caption.monospacedDigit()).foregroundStyle(secondaryForeground)
             }
             .onChange(of: settings.clipboardHistoryEnabled) { _, _ in history.updateRecording() }
@@ -72,9 +78,13 @@ struct ClipboardHistoryView: View {
             }
 
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(secondaryForeground)
+                Button { searchFocused = true } label: { Image(systemName: "magnifyingglass").foregroundStyle(secondaryForeground) }
+                    .buttonStyle(.plain).keyboardShortcut("f", modifiers: .command)
+                    .help(Text("Search Clipboard History")).accessibilityLabel("Search Clipboard History")
                 TextField("Search Clipboard History", text: $query)
                     .textFieldStyle(.plain).foregroundStyle(primaryForeground)
+                    .focused($searchFocused)
+                    .onKeyPress(.escape) { query = ""; searchFocused = false; return .handled }
                 if !query.isEmpty {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).help(Text("Clear Search"))
@@ -83,9 +93,15 @@ struct ClipboardHistoryView: View {
             }
             .padding(8).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
 
+            Picker("Content Type", selection: $filter) {
+                ForEach(ClipboardContentFilter.allCases) { value in Text(value.title).tag(value) }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             if history.isLoading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if history.filteredEntries(query: query).isEmpty {
+            } else if history.filteredEntries(query: query, filter: filter).isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "doc.on.clipboard").font(.title2).foregroundStyle(secondaryForeground)
                     Text(query.isEmpty ? String(localized: "No Clipboard History") : String(localized: "No Results"))
@@ -95,7 +111,7 @@ struct ClipboardHistoryView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(history.filteredEntries(query: query)) { entry in
+                        ForEach(history.filteredEntries(query: query, filter: filter)) { entry in
                             ClipboardHistoryRow(isIsland: isIsland, entry: entry,
                                                 onPreview: { preview = entry })
                             Divider()
@@ -120,6 +136,10 @@ struct ClipboardHistoryView: View {
         }
         .foregroundStyle(primaryForeground)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            history.prune(force: true)
+            if !isIsland { searchFocused = true }
+        }
         .alert("Clear Clipboard History?", isPresented: $confirmsClear) {
             Button("Cancel", role: .cancel) {}
             Button("Clear History", role: .destructive) { history.clear() }
@@ -151,44 +171,6 @@ struct ClipboardHistoryView: View {
     }
 }
 
-/// A focus-independent toggle for the dark, non-activating Island panel.
-/// AppKit's native switch dims its tint when the panel loses key-window focus,
-/// which makes an enabled control look disabled. Keeping the visual state in
-/// SwiftUI leaves the Toggle's semantics and binding intact while making the
-/// enabled/disabled distinction explicit.
-private struct IslandClipboardToggleStyle: ToggleStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        Button {
-            configuration.isOn.toggle()
-        } label: {
-            HStack(spacing: 8) {
-                configuration.label
-                Capsule(style: .continuous)
-                    .fill(configuration.isOn
-                          ? Color.accentColor
-                          : Color.white.opacity(0.16))
-                    .overlay(alignment: configuration.isOn ? .trailing : .leading) {
-                        Capsule(style: .continuous)
-                            .fill(Color.white.opacity(0.96))
-                            .frame(width: 26, height: 18)
-                            .padding(2)
-                    }
-                    .frame(width: 44, height: 22)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .opacity(isEnabled ? 1 : 0.45)
-        .accessibilityRepresentation {
-            Toggle(isOn: configuration.$isOn) {
-                configuration.label
-            }
-            .toggleStyle(.switch)
-        }
-    }
-}
 
 private struct ClipboardHistoryRow: View {
     let isIsland: Bool
@@ -223,6 +205,13 @@ private struct ClipboardHistoryRow: View {
                 Text(entry.copiedAt, style: .relative).font(.caption2).foregroundStyle(secondaryForeground)
             }
             .contentShape(Rectangle()).onTapGesture(count: 2) { history.copy(entry) }
+            Button { history.setFavorite(!entry.isFavorite, id: entry.id) } label: {
+                Image(systemName: entry.isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(entry.isFavorite ? Color.yellow : secondaryForeground)
+                    .frame(width: 24, height: 28)
+            }
+            .help(entry.isFavorite ? Text("Remove Favorite") : Text("Add Favorite"))
+            .accessibilityLabel(entry.isFavorite ? Text("Remove Favorite") : Text("Add Favorite"))
             Button { history.copy(entry) } label: {
                 Image(systemName: "doc.on.doc").frame(width: 24, height: 28)
             }

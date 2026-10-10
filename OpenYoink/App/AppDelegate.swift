@@ -78,7 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingImportJournal: pendingImportJournal,
         bookmarkService: bookmarkService,
         additionalProtectedPaths: { [weak self] in
-            self?.deliveryCoordinator.protectedMaterializedPaths ?? []
+            (self?.deliveryCoordinator.protectedMaterializedPaths ?? [])
+                .union(self?.shelfStore.undoProtectedPaths ?? [])
+                .union(self?.shelfWindowController.favoriteFolderDropCoordinator.protectedPaths ?? [])
         },
         prepareRestoredItems: { [weak self] items in
             guard let self else { return items }
@@ -102,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Help, voluntary issue reporting and privacy-safe local diagnostics.
     lazy var supportController = SupportController(settings: settingsStore)
 
-    private lazy var shelfWindowController = ShelfWindowController(appState: appState,
+    private lazy var shelfWindowController: ShelfWindowController = ShelfWindowController(appState: appState,
                                                                    store: shelfStore,
                                                                    importCoordinator: dropImportCoordinator,
                                                                    tempFileService: tempFileService,
@@ -184,6 +186,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onDoublePress: { [weak self] in
             self?.saveClipboardToShelf()
         }
+    )
+    lazy var clipboardHotKeyMonitor = HotKeyMonitor(
+        shortcut: settingsStore.clipboardHistoryShortcut, hotKeyIdentifier: 2,
+        onPress: { [weak self] in self?.clipboardHistoryWindowController.show() },
+        onDoublePress: {}
     )
     /// S7: 鼠标摇动触发（识别核心 ShakeDetector 为纯类型，见 Triggers/）。
     private lazy var mouseShakeMonitor = MouseShakeMonitor(shouldSuppress: { [weak self] in
@@ -390,6 +397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         bookmarkService.stopAccessingAll()
         hotKeyMonitor.setEnabled(false)
+        clipboardHotKeyMonitor.setEnabled(false)
         mouseShakeMonitor.stop()
         edgeTriggerMonitor.stop()
         dragStartMonitor.stop()
@@ -750,6 +758,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeyMonitor.updateShortcut(settingsStore.hotKeyShortcut)
         hotKeyMonitor.setDoublePressEnabled(settingsStore.hotKeyDoublePressSavesClipboard)
         hotKeyMonitor.setEnabled(settingsStore.hotKeyEnabled)
+        clipboardHotKeyMonitor.updateShortcut(settingsStore.clipboardHistoryShortcut)
+        clipboardHotKeyMonitor.setEnabled(settingsStore.clipboardHistoryShortcut != nil
+            && (!settingsStore.hotKeyEnabled || settingsStore.clipboardHistoryShortcut != settingsStore.hotKeyShortcut))
+        clipboardHistoryStore.shortcutRegistrationError = settingsStore.hotKeyEnabled
+            && settingsStore.clipboardHistoryShortcut != nil
+            && settingsStore.clipboardHistoryShortcut == settingsStore.hotKeyShortcut
+            ? String(localized: "Choose a history shortcut different from the shelf shortcut.")
+            : clipboardHotKeyMonitor.registrationError
 
         if settingsStore.shakeTriggerEnabled {
             mouseShakeMonitor.start(parameters: settingsStore.shakeSensitivity.shakeParameters)
