@@ -6,8 +6,8 @@
 
 **Drag it. Park it. Drop it later.**
 
-A temporary shelf for macOS. Drop files, text, images, or links at the screen edge
-or in the notch, switch windows, then drag them to their destination.
+A free, open-source shelf and Dynamic Island for macOS. Keep files within reach,
+control music, run a focus timer, check system status, and find clipboard history at the top of your screen.
 
 <br>
 
@@ -19,6 +19,8 @@ or in the notch, switch windows, then drag them to their destination.
 
 [Download](https://github.com/MuQY1818/OpenYoink/releases/latest) ·
 [Website](https://muqy1818.github.io/OpenYoink/) ·
+[Island](#island-modules) ·
+[Product film](https://muqy1818.github.io/OpenYoink/en/#film) ·
 [Guide](https://muqy1818.github.io/OpenYoink/en/guide/) ·
 [中文](README.md)
 
@@ -42,7 +44,75 @@ OpenYoink lives in the menu bar without a Dock icon. Use the side shelf, the not
 - Optional clipboard history with favorites, type filters, search, preview, copy, and add-to-shelf actions. Recording is off by default.
 - Multiple displays, Spaces, and full-screen apps; English and Chinese UI; launch at login and automatic updates.
 
-The notch interface also shows transfers, battery power, system status, and music, and can open favorite folders. Modules can be turned off individually. See [Island modules](#island-modules).
+## Island modules
+
+OpenYoink Island puts everyday tools at the top of your Mac. The compact view shows playback status, a countdown, or an activity summary; click to open the module. On a notched Mac, it joins the camera housing. External and non-notched displays use a floating top capsule.
+
+### Now Playing
+
+Check artwork, track details, and progress without switching to the player. Pause, skip tracks, or seek when the player supports it. The screenshot shows QQ Music. Available information and controls for other players and browser videos depend on their media interfaces.
+
+<p align="center">
+  <a href="docs/screenshots/island/now-playing.png"><img src="docs/screenshots/island/now-playing.png" width="880" alt="OpenYoink Island showing QQ Music artwork, track details, progress and playback controls"></a>
+</p>
+
+### Shelf, focus and system information
+
+These are actual app screenshots with the Chinese UI. Click an image to view it at full size.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/shelf.png"><img src="docs/screenshots/island/shelf.png" width="100%" alt="Island shelf with search, type filtering and a file drop area"></a>
+      <p><strong>Shelf</strong><br>Shares contents with the side shelf, with drag-and-drop, search, type filters and Quick Look.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/clipboard-history.png"><img src="docs/screenshots/island/clipboard-history.png" width="100%" alt="Island clipboard history with recording, search, type filters, favorites and copy actions"></a>
+      <p><strong>Clipboard History</strong><br>Find copied text, links and images, favorite useful entries, copy them or add them to the shelf. Recording is a separate opt-in.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/timer.png"><img src="docs/screenshots/island/timer.png" width="100%" alt="Island timer with focus, short and long breaks, a goal field and duration presets"></a>
+      <p><strong>Focus timer</strong><br>Choose focus, a short break or a long break, and add a session goal. Customize the duration, pause, resume and review focus history.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/battery.png"><img src="docs/screenshots/island/battery.png" width="100%" alt="Island battery module showing charge, power source, watts and a two-minute power graph"></a>
+      <p><strong>Battery and power</strong><br>Check charge, power source and charging or discharging watts. The live graph shows the last two minutes and average power.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/system-status.png"><img src="docs/screenshots/island/system-status.png" width="100%" alt="Island system status showing CPU, memory, network, disk, battery, thermal state and app usage"></a>
+      <p><strong>System Status</strong><br>CPU, memory, network rates, available disk space, battery, thermal state and app usage. Read-only; it does not end processes or clean files.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/module-library.png"><img src="docs/screenshots/island/module-library.png" width="100%" alt="Island module library with enable, open, pin and reorder controls"></a>
+      <p><strong>Module library</strong><br>Enable what you use, pin up to five modules and drag pinned rows to reorder them. Unpinned modules remain available in the library.</p>
+    </td>
+  </tr>
+</table>
+
+Battery power measures charging or discharging at the battery, not wall-outlet consumption. Positive means charging; negative means discharging. A reading near `0 W` is normal when plugged in with a full battery.
+
+Two more modules are available:
+
+| Module | What it does |
+| --- | --- |
+| Transfers | Shows asynchronous file delivery progress and failures |
+| Quick Access | Favorite folders; double-click to open in the macOS default file manager, including Finder or QSpace, or drop files onto a folder to copy them with a name-conflict prompt |
+
+### Set up your modules
+
+1. Enable OpenYoink Island in **Settings → General**. It is enabled for new installs.
+2. Expand Island and click the upper-left gear to open the module library. Enable a module, then pin it to keep it in the top strip.
+3. Drag pinned rows to reorder them. Press `Esc`, click outside, or click the top-center area to collapse Island.
+
+Now Playing, Quick Access and Clipboard History modules are off by default. Enabling the clipboard module does not start recording. Island and the side shelf can be enabled independently.
+
+Top-edge drag-to-expand is off by default. Enable it separately in **Settings → Triggers**; side-shelf triggers are independent.
+
+[Island guide](https://muqy1818.github.io/OpenYoink/en/guide/island) · [Watch the 40-second film](https://muqy1818.github.io/OpenYoink/en/#film)
 
 ## Install
 
@@ -95,23 +165,6 @@ xattr -dr com.apple.quarantine /Applications/OpenYoink.app
 | Enable / disable Island | Settings → General → OpenYoink Island                    |
 
 Drag-to-expand at the top of the screen is off by default and can be enabled in Settings. Side-shelf drag triggers are configured separately. See the [guide](https://muqy1818.github.io/OpenYoink/en/guide/) for more.
-
-## Island modules
-
-OpenYoink Island is enabled for new installs. On a Mac with a notch, content sits on either side of it. Other displays use a floating pill at the top.
-
-| Module | What it does |
-| --- | --- |
-| Shelf | Shares content with the side shelf, including drag-and-drop, preview, and organization |
-| Transfers | Shows asynchronous file delivery progress and failures |
-| Timer | Preset or custom countdowns, with pause and resume |
-| Battery | Battery level, charging/discharging power, and a two-minute power graph |
-| System Status | CPU, memory, network, disk, and app usage |
-| Now Playing | Track information, artwork, progress, and playback controls |
-| Quick Access | Favorite folders; double-click to open in the default file manager, or drop files onto a folder to copy them with progress and a name-conflict prompt |
-| Clipboard History | Search, preview, and reuse recently copied content |
-
-Now Playing, Quick Access, and Clipboard History modules are off by default. Enabling the clipboard module does not turn on recording.
 
 ## File safety and lifecycle
 

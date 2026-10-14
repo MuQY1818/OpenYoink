@@ -6,8 +6,8 @@
 
 **随手一拖，先放一下。**
 
-macOS 文件暂存工具。把文件、文本、图片或链接拖到屏幕侧边或顶部灵动岛，
-切换窗口后，再拖到需要的地方。
+免费的开源 macOS 暂存架与灵动岛。把文件放在手边，
+也能在屏幕顶部控制音乐、专注计时、查看系统状态和找回剪贴板内容。
 
 <br>
 
@@ -19,6 +19,8 @@ macOS 文件暂存工具。把文件、文本、图片或链接拖到屏幕侧�
 
 [下载](https://github.com/MuQY1818/OpenYoink/releases/latest) ·
 [官网](https://muqy1818.github.io/OpenYoink/) ·
+[灵动岛](#灵动岛模块) ·
+[演示短片](https://muqy1818.github.io/OpenYoink/#film) ·
 [使用文档](https://muqy1818.github.io/OpenYoink/guide/) ·
 [English](README.en.md)
 
@@ -42,7 +44,75 @@ OpenYoink 常驻菜单栏，没有 Dock 图标。侧边暂存架和顶部灵动�
 - 可选剪贴板历史，支持收藏、类型筛选、搜索、预览、复制和加入暂存架，默认不记录。
 - 支持多显示器、多个 Space 和全屏应用，提供中英文界面、登录时启动和自动更新。
 
-灵动岛还可以查看传输进度、电池功率、系统状态和正在播放的歌曲，或打开收藏的文件夹。各模块可以单独关闭，详见[灵动岛模块](#灵动岛模块)。
+## 灵动岛模块
+
+OpenYoink Island 把常用工具放到 Mac 顶部。收起时显示播放状态、倒计时或活动摘要，点击后展开对应模块。有刘海的 Mac 与物理刘海融合；外接屏和无刘海设备使用顶部悬浮胶囊。
+
+### 正在播放
+
+不用切回播放器，就能查看封面、歌曲信息和进度，暂停或切换歌曲；播放器支持时，也能拖动进度条。下面是 QQ 音乐的实际界面。其他播放器和浏览器视频的可用信息与控制能力取决于它们提供的媒体接口。
+
+<p align="center">
+  <a href="docs/screenshots/island/now-playing.png"><img src="docs/screenshots/island/now-playing.png" width="880" alt="OpenYoink 灵动岛正在播放模块，显示 QQ 音乐的封面、歌曲信息、进度和播放控制"></a>
+</p>
+
+### 暂存、专注与系统信息
+
+以下均为实际应用截图，点击可查看原图。
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/shelf.png"><img src="docs/screenshots/island/shelf.png" width="100%" alt="灵动岛暂存架，带有搜索、类型筛选和文件拖放区域"></a>
+      <p><strong>暂存架</strong><br>与侧边架共享同一组内容，支持拖入、拖出、搜索、筛选和 Quick Look。</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/clipboard-history.png"><img src="docs/screenshots/island/clipboard-history.png" width="100%" alt="灵动岛剪贴板历史，带有记录开关、搜索、类型筛选、收藏和复制操作"></a>
+      <p><strong>剪贴板历史</strong><br>搜索复制过的文本、链接和图片，收藏常用内容，复制或加入暂存架。记录需单独开启。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/timer.png"><img src="docs/screenshots/island/timer.png" width="100%" alt="灵动岛计时器，显示专注、短休息、长休息、目标输入和时长选择"></a>
+      <p><strong>专注计时</strong><br>选择专注、短休息或长休息，写下这一轮的目标；支持自定义时长、暂停、继续和专注记录。</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/battery.png"><img src="docs/screenshots/island/battery.png" width="100%" alt="灵动岛电池模块，显示电量、电源状态、瓦数和最近两分钟的功率波形"></a>
+      <p><strong>电池与功率</strong><br>查看电量、电源状态和充放电瓦数，动态波形保留最近两分钟，也显示平均功率。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/system-status.png"><img src="docs/screenshots/island/system-status.png" width="100%" alt="灵动岛系统状态，显示 CPU、内存、网络、磁盘、电池、热状态和应用占用排行"></a>
+      <p><strong>系统状态</strong><br>查看 CPU、内存、网络速率、磁盘可用空间、电池、热状态和应用占用排行。只读，不结束进程或清理文件。</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/module-library.png"><img src="docs/screenshots/island/module-library.png" width="100%" alt="灵动岛模块库，支持启停、打开、固定模块和拖动排序"></a>
+      <p><strong>模块库</strong><br>按需启用功能，最多固定五个模块，拖动已固定的模块行调整顺序。未固定的模块仍可从库中打开。</p>
+    </td>
+  </tr>
+</table>
+
+电池功率反映电池侧的充放电，不是插座功耗。正值为充电，负值为放电；接通电源且电池充满时，接近 `0 W` 是正常情况。
+
+还有两个模块可按需使用：
+
+| 模块 | 用途 |
+| --- | --- |
+| 传输 | 查看异步文件交付的进度和失败状态 |
+| 快速访问 | 收藏文件夹，双击用 macOS 默认文件管理器打开，兼容 Finder、QSpace 等；拖到收藏卡片上可复制文件，重名时询问 |
+
+### 按自己的习惯配置
+
+1. 在“设置 → 通用”开启 OpenYoink Island，新安装默认开启。
+2. 展开后点击左上角齿轮进入模块库，启用需要的模块，点图钉固定到顶部。
+3. 拖动已固定的模块行调整顺序；按 `Esc`、点击外部或顶部中央区域收起。
+
+正在播放、快速访问和剪贴板历史模块默认关闭。开启剪贴板模块不会自动开始记录；侧边架与灵动岛可以独立开关。
+
+顶部拖拽靠近展开默认关闭，可在“设置 → 触发器”单独开启，侧边暂存架的设置不受影响。
+
+[灵动岛使用说明](https://muqy1818.github.io/OpenYoink/guide/island) · [模块详细说明](https://muqy1818.github.io/OpenYoink/guide/island-modules) · [观看 40 秒短片](https://muqy1818.github.io/OpenYoink/#film)
 
 ## 安装
 
@@ -95,23 +165,6 @@ xattr -dr com.apple.quarantine /Applications/OpenYoink.app
 | 开启 / 关闭 Island | 设置 → 通用 → OpenYoink Island                    |
 
 顶部拖拽展开默认关闭，可在设置中开启。侧边暂存架的拖拽唤出独立设置。更多操作见[使用文档](https://muqy1818.github.io/OpenYoink/guide/)。
-
-## 灵动岛模块
-
-新安装默认开启 OpenYoink Island。有刘海的 Mac 使用刘海两侧，无刘海屏幕显示顶部胶囊。
-
-| 模块 | 用途 |
-| --- | --- |
-| 暂存架 | 与侧边暂存架共享内容，支持拖入、拖出、预览和整理 |
-| 传输 | 查看异步文件交付的进度和失败状态 |
-| 计时器 | 预设或自定义倒计时，支持暂停和继续 |
-| 电池 | 查看电量、充放电功率和最近两分钟的功率波形 |
-| 系统状态 | 查看 CPU、内存、网络、磁盘和应用占用 |
-| 正在播放 | 查看歌曲信息、封面和进度，控制播放 |
-| 快速访问 | 收藏文件夹，双击交给默认文件管理器打开；拖到收藏卡片上复制文件，重名时询问 |
-| 剪贴板历史 | 搜索、预览和复用最近复制的内容 |
-
-正在播放、快速访问和剪贴板历史模块默认关闭，可以按需开启。开启剪贴板模块不会自动开启记录。
 
 ## 文件安全与生命周期
 
