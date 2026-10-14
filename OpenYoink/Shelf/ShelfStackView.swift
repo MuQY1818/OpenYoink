@@ -197,6 +197,7 @@ struct ShelfStackExpandedView: View {
                    onRemove: {})
         .frame(width: 100)
         .padding()
+        .environment(SettingsStore())
 }
 
 #Preview("Stack expanded") {
@@ -205,4 +206,5 @@ struct ShelfStackExpandedView: View {
                            interaction: ShelfInteractionState())
         .frame(width: 288)
         .padding()
+        .environment(SettingsStore())
 }

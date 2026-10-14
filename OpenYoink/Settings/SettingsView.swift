@@ -58,6 +58,8 @@ struct SettingsView: View {
         switch pane {
         case .general:
             GeneralSettingsTab()
+        case .appearance:
+            AppearanceSettingsTab()
         case .triggers:
             TriggerSettingsTab()
         case .ignoredApps:
@@ -72,6 +74,7 @@ struct SettingsView: View {
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
+    case appearance
     case triggers
     case ignoredApps
     case storage
@@ -82,6 +85,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var title: LocalizedStringKey {
         switch self {
         case .general: "General"
+        case .appearance: "Appearance"
         case .triggers: "Triggers"
         case .ignoredApps: "Ignored Apps"
         case .storage: "Storage"
@@ -92,6 +96,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gear"
+        case .appearance: "paintpalette"
         case .triggers: "keyboard"
         case .ignoredApps: "hand.raised"
         case .storage: "externaldrive"

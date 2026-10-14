@@ -62,6 +62,8 @@ struct ShelfView: View {
     /// v1.2: unavailable-item actions (external reconnect vs managed recovery).
     @Environment(\.itemRecoveryController) private var itemRecoveryController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var systemColorScheme
     /// 任务三：内缘收起把手的收起动作（ShelfWindowController 注入；Preview 为 nil 空操作）。
     @Environment(\.shelfHideAction) private var shelfHideAction
     /// Marquee hit-testing uses global coordinates, so window resizing is held
@@ -73,6 +75,7 @@ struct ShelfView: View {
     /// ⌘ 起拖（追加模式）时的基底选中集合；非追加为空白。
     @State private var marqueeBaseSelection: Set<UUID> = []
     @FocusState private var searchFocused: Bool
+    @State private var appearanceHoverPoint: CGPoint?
 
     /// 卡片弹入/让位动画（§3：spring, response 0.35, damping 0.7）。
     static let cardAnimation = Animation.spring(response: 0.35, dampingFraction: 0.7)
@@ -84,10 +87,39 @@ struct ShelfView: View {
 
     private let columns = [GridItem(.adaptive(minimum: Self.columnWidth), spacing: Self.gridSpacing)]
 
+    private var shouldTrackAppearancePointer: Bool {
+        settings.appearance.shouldTrackPointer(
+            isClassicShelf: presentationStyle == .classic,
+            reduceMotion: reduceMotion,
+            reduceTransparency: reduceTransparency
+        )
+    }
+
     var body: some View {
-        presentedSurface
+        GeometryReader { geometry in
+            presentedSurface
+                .onContinuousHover { phase in
+                    guard shouldTrackAppearancePointer else { return }
+                    switch phase {
+                    case let .active(location):
+                        let point = CGPoint(
+                            x: min(1, max(0, location.x / max(geometry.size.width, 1))),
+                            y: min(1, max(0, location.y / max(geometry.size.height, 1)))
+                        )
+                        if appearanceHoverPoint != point { appearanceHoverPoint = point }
+                    case .ended:
+                        if appearanceHoverPoint != nil { appearanceHoverPoint = nil }
+                    }
+                }
+        }
+            .environment(\.colorScheme, presentationStyle == .classic
+                         ? (settings.appearance.theme.colorScheme ?? systemColorScheme) : .dark)
             .environment(\.shelfPresentationStyle, presentationStyle)
             .overlay(alignment: .topLeading) { marqueeOverlay }
+            .onChange(of: shouldTrackAppearancePointer) { _, enabled in
+                if !enabled, appearanceHoverPoint != nil { appearanceHoverPoint = nil }
+            }
+            .onDisappear { appearanceHoverPoint = nil }
             .onChange(of: store.items) {
                 dropTargetState.reset()
                 interaction.normalize(for: store.visibleItems)
@@ -104,11 +136,8 @@ struct ShelfView: View {
     @ViewBuilder
     private var presentedSurface: some View {
         if presentationStyle == .classic {
-            VisualEffectBackground(material: .hudWindow, cornerRadius: Self.cornerRadius)
-            .overlay {
-                RoundedRectangle(cornerRadius: Self.cornerRadius)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-            }
+            ShelfGlassSurface(appearance: settings.appearance,
+                              hoverPoint: appearanceHoverPoint)
             .overlay { content }
             .overlay { dropTargetHighlight }
             .overlay(alignment: collapseHandleAlignment) { collapseHandle }
@@ -385,10 +414,10 @@ struct ShelfView: View {
     @ViewBuilder
     private var dropTargetHighlight: some View {
         if dropTargetState.isTargeted {
-            RoundedRectangle(cornerRadius: Self.cornerRadius)
+            RoundedRectangle(cornerRadius: settings.appearance.cornerRadius)
                 .strokeBorder(dropModeTint, lineWidth: 2)
                 .background {
-                    RoundedRectangle(cornerRadius: Self.cornerRadius)
+                    RoundedRectangle(cornerRadius: settings.appearance.cornerRadius)
                         .fill(dropModeTint.opacity(0.12))
                 }
                 .allowsHitTesting(false)
@@ -707,28 +736,6 @@ extension EnvironmentValues {
     var shelfMarqueeActivityAction: (@MainActor (Bool) -> Void)? {
         get { self[ShelfMarqueeActivityActionEnvironmentKey.self] }
         set { self[ShelfMarqueeActivityActionEnvironmentKey.self] = newValue }
-    }
-}
-
-/// NSVisualEffectView 桥接：SwiftUI material 无法直接指定 .hudWindow 材质。
-private struct VisualEffectBackground: NSViewRepresentable {
-    var material: NSVisualEffectView.Material
-    var cornerRadius: CGFloat
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = .behindWindow
-        view.state = .active
-        view.wantsLayer = true
-        view.layer?.cornerRadius = cornerRadius
-        view.layer?.masksToBounds = true
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.layer?.cornerRadius = cornerRadius
     }
 }
 

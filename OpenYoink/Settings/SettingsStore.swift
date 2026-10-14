@@ -120,6 +120,20 @@ final class SettingsStore {
 
     // MARK: - General
 
+    var appearance: ShelfAppearance {
+        didSet {
+            let normalized = appearance.normalized()
+            if normalized != appearance {
+                appearance = normalized
+            }
+            if let data = try? JSONEncoder().encode(normalized) {
+                defaults.set(data, forKey: Keys.appearance)
+            }
+        }
+    }
+
+    func resetAppearance() { appearance = .default }
+
     var clipboardHistoryEnabled: Bool {
         didSet { defaults.set(clipboardHistoryEnabled, forKey: Keys.clipboardHistoryEnabled) }
     }
@@ -540,6 +554,7 @@ final class SettingsStore {
 
     private enum Keys {
         private static let prefix = "OpenYoink."
+        static let appearance = prefix + "appearance.v1"
         static let shelfPosition = prefix + "shelfPosition"
         static let clipboardHistoryEnabled = prefix + "clipboardHistoryEnabled"
         static let clipboardHistoryPaused = prefix + "clipboardHistoryPaused"
@@ -794,6 +809,12 @@ final class SettingsStore {
                          forKey: Keys.classicShelfHoverRevealEnabled)
         }
         shelfWidth = defaults.double(forKey: Keys.shelfWidth)
+        if let data = defaults.data(forKey: Keys.appearance),
+           let decoded = try? JSONDecoder().decode(ShelfAppearance.self, from: data) {
+            appearance = decoded.normalized()
+        } else {
+            appearance = .default
+        }
         shelfEdgeOffset = defaults.double(forKey: Keys.shelfEdgeOffset)
         edgeTabEnabled = defaults.bool(forKey: Keys.edgeTabEnabled)
         autoHide = defaults.bool(forKey: Keys.autoHide)
