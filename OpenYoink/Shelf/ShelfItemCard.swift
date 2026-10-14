@@ -113,6 +113,12 @@ struct ShelfItemCard: View {
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.shelfPresentationStyle) private var presentationStyle
+    @Environment(SettingsStore.self) private var settings
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var cardCornerRadius: CGFloat {
+        presentationStyle == .classic ? settings.appearance.cardCornerRadius : Self.cornerRadius
+    }
 
     static let cornerRadius: CGFloat = 12
     /// 缩略图区高度（点）；宽度随网格列（~88pt）。
@@ -159,8 +165,8 @@ struct ShelfItemCard: View {
                          ? Color.white.opacity(0.90)
                          : Color.primary)
         .background { surface }
-        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-        .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+        .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius))
+        .contentShape(RoundedRectangle(cornerRadius: cardCornerRadius))
         .overlay { availabilityBorder }
         .overlay { keyboardFocusRing }
         .overlay(alignment: .topLeading) { selectionBadge }
@@ -522,22 +528,26 @@ struct ShelfItemCard: View {
 
     /// 卡片底色与选中态（§3：accent 描边 + 浅色填充）；非选中用语义色弱底 + 细描边。
     private var surface: some View {
-        RoundedRectangle(cornerRadius: Self.cornerRadius)
+        RoundedRectangle(cornerRadius: cardCornerRadius)
             .fill(cardFill)
             .overlay {
-                RoundedRectangle(cornerRadius: Self.cornerRadius)
+                if isSelected {
+                    RoundedRectangle(cornerRadius: cardCornerRadius)
+                        .fill(Color.accentColor.opacity(presentationStyle == .island ? 0.14 : 0.18))
+                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cardCornerRadius)
                     .strokeBorder(cardBorder,
                                   lineWidth: isSelected ? 2 : 0.5)
             }
     }
 
     private var cardFill: Color {
-        if isSelected {
-            return Color.accentColor.opacity(presentationStyle == .island ? 0.14 : 0.18)
-        }
         return presentationStyle == .island
             ? Color.white.opacity(0.06)
-            : Color(nsColor: .controlBackgroundColor).opacity(0.6)
+            : Color(nsColor: .controlBackgroundColor)
+                .opacity(reduceTransparency ? 1 : settings.appearance.cardOpacity)
     }
 
     private var cardBorder: Color {
@@ -552,7 +562,7 @@ struct ShelfItemCard: View {
     @ViewBuilder
     private var availabilityBorder: some View {
         if item.availability != .available {
-            RoundedRectangle(cornerRadius: Self.cornerRadius)
+            RoundedRectangle(cornerRadius: cardCornerRadius)
                 .strokeBorder(
                     Color.primary.opacity(0.48),
                     style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
@@ -564,7 +574,7 @@ struct ShelfItemCard: View {
     @ViewBuilder
     private var keyboardFocusRing: some View {
         if isKeyboardFocused {
-            RoundedRectangle(cornerRadius: Self.cornerRadius - 2)
+            RoundedRectangle(cornerRadius: cardCornerRadius - 2)
                 .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor),
                               lineWidth: colorSchemeContrast == .increased ? 4 : 3)
                 .padding(2)
@@ -867,4 +877,5 @@ final class CardDragSourceAnchorView: NSView {
     }
     .padding()
     .frame(width: 320)
+    .environment(SettingsStore())
 }
