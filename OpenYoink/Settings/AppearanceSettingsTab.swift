@@ -49,6 +49,12 @@ struct AppearanceSettingsTab: View {
                 }
                 .accessibilityIdentifier("appearance.material")
 
+                if settings.appearance.material == .clear, !reduceTransparency {
+                    Text("Clear Glass shows the background without blur. Raise transparency to fade the remaining tint and edge reflections.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 appearanceSlider("Background Transparency", value: Binding(
                     get: { 1 - settings.appearance.backgroundOpacity },
                     set: { settings.appearance.backgroundOpacity = 1 - $0 }
@@ -150,13 +156,16 @@ struct AppearanceSettingsTab: View {
                                   id: String, continuous: Bool = false) -> some View {
         LabeledContent(title) {
             HStack(spacing: 8) {
-                Group {
-                    if continuous {
-                        Slider(value: value, in: range)
-                    } else {
-                        Slider(value: value, in: range, step: unit == .points ? 1 : 0.01)
+                // Native stepped sliders draw one tick per increment. Quantize
+                // the binding instead so percentages do not render 100 ticks.
+                Slider(value: Binding(
+                    get: { value.wrappedValue },
+                    set: { newValue in
+                        let step = unit == .points ? 1.0 : 0.01
+                        let adjusted = continuous ? newValue : (newValue / step).rounded() * step
+                        value.wrappedValue = min(range.upperBound, max(range.lowerBound, adjusted))
                     }
-                }
+                ), in: range)
                     .accessibilityLabel(title)
                     .accessibilityIdentifier("appearance.\(id)")
                 Group {

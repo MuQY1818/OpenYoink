@@ -77,6 +77,21 @@ struct ShelfAppearance: Codable, Equatable, Sendable {
 
     init() {}
 
+    /// Clear glass is an unblurred pane. Other materials keep their full
+    /// backdrop strength, and Reduce Transparency always restores an opaque base.
+    func surfaceOpacity(reduceTransparency: Bool) -> Double {
+        if reduceTransparency { return 1 }
+        return backgroundOpacity * (material == .clear ? 0.05 : 1)
+    }
+
+    func tintOpacity(reduceTransparency: Bool) -> Double {
+        let opacity = reduceTransparency ? 1 : backgroundOpacity
+        if material == .clear, !reduceTransparency {
+            return tint == .neutral ? 0 : tintStrength * opacity * 0.25
+        }
+        return tintStrength * opacity
+    }
+
     /// Avoid hover state updates when the decoration cannot visibly move.
     func shouldTrackPointer(isClassicShelf: Bool,
                             reduceMotion: Bool,

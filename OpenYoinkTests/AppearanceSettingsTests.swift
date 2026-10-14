@@ -10,6 +10,42 @@ final class AppearanceSettingsTests: XCTestCase {
         try body(SettingsStore(defaults: defaults), defaults)
     }
 
+    func testClearGlassHasFaintBaseAndNeutralDoesNotAddWhiteVeil() {
+        var appearance = ShelfAppearance.default
+        appearance.material = .clear
+        XCTAssertLessThan(appearance.surfaceOpacity(reduceTransparency: false), 0.1)
+        XCTAssertEqual(appearance.tintOpacity(reduceTransparency: false), 0)
+        appearance.backgroundOpacity = 0
+        XCTAssertEqual(appearance.surfaceOpacity(reduceTransparency: false), 0)
+        XCTAssertEqual(appearance.tintOpacity(reduceTransparency: false), 0)
+    }
+
+    func testClearGlassRespectsTintChoiceAndReduceTransparency() {
+        var appearance = ShelfAppearance.default
+        appearance.material = .clear
+        appearance.tint = .blue
+        appearance.tintStrength = 0.6
+        appearance.backgroundOpacity = 0.5
+        let coloredTint = appearance.tintOpacity(reduceTransparency: false)
+        XCTAssertGreaterThan(coloredTint, 0)
+        XCTAssertLessThan(coloredTint, appearance.tintStrength * appearance.backgroundOpacity)
+        XCTAssertEqual(appearance.surfaceOpacity(reduceTransparency: true), 1)
+        appearance.backgroundOpacity = 0
+        XCTAssertEqual(appearance.tintOpacity(reduceTransparency: false), 0)
+        XCTAssertEqual(appearance.surfaceOpacity(reduceTransparency: true), 1)
+    }
+
+    func testOtherMaterialsKeepConfiguredBackgroundAndTint() {
+        for material in [ShelfAppearance.Material.regular, .frosted, .solid] {
+            var appearance = ShelfAppearance.default
+            appearance.material = material
+            appearance.backgroundOpacity = 0.6
+            XCTAssertEqual(appearance.surfaceOpacity(reduceTransparency: false), 0.6)
+            XCTAssertEqual(appearance.tintOpacity(reduceTransparency: false),
+                           appearance.tintStrength * 0.6)
+        }
+    }
+
     func testPointerTrackingStopsForIslandAndReduceMotion() {
         let appearance = ShelfAppearance.default
         XCTAssertTrue(appearance.shouldTrackPointer(isClassicShelf: true,

@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Clear Glass shows the background without blur. Raise transparency to fade the remaining tint and edge reflections.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Glass shows the background without blur. Raise transparency to fade the remaining tint and edge reflections."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清透玻璃直接透出背景，不做模糊。提高透明度可进一步淡化染色与边缘反光。"
+          }
+        }
+      }
+    },
     "Preview Motion": {
       "localizations": {
         "en": {

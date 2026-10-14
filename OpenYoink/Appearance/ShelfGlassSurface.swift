@@ -2,8 +2,9 @@ import AppKit
 import SwiftUI
 
 /// A decorative backdrop: the shelf's content and drag/drop geometry remain native
-/// and untransformed. The optical material is supplied by macOS; the moving edge
-/// highlights are inspired by liquid-glass-react, not a desktop sampling shader.
+/// and untransformed. Clear glass uses an unblurred transparent pane; liquid glass
+/// and frosted materials use macOS effects. Moving edge highlights are inspired
+/// by liquid-glass-react, without sampling the desktop in the application.
 struct ShelfGlassSurface: View {
     let appearance: ShelfAppearance
     var hoverPoint: CGPoint? = nil
@@ -25,6 +26,10 @@ struct ShelfGlassSurface: View {
         reduceTransparency ? 1 : appearance.backgroundOpacity
     }
 
+    private var materialOpacity: Double {
+        appearance.surfaceOpacity(reduceTransparency: reduceTransparency)
+    }
+
     /// Normalize even externally supplied coordinates, so decoration cannot pull
     /// the shelf's edge away from its stable material or interfere with hit tests.
     private var pointer: CGPoint {
@@ -41,8 +46,9 @@ struct ShelfGlassSurface: View {
     var body: some View {
         ZStack {
             material
-            // Keep a stable tint layer across all native material implementations.
-            shape.fill(appearance.tint.color.opacity(appearance.tintStrength * backdropOpacity))
+            shape.fill(appearance.tint.color.opacity(
+                appearance.tintOpacity(reduceTransparency: reduceTransparency)
+            ))
             edgeHighlights.opacity(backdropOpacity)
         }
         .clipShape(shape)
@@ -55,19 +61,22 @@ struct ShelfGlassSurface: View {
         if reduceTransparency || appearance.material == .solid {
             shape.fill(effectiveScheme == .dark
                        ? Color(white: 0.10)
-                       : Color(white: 0.95)).opacity(backdropOpacity)
-        } else if #available(macOS 26.0, *),
-                  appearance.material == .regular || appearance.material == .clear {
-            ShelfNativeGlassBackdrop(clear: appearance.material == .clear,
-                                     cornerRadius: appearance.cornerRadius,
+                       : Color(white: 0.95)).opacity(materialOpacity)
+        } else if appearance.material == .clear {
+            // A native clear glass effect still refracts and blurs the backdrop.
+            // Use only a faint base and the shared edge reflections here.
+            shape.fill(effectiveScheme == .dark ? Color.black : Color.white)
+                .opacity(materialOpacity)
+        } else if #available(macOS 26.0, *), appearance.material == .regular {
+            ShelfNativeGlassBackdrop(cornerRadius: appearance.cornerRadius,
                                      colorScheme: effectiveScheme,
-                                     opacity: backdropOpacity)
+                                     opacity: materialOpacity)
         } else {
             ShelfMaterialBackdrop(material: fallbackMaterial,
                                   cornerRadius: appearance.cornerRadius,
                                   colorScheme: effectiveScheme,
                                   blendsWithinWindow: blendsWithinWindow,
-                                  opacity: backdropOpacity)
+                                  opacity: materialOpacity)
         }
     }
 
@@ -110,11 +119,13 @@ struct ShelfGlassSurface: View {
                         .black.opacity(strength * 0.20)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                     .blendMode(.overlay)
-                shape.fill(
-                    RadialGradient(colors: [.white.opacity(strength * 0.10), .clear],
-                                   center: UnitPoint(x: 0.5 + horizontal * 0.5,
-                                                     y: 0.5 + vertical * 0.5),
-                                   startRadius: 0, endRadius: 160))
+                if appearance.material != .clear {
+                    shape.fill(
+                        RadialGradient(colors: [.white.opacity(strength * 0.10), .clear],
+                                       center: UnitPoint(x: 0.5 + horizontal * 0.5,
+                                                         y: 0.5 + vertical * 0.5),
+                                       startRadius: 0, endRadius: 160))
+                }
                 shape.strokeBorder(
                     RadialGradient(colors: [.white.opacity(strength * 0.95), .clear],
                                    center: UnitPoint(x: 0.5 + horizontal * 0.5,
@@ -128,7 +139,6 @@ struct ShelfGlassSurface: View {
 
 @available(macOS 26.0, *)
 private struct ShelfNativeGlassBackdrop: NSViewRepresentable {
-    let clear: Bool
     let cornerRadius: Double
     let colorScheme: ColorScheme
     let opacity: Double
@@ -145,7 +155,7 @@ private struct ShelfNativeGlassBackdrop: NSViewRepresentable {
     }
 
     private func configure(_ view: ShelfPassthroughGlassView) {
-        view.style = clear ? .clear : .regular
+        view.style = .regular
         view.cornerRadius = cornerRadius
         view.alphaValue = opacity
         view.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
