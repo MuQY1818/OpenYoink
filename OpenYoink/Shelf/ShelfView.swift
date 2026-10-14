@@ -62,7 +62,6 @@ struct ShelfView: View {
     /// v1.2: unavailable-item actions (external reconnect vs managed recovery).
     @Environment(\.itemRecoveryController) private var itemRecoveryController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var systemColorScheme
     /// 任务三：内缘收起把手的收起动作（ShelfWindowController 注入；Preview 为 nil 空操作）。
     @Environment(\.shelfHideAction) private var shelfHideAction
@@ -75,7 +74,6 @@ struct ShelfView: View {
     /// ⌘ 起拖（追加模式）时的基底选中集合；非追加为空白。
     @State private var marqueeBaseSelection: Set<UUID> = []
     @FocusState private var searchFocused: Bool
-    @State private var appearanceHoverPoint: CGPoint?
 
     /// 卡片弹入/让位动画（§3：spring, response 0.35, damping 0.7）。
     static let cardAnimation = Animation.spring(response: 0.35, dampingFraction: 0.7)
@@ -87,39 +85,12 @@ struct ShelfView: View {
 
     private let columns = [GridItem(.adaptive(minimum: Self.columnWidth), spacing: Self.gridSpacing)]
 
-    private var shouldTrackAppearancePointer: Bool {
-        settings.appearance.shouldTrackPointer(
-            isClassicShelf: presentationStyle == .classic,
-            reduceMotion: reduceMotion,
-            reduceTransparency: reduceTransparency
-        )
-    }
-
     var body: some View {
-        GeometryReader { geometry in
-            presentedSurface
-                .onContinuousHover { phase in
-                    guard shouldTrackAppearancePointer else { return }
-                    switch phase {
-                    case let .active(location):
-                        let point = CGPoint(
-                            x: min(1, max(0, location.x / max(geometry.size.width, 1))),
-                            y: min(1, max(0, location.y / max(geometry.size.height, 1)))
-                        )
-                        if appearanceHoverPoint != point { appearanceHoverPoint = point }
-                    case .ended:
-                        if appearanceHoverPoint != nil { appearanceHoverPoint = nil }
-                    }
-                }
-        }
+        presentedSurface
             .environment(\.colorScheme, presentationStyle == .classic
                          ? (settings.appearance.theme.colorScheme ?? systemColorScheme) : .dark)
             .environment(\.shelfPresentationStyle, presentationStyle)
             .overlay(alignment: .topLeading) { marqueeOverlay }
-            .onChange(of: shouldTrackAppearancePointer) { _, enabled in
-                if !enabled, appearanceHoverPoint != nil { appearanceHoverPoint = nil }
-            }
-            .onDisappear { appearanceHoverPoint = nil }
             .onChange(of: store.items) {
                 dropTargetState.reset()
                 interaction.normalize(for: store.visibleItems)
@@ -136,14 +107,15 @@ struct ShelfView: View {
     @ViewBuilder
     private var presentedSurface: some View {
         if presentationStyle == .classic {
-            ShelfGlassSurface(appearance: settings.appearance,
-                              hoverPoint: appearanceHoverPoint)
-            .overlay { content }
-            .overlay { dropTargetHighlight }
-            .overlay(alignment: collapseHandleAlignment) { collapseHandle }
-            .overlay { expandedStackOverlay }
-            .overlay(alignment: .top) { noticeBanner }
-            .overlay(alignment: .bottom) { dropModeHint }
+            ShelfInteractiveGlassSurface(appearance: settings.appearance) {
+                Color.clear
+                    .overlay { content }
+                    .overlay { dropTargetHighlight }
+                    .overlay(alignment: collapseHandleAlignment) { collapseHandle }
+                    .overlay { expandedStackOverlay }
+                    .overlay(alignment: .top) { noticeBanner }
+                    .overlay(alignment: .bottom) { dropModeHint }
+            }
             .animation(reduceMotion ? nil : Self.cardAnimation,
                        value: interaction.expandedStackID)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2),

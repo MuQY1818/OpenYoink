@@ -132,6 +132,7 @@ final class ShelfWindowController: NSObject {
     private var isMarqueeSelectionActive = false
     private var quickActionLayoutPending = false
     private var quickActionLayoutTask: Task<Void, Never>?
+    private var classicFrameTransition = ShelfFrameTransitionState()
 
     struct OnboardingPresentationSnapshot: Equatable, Sendable {
         fileprivate let surface: SettingsStore.PreferredShelfSurface
@@ -632,14 +633,25 @@ final class ShelfWindowController: NSObject {
                 classicHoverPreviewState.handle(.persistentInteraction)
             )
         }
+        guard settings.classicShelfEnabled else { return }
+        // Repeated show requests may promote a preview or request focus, but
+        // must not put an already visible/sliding panel back offscreen.
+        if appState.isShelfVisible {
+            if takeKeyboardFocus, interaction.focusedItemID == nil {
+                interaction.focusedItemID = store.selectedItems.first?.id ?? store.items.first?.id
+            }
+            applyClassicLayout(animated: animated)
+            if takeKeyboardFocus { classicPanel.makeKey() }
+            return
+        }
         itemRecoveryController.refreshAll()
         interaction.normalize(for: store.items)
         if takeKeyboardFocus, interaction.focusedItemID == nil {
             interaction.focusedItemID = store.selectedItems.first?.id ?? store.items.first?.id
         }
-        guard settings.classicShelfEnabled else { return }
         appState.showShelf()
         let targetFrame = classicTargetFrame()
+        _ = classicFrameTransition.request(targetFrame, currentFrame: classicPanel.frame)
         guard animated else {
             classicPanel.alphaValue = 1
             classicPanel.setFrame(targetFrame, display: false)
@@ -715,12 +727,14 @@ final class ShelfWindowController: NSObject {
         onClassicPresentationRequested?()
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         performClassicHoverActions(classicHoverPreviewState.handle(.shelfHidden))
+        guard appState.isShelfVisible else { return }
         stopClassicHoverPreviewMonitoring()
         quickActionLayoutTask?.cancel()
         quickActionLayoutTask = nil
         quickActionLayoutPending = false
         isMarqueeSelectionActive = false
         appState.hideShelf()
+        classicFrameTransition.reset()
         // S6: shelf 隐藏时关掉 Quick Look 并释放会话资源（不恢复键盘焦点）。
         quickLookCoordinator.closeForShelfHide()
         let targetFrame = classicHiddenFrame(for: classicPanel.frame)
@@ -1261,7 +1275,9 @@ final class ShelfWindowController: NSObject {
     /// 隐藏态无持久目标，show 时自会按最新几何计算，这里无需动作。
     @objc private func screenParametersDidChange(_ notification: Notification) {
         if appState.isShelfVisible {
-            classicPanel.setFrame(classicTargetFrame(), display: true)
+            let target = classicTargetFrame()
+            _ = classicFrameTransition.request(target, currentFrame: classicPanel.frame)
+            classicPanel.setFrame(target, display: true)
         }
         if settings.islandEnabled {
             islandPanel.setFrame(islandTargetFrame(), display: true)
@@ -1286,10 +1302,13 @@ final class ShelfWindowController: NSObject {
             islandPanel.orderFront(nil)
         }
         guard appState.isShelfVisible else { return }
-        let corrected = ShelfLayoutEngine.onscreenCorrection(for: classicPanel.frame,
+        // Validate the destination during a slide, not its offscreen start.
+        let frame = classicFrameTransition.targetFrame ?? classicPanel.frame
+        let corrected = ShelfLayoutEngine.onscreenCorrection(for: frame,
                                                              screens: Self.screenGeometries())
             ?? classicTargetFrame()
-        guard corrected != classicPanel.frame else { return }
+        guard corrected != frame else { return }
+        _ = classicFrameTransition.request(corrected, currentFrame: classicPanel.frame)
         classicPanel.setFrame(corrected, display: true)
     }
 
@@ -1307,10 +1326,14 @@ final class ShelfWindowController: NSObject {
 
     private func applyLayoutSettings() {
         applyPresentationSettings(animated: true)
+    }
+
+    private func applyClassicLayout(animated: Bool = true) {
         guard appState.isShelfVisible else { return }
         let target = classicTargetFrame()
+        guard classicFrameTransition.request(target, currentFrame: classicPanel.frame) else { return }
         guard target != classicPanel.frame else { return }
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        guard animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             classicPanel.setFrame(target, display: true)
             return
         }
@@ -1335,18 +1358,7 @@ final class ShelfWindowController: NSObject {
             isDragInProgress: dragStartMonitor.isDragInProgress
         )
         if appState.isShelfVisible {
-            let target = classicTargetFrame()
-            if target != classicPanel.frame {
-                if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                    classicPanel.setFrame(target, display: true)
-                } else {
-                    NSAnimationContext.runAnimationGroup { context in
-                        context.duration = Self.animationDuration
-                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                        classicPanel.animator().setFrame(target, display: true)
-                    }
-                }
-            }
+            applyClassicLayout()
         }
         // 空架隐藏放在高度动画之后裁决：两者同帧时隐藏优先（隐藏动画覆盖）。
         if shouldAutoHide {
@@ -1358,18 +1370,7 @@ final class ShelfWindowController: NSObject {
     /// non-empty → empty auto-hide state machine.
     private func handleActivityVisibilityDidChange() {
         transfersModuleRuntime.refresh()
-        guard appState.isShelfVisible else { return }
-        let target = classicTargetFrame()
-        guard target != classicPanel.frame else { return }
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            classicPanel.setFrame(target, display: true)
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            classicPanel.animator().setFrame(target, display: true)
-        }
+        applyClassicLayout()
     }
 
     /// Explicit top-level or expanded-stack selection changes only affect the
@@ -1402,18 +1403,7 @@ final class ShelfWindowController: NSObject {
 
     private func applyQuickActionLayoutChange() {
         quickActionLayoutTask = nil
-        guard appState.isShelfVisible else { return }
-        let target = classicTargetFrame()
-        guard target != classicPanel.frame else { return }
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            classicPanel.setFrame(target, display: true)
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            classicPanel.animator().setFrame(target, display: true)
-        }
+        applyClassicLayout()
     }
 
     // MARK: - Island presentation
@@ -1428,12 +1418,15 @@ final class ShelfWindowController: NSObject {
         classicPanel.hasShadow = true
         if settings.classicShelfEnabled {
             if appState.isShelfVisible {
-                classicPanel.alphaValue = 1
-                classicPanel.setFrame(classicTargetFrame(), display: true)
-                classicPanel.orderFront(nil)
+                applyClassicLayout(animated: animated)
+                if !classicPanel.isVisible {
+                    classicPanel.alphaValue = 1
+                    classicPanel.orderFront(nil)
+                }
             }
         } else {
             appState.hideShelf()
+            classicFrameTransition.reset()
             classicPanel.orderOut(nil)
         }
 

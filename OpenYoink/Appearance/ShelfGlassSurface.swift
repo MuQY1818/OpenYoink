@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 
 /// A decorative backdrop: the shelf's content and drag/drop geometry remain native
@@ -10,8 +11,82 @@ struct ShelfGlassSurface: View {
     var hoverPoint: CGPoint? = nil
     var blendsWithinWindow = false
 
-    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        ShelfGlassBackdrop(appearance: appearance, blendsWithinWindow: blendsWithinWindow)
+            .overlay { ShelfGlassHighlights(appearance: appearance, hoverPoint: hoverPoint) }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Only the highlight reader observes the pointer. Hover events do not invalidate
+/// the shelf content, the tracking container, or the native glass backdrop.
+struct ShelfInteractiveGlassSurface<Content: View>: View {
+    let appearance: ShelfAppearance
+    private let content: Content
+    @State private var pointer = ShelfGlassPointer()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    init(appearance: ShelfAppearance, @ViewBuilder content: () -> Content) {
+        self.appearance = appearance
+        self.content = content()
+    }
+
+    private var tracksPointer: Bool {
+        appearance.shouldTrackPointer(isClassicShelf: true,
+                                      reduceMotion: reduceMotion,
+                                      reduceTransparency: reduceTransparency)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ShelfGlassBackdrop(appearance: appearance)
+                .overlay { ShelfTrackedGlassHighlights(appearance: appearance, pointer: pointer) }
+                .overlay { content }
+                .onContinuousHover { phase in
+                    guard tracksPointer else { return }
+                    switch phase {
+                    case let .active(location):
+                        pointer.update(CGPoint(
+                            x: min(1, max(0, location.x / max(geometry.size.width, 1))),
+                            y: min(1, max(0, location.y / max(geometry.size.height, 1)))
+                        ))
+                    case .ended:
+                        pointer.update(nil)
+                    }
+                }
+        }
+        .onChange(of: tracksPointer) { _, enabled in
+            if !enabled { pointer.update(nil) }
+        }
+        .onDisappear { pointer.update(nil) }
+    }
+}
+
+@Observable
+@MainActor
+private final class ShelfGlassPointer {
+    private(set) var point: CGPoint?
+
+    func update(_ point: CGPoint?) {
+        if self.point != point { self.point = point }
+    }
+}
+
+private struct ShelfTrackedGlassHighlights: View {
+    let appearance: ShelfAppearance
+    let pointer: ShelfGlassPointer
+
+    var body: some View {
+        ShelfGlassHighlights(appearance: appearance, hoverPoint: pointer.point)
+    }
+}
+
+private struct ShelfGlassBackdrop: View {
+    let appearance: ShelfAppearance
+    var blendsWithinWindow = false
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var effectiveScheme: ColorScheme {
@@ -22,25 +97,8 @@ struct ShelfGlassSurface: View {
         RoundedRectangle(cornerRadius: appearance.cornerRadius, style: .continuous)
     }
 
-    private var backdropOpacity: Double {
-        reduceTransparency ? 1 : appearance.backgroundOpacity
-    }
-
     private var materialOpacity: Double {
         appearance.surfaceOpacity(reduceTransparency: reduceTransparency)
-    }
-
-    /// Normalize even externally supplied coordinates, so decoration cannot pull
-    /// the shelf's edge away from its stable material or interfere with hit tests.
-    private var pointer: CGPoint {
-        guard appearance.shouldTrackPointer(isClassicShelf: true,
-                                            reduceMotion: reduceMotion,
-                                            reduceTransparency: reduceTransparency),
-              let hoverPoint else {
-            return CGPoint(x: 0.5, y: 0.5)
-        }
-        return CGPoint(x: min(max(hoverPoint.x, 0), 1),
-                       y: min(max(hoverPoint.y, 0), 1))
     }
 
     var body: some View {
@@ -49,7 +107,6 @@ struct ShelfGlassSurface: View {
             shape.fill(appearance.tint.color.opacity(
                 appearance.tintOpacity(reduceTransparency: reduceTransparency)
             ))
-            edgeHighlights.opacity(backdropOpacity)
         }
         .clipShape(shape)
         .allowsHitTesting(false)
@@ -86,6 +143,36 @@ struct ShelfGlassSurface: View {
         case .frosted: .popover
         case .regular, .solid: .hudWindow
         }
+    }
+}
+
+private struct ShelfGlassHighlights: View {
+    let appearance: ShelfAppearance
+    var hoverPoint: CGPoint?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: appearance.cornerRadius, style: .continuous)
+    }
+
+    private var pointer: CGPoint {
+        guard appearance.shouldTrackPointer(isClassicShelf: true,
+                                            reduceMotion: reduceMotion,
+                                            reduceTransparency: reduceTransparency),
+              let hoverPoint else {
+            return CGPoint(x: 0.5, y: 0.5)
+        }
+        return CGPoint(x: min(max(hoverPoint.x, 0), 1),
+                       y: min(max(hoverPoint.y, 0), 1))
+    }
+
+    var body: some View {
+        edgeHighlights
+            .opacity(reduceTransparency ? 1 : appearance.backgroundOpacity)
+            .clipShape(shape)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     private var edgeHighlights: some View {
@@ -146,6 +233,7 @@ private struct ShelfNativeGlassBackdrop: NSViewRepresentable {
     func makeNSView(context: Context) -> ShelfPassthroughGlassView {
         let view = ShelfPassthroughGlassView()
         view.contentView = NSView()
+        view.style = .regular
         configure(view)
         return view
     }
@@ -155,10 +243,10 @@ private struct ShelfNativeGlassBackdrop: NSViewRepresentable {
     }
 
     private func configure(_ view: ShelfPassthroughGlassView) {
-        view.style = .regular
-        view.cornerRadius = cornerRadius
-        view.alphaValue = opacity
-        view.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+        if view.cornerRadius != cornerRadius { view.cornerRadius = cornerRadius }
+        if view.alphaValue != opacity { view.alphaValue = opacity }
+        let name: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
+        if view.appearance?.name != name { view.appearance = NSAppearance(named: name) }
     }
 }
 
@@ -178,6 +266,7 @@ private struct ShelfMaterialBackdrop: NSViewRepresentable {
         let view = ShelfPassthroughMaterialView()
         view.wantsLayer = true
         view.state = .active
+        view.layer?.masksToBounds = true
         configure(view)
         return view
     }
@@ -187,12 +276,16 @@ private struct ShelfMaterialBackdrop: NSViewRepresentable {
     }
 
     private func configure(_ view: ShelfPassthroughMaterialView) {
-        view.material = material
-        view.blendingMode = blendsWithinWindow ? .withinWindow : .behindWindow
-        view.alphaValue = opacity
-        view.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
-        view.layer?.cornerRadius = cornerRadius
-        view.layer?.masksToBounds = true
+        if view.material != material { view.material = material }
+        let blendingMode: NSVisualEffectView.BlendingMode = blendsWithinWindow
+            ? .withinWindow : .behindWindow
+        if view.blendingMode != blendingMode { view.blendingMode = blendingMode }
+        if view.alphaValue != opacity { view.alphaValue = opacity }
+        let name: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
+        if view.appearance?.name != name { view.appearance = NSAppearance(named: name) }
+        if let layer = view.layer, layer.cornerRadius != CGFloat(cornerRadius) {
+            layer.cornerRadius = CGFloat(cornerRadius)
+        }
     }
 }
 
