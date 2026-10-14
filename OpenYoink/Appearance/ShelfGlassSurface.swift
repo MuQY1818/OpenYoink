@@ -28,7 +28,10 @@ struct ShelfGlassSurface: View {
     /// Normalize even externally supplied coordinates, so decoration cannot pull
     /// the shelf's edge away from its stable material or interfere with hit tests.
     private var pointer: CGPoint {
-        guard appearance.followsPointer, !reduceMotion, let hoverPoint else {
+        guard appearance.shouldTrackPointer(isClassicShelf: true,
+                                            reduceMotion: reduceMotion,
+                                            reduceTransparency: reduceTransparency),
+              let hoverPoint else {
             return CGPoint(x: 0.5, y: 0.5)
         }
         return CGPoint(x: min(max(hoverPoint.x, 0), 1),

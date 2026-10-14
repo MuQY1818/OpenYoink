@@ -62,6 +62,7 @@ struct ShelfView: View {
     /// v1.2: unavailable-item actions (external reconnect vs managed recovery).
     @Environment(\.itemRecoveryController) private var itemRecoveryController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var systemColorScheme
     /// 任务三：内缘收起把手的收起动作（ShelfWindowController 注入；Preview 为 nil 空操作）。
     @Environment(\.shelfHideAction) private var shelfHideAction
@@ -86,18 +87,28 @@ struct ShelfView: View {
 
     private let columns = [GridItem(.adaptive(minimum: Self.columnWidth), spacing: Self.gridSpacing)]
 
+    private var shouldTrackAppearancePointer: Bool {
+        settings.appearance.shouldTrackPointer(
+            isClassicShelf: presentationStyle == .classic,
+            reduceMotion: reduceMotion,
+            reduceTransparency: reduceTransparency
+        )
+    }
+
     var body: some View {
         GeometryReader { geometry in
             presentedSurface
                 .onContinuousHover { phase in
+                    guard shouldTrackAppearancePointer else { return }
                     switch phase {
                     case let .active(location):
-                        appearanceHoverPoint = CGPoint(
-                            x: location.x / max(geometry.size.width, 1),
-                            y: location.y / max(geometry.size.height, 1)
+                        let point = CGPoint(
+                            x: min(1, max(0, location.x / max(geometry.size.width, 1))),
+                            y: min(1, max(0, location.y / max(geometry.size.height, 1)))
                         )
+                        if appearanceHoverPoint != point { appearanceHoverPoint = point }
                     case .ended:
-                        appearanceHoverPoint = nil
+                        if appearanceHoverPoint != nil { appearanceHoverPoint = nil }
                     }
                 }
         }
@@ -105,6 +116,10 @@ struct ShelfView: View {
                          ? (settings.appearance.theme.colorScheme ?? systemColorScheme) : .dark)
             .environment(\.shelfPresentationStyle, presentationStyle)
             .overlay(alignment: .topLeading) { marqueeOverlay }
+            .onChange(of: shouldTrackAppearancePointer) { _, enabled in
+                if !enabled, appearanceHoverPoint != nil { appearanceHoverPoint = nil }
+            }
+            .onDisappear { appearanceHoverPoint = nil }
             .onChange(of: store.items) {
                 dropTargetState.reset()
                 interaction.normalize(for: store.visibleItems)

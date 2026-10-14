@@ -6,6 +6,12 @@ struct AppearanceSettingsTab: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var motionPreviewTrigger = 0
 
+    private var canPreviewMotion: Bool {
+        settings.appearance.shouldTrackPointer(isClassicShelf: true,
+                                              reduceMotion: reduceMotion,
+                                              reduceTransparency: reduceTransparency)
+    }
+
     var body: some View {
         @Bindable var settings = settings
 
@@ -15,8 +21,7 @@ struct AppearanceSettingsTab: View {
                     Text("Live Preview").font(.headline)
                     Spacer()
                     Button("Preview Motion") { motionPreviewTrigger += 1 }
-                        .disabled(settings.appearance.highlightStrength == 0
-                                  || !settings.appearance.followsPointer || reduceMotion)
+                        .disabled(!canPreviewMotion)
                         .accessibilityIdentifier("appearance.previewMotion")
                 }
                 PhaseAnimator(MotionPreviewPhase.allCases, trigger: motionPreviewTrigger) { phase in
@@ -180,6 +185,12 @@ private struct ShelfAppearancePreview: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var hoverPoint: CGPoint?
 
+    private var shouldTrackPointer: Bool {
+        appearance.shouldTrackPointer(isClassicShelf: true,
+                                      reduceMotion: reduceMotion,
+                                      reduceTransparency: reduceTransparency)
+    }
+
     var body: some View {
         let appearance = settings.appearance
         return GeometryReader { geometry in
@@ -225,7 +236,7 @@ private struct ShelfAppearancePreview: View {
         .padding(16)
         .background {
             ShelfGlassSurface(appearance: appearance,
-                              hoverPoint: reduceMotion ? nil : (demoPointer ?? hoverPoint),
+                              hoverPoint: shouldTrackPointer ? (demoPointer ?? hoverPoint) : nil,
                               blendsWithinWindow: true)
         }
         .overlay {
@@ -233,24 +244,26 @@ private struct ShelfAppearancePreview: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onContinuousHover { phase in
-                        guard appearance.followsPointer, !reduceMotion else {
-                            hoverPoint = nil
-                            return
-                        }
+                        guard shouldTrackPointer else { return }
                         switch phase {
                         case .active(let location):
-                            hoverPoint = CGPoint(
+                            let point = CGPoint(
                                 x: min(1, max(0, location.x / max(1, geometry.size.width))),
                                 y: min(1, max(0, location.y / max(1, geometry.size.height)))
                             )
+                            if hoverPoint != point { hoverPoint = point }
                         case .ended:
-                            hoverPoint = nil
+                            if hoverPoint != nil { hoverPoint = nil }
                         }
                     }
                     .accessibilityHidden(true)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: appearance.cornerRadius, style: .continuous))
+        .onChange(of: shouldTrackPointer) { _, enabled in
+            if !enabled, hoverPoint != nil { hoverPoint = nil }
+        }
+        .onDisappear { hoverPoint = nil }
         .shadow(color: .black.opacity(0.15), radius: 12, y: 5)
         .accessibilityElement(children: .combine)
     }

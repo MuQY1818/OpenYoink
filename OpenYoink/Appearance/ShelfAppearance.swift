@@ -77,6 +77,15 @@ struct ShelfAppearance: Codable, Equatable, Sendable {
 
     init() {}
 
+    /// Avoid hover state updates when the decoration cannot visibly move.
+    func shouldTrackPointer(isClassicShelf: Bool,
+                            reduceMotion: Bool,
+                            reduceTransparency: Bool) -> Bool {
+        isClassicShelf && followsPointer && !reduceMotion
+            && highlightStrength > 0 && elasticity > 0
+            && (reduceTransparency || backgroundOpacity > 0)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case material, theme, tint, backgroundOpacity, tintStrength, cornerRadius
         case highlightStrength, elasticity, followsPointer, cardOpacity, cardCornerRadius

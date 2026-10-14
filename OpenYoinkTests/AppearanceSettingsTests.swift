@@ -10,6 +10,46 @@ final class AppearanceSettingsTests: XCTestCase {
         try body(SettingsStore(defaults: defaults), defaults)
     }
 
+    func testPointerTrackingStopsForIslandAndReduceMotion() {
+        let appearance = ShelfAppearance.default
+        XCTAssertTrue(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                    reduceMotion: false,
+                                                    reduceTransparency: false))
+        XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: false,
+                                                     reduceMotion: false,
+                                                     reduceTransparency: false))
+        XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                     reduceMotion: true,
+                                                     reduceTransparency: false))
+    }
+
+    func testPointerTrackingStopsWhenHighlightCannotMove() {
+        for keyPath in [\ShelfAppearance.highlightStrength, \.elasticity, \.backgroundOpacity] {
+            var appearance = ShelfAppearance.default
+            appearance[keyPath: keyPath] = 0
+            XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                         reduceMotion: false,
+                                                         reduceTransparency: false))
+        }
+        var appearance = ShelfAppearance.default
+        appearance.followsPointer = false
+        XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                     reduceMotion: false,
+                                                     reduceTransparency: false))
+    }
+
+    func testReduceTransparencyUsesVisibleBackgroundWithoutOverridingMotionChoice() {
+        var appearance = ShelfAppearance.default
+        appearance.backgroundOpacity = 0
+        XCTAssertTrue(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                    reduceMotion: false,
+                                                    reduceTransparency: true))
+        appearance.followsPointer = false
+        XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                     reduceMotion: false,
+                                                     reduceTransparency: true))
+    }
+
     func testNestedEditsSurviveRelaunch() throws {
         try withStore { store, defaults in
             store.appearance.material = .clear
