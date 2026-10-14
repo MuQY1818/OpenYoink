@@ -48,19 +48,23 @@ OpenYoink 常驻菜单栏，没有 Dock 图标。侧边暂存架和顶部灵动�
 
 OpenYoink Island 把常用工具放到 Mac 顶部。收起时显示播放状态、倒计时或活动摘要，点击后展开对应模块。有刘海的 Mac 与物理刘海融合；外接屏和无刘海设备使用顶部悬浮胶囊。
 
-### 正在播放
+### 模块预览
 
 不用切回播放器，就能查看封面、歌曲信息和进度，暂停或切换歌曲；播放器支持时，也能拖动进度条。下面是 QQ 音乐的实际界面。其他播放器和浏览器视频的可用信息与控制能力取决于它们提供的媒体接口。
-
-<p align="center">
-  <a href="docs/screenshots/island/now-playing.png"><img src="docs/screenshots/island/now-playing.png" width="880" alt="OpenYoink 灵动岛正在播放模块，显示 QQ 音乐的封面、歌曲信息、进度和播放控制"></a>
-</p>
-
-### 暂存、专注与系统信息
 
 以下均为实际应用截图，点击可查看原图。
 
 <table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/now-playing.png"><img src="docs/screenshots/island/now-playing.png" width="100%" alt="OpenYoink 灵动岛正在播放模块，显示 QQ 音乐的封面、歌曲信息、进度和播放控制"></a>
+      <p><strong>正在播放</strong><br>查看歌曲信息和封面，暂停、切歌；播放器支持时可拖动进度条。</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/quick-access.png"><img src="docs/screenshots/island/quick-access.png" width="100%" alt="灵动岛快速访问，显示文件夹收藏、添加按钮和拖入添加区域"></a>
+      <p><strong>快速访问</strong><br>收藏常用文件夹，双击用 macOS 默认文件管理器打开，兼容 Finder、QSpace 等。拖到收藏卡片上可复制文件，重名时询问。</p>
+    </td>
+  </tr>
   <tr>
     <td width="50%" valign="top">
       <a href="docs/screenshots/island/shelf.png"><img src="docs/screenshots/island/shelf.png" width="100%" alt="灵动岛暂存架，带有搜索、类型筛选和文件拖放区域"></a>
@@ -95,12 +99,7 @@ OpenYoink Island 把常用工具放到 Mac 顶部。收起时显示播放状态�
 
 电池功率反映电池侧的充放电，不是插座功耗。正值为充电，负值为放电；接通电源且电池充满时，接近 `0 W` 是正常情况。
 
-还有两个模块可按需使用：
-
-| 模块 | 用途 |
-| --- | --- |
-| 传输 | 查看异步文件交付的进度和失败状态 |
-| 快速访问 | 收藏文件夹，双击用 macOS 默认文件管理器打开，兼容 Finder、QSpace 等；拖到收藏卡片上可复制文件，重名时询问 |
+传输模块还可以查看异步文件交付的进度和失败状态。
 
 ### 按自己的习惯配置
 

@@ -48,19 +48,23 @@ OpenYoink lives in the menu bar without a Dock icon. Use the side shelf, the not
 
 OpenYoink Island puts everyday tools at the top of your Mac. The compact view shows playback status, a countdown, or an activity summary; click to open the module. On a notched Mac, it joins the camera housing. External and non-notched displays use a floating top capsule.
 
-### Now Playing
+### Module previews
 
 Check artwork, track details, and progress without switching to the player. Pause, skip tracks, or seek when the player supports it. The screenshot shows QQ Music. Available information and controls for other players and browser videos depend on their media interfaces.
-
-<p align="center">
-  <a href="docs/screenshots/island/now-playing.png"><img src="docs/screenshots/island/now-playing.png" width="880" alt="OpenYoink Island showing QQ Music artwork, track details, progress and playback controls"></a>
-</p>
-
-### Shelf, focus and system information
 
 These are actual app screenshots with the Chinese UI. Click an image to view it at full size.
 
 <table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/now-playing.png"><img src="docs/screenshots/island/now-playing.png" width="100%" alt="OpenYoink Island showing QQ Music artwork, track details, progress and playback controls"></a>
+      <p><strong>Now Playing</strong><br>Track details, artwork, pause and skip controls, with seeking when the player supports it.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/island/quick-access.png"><img src="docs/screenshots/island/quick-access.png" width="100%" alt="Island Quick Access showing a favorite folder, an add button and a folder drop area"></a>
+      <p><strong>Quick Access</strong><br>Favorite folders; double-click to open in the macOS default file manager, including Finder or QSpace. Drop files onto a folder to copy them with a name-conflict prompt.</p>
+    </td>
+  </tr>
   <tr>
     <td width="50%" valign="top">
       <a href="docs/screenshots/island/shelf.png"><img src="docs/screenshots/island/shelf.png" width="100%" alt="Island shelf with search, type filtering and a file drop area"></a>
@@ -95,12 +99,7 @@ These are actual app screenshots with the Chinese UI. Click an image to view it 
 
 Battery power measures charging or discharging at the battery, not wall-outlet consumption. Positive means charging; negative means discharging. A reading near `0 W` is normal when plugged in with a full battery.
 
-Two more modules are available:
-
-| Module | What it does |
-| --- | --- |
-| Transfers | Shows asynchronous file delivery progress and failures |
-| Quick Access | Favorite folders; double-click to open in the macOS default file manager, including Finder or QSpace, or drop files onto a folder to copy them with a name-conflict prompt |
+The Transfers module also shows asynchronous file delivery progress and failures.
 
 ### Set up your modules
 
