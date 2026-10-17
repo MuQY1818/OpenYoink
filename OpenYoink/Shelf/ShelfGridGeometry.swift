@@ -10,6 +10,18 @@ import Foundation
 final class ShelfGridGeometry {
     /// 卡片 frame，按顶层项目 id 索引。Stack 浮层子项不上报（不参与网格定位）。
     var cardFrames: [UUID: CGRect] = [:]
+    @ObservationIgnored private var frameOwners: [UUID: UUID] = [:]
+
+    func report(_ frame: CGRect, for itemID: UUID, owner: UUID) {
+        frameOwners[itemID] = owner
+        cardFrames[itemID] = frame
+    }
+
+    func removeFrame(for itemID: UUID, owner: UUID) {
+        guard frameOwners[itemID] == owner else { return }
+        frameOwners.removeValue(forKey: itemID)
+        cardFrames.removeValue(forKey: itemID)
+    }
 }
 
 /// C6: 拖入鼠标位置 → 网格插入下标的纯逻辑映射（与 AppKit/SwiftUI 解耦，单测覆盖）。

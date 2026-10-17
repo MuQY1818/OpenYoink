@@ -43,6 +43,7 @@ final class EdgeTabController: NSObject {
     private var isDropTargeted = false
     /// 当前已应用的强调态（用于变化检测，避免重复动画）。
     private var isEmphasized = false
+    private var visibilityTransition = ShelfVisibilityTransitionState()
 
     private lazy var panel: EdgeTabPanel = {
         let panel = EdgeTabPanel(
@@ -161,8 +162,12 @@ final class EdgeTabController: NSObject {
             hideTab(animated: animated)
             return
         }
+        let visibilityChanged = visibilityTransition.request(visible: true) != nil
         let target = currentTargetFrame()
         if panel.isVisible {
+            // Reversing a fade-out keeps the window ordered in. Restore alpha
+            // as well as its layout; isVisible alone does not imply alpha == 1.
+            if visibilityChanged { restoreTabAlpha(animated: animated) }
             // 拖动拉环期间 frame 由手势直控，此处不抢夺。常态位迁移（设置/
             // 屏幕参数变更）动画过渡。
             if !isTabBeingDragged, panel.frame != target {
@@ -192,6 +197,14 @@ final class EdgeTabController: NSObject {
         }
         panel.alphaValue = 0
         panel.orderFront(nil)
+        restoreTabAlpha(animated: animated)
+    }
+
+    private func restoreTabAlpha(animated: Bool) {
+        guard animated else {
+            panel.alphaValue = 1
+            return
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.fadeDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -201,6 +214,7 @@ final class EdgeTabController: NSObject {
 
     private func hideTab(animated: Bool) {
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard let generation = visibilityTransition.request(visible: false) else { return }
         guard panel.isVisible else { return }
         guard animated else {
             panel.orderOut(nil)
@@ -213,7 +227,9 @@ final class EdgeTabController: NSObject {
         }, completionHandler: { [weak self] in
             // 淡出期间若状态又变为应在位（设置重新开启），不抢断。
             MainActor.assumeIsolated {
-                guard let self, !self.shouldBeVisible else { return }
+                guard let self,
+                      self.visibilityTransition.isCurrent(generation, visible: false),
+                      !self.shouldBeVisible else { return }
                 self.panel.orderOut(nil)
             }
         })

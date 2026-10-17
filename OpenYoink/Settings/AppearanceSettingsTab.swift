@@ -40,7 +40,7 @@ struct AppearanceSettingsTab: View {
 
     private var controls: some View {
         @Bindable var settings = settings
-        return Form {
+        return SettingsForm {
             Section("Material and Theme") {
                 Picker("Glass Material", selection: $settings.appearance.material) {
                     ForEach(ShelfAppearance.Material.allCases) { material in
@@ -130,7 +130,6 @@ struct AppearanceSettingsTab: View {
                 .accessibilityIdentifier("appearance.restoreDefaults")
             }
         }
-        .formStyle(.grouped)
     }
 
     private enum MotionPreviewPhase: CaseIterable {

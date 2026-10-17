@@ -8,10 +8,23 @@ import UniformTypeIdentifiers
 @Observable
 final class SettingsNavigationModel {
     var selectedPane: SettingsPane = .general
+
+    /// Tab focus can move independently of selection in the button sidebar.
+    /// Arrow navigation continues from that focused button, not the old pane.
+    @discardableResult
+    func moveSidebarSelection(forward: Bool, focusedPane: SettingsPane?) -> SettingsPane? {
+        let currentPane = focusedPane ?? selectedPane
+        guard let current = SettingsPane.allCases.firstIndex(of: currentPane) else { return nil }
+        let next = current + (forward ? 1 : -1)
+        guard SettingsPane.allCases.indices.contains(next) else { return nil }
+        let pane = SettingsPane.allCases[next]
+        selectedPane = pane
+        return pane
+    }
 }
 
-/// Settings window (S8): native sidebar navigation with grouped forms. The
-/// sidebar keeps all five destinations readable in Chinese and at larger text
+/// Settings window (S8): sidebar buttons with native scrolling forms. The
+/// sidebar keeps all six destinations readable in Chinese and at larger text
 /// sizes without crowding the title bar. All user-visible strings are
 /// LocalizedStringKey literals,
 /// resolved through Localizable.xcstrings (S10); runtime-computed fallbacks
@@ -22,20 +35,64 @@ final class SettingsNavigationModel {
 /// `HotKeyMonitor` arrive through the environment.
 struct SettingsView: View {
     @Environment(SettingsNavigationModel.self) private var navigation
+    @State private var windowVisibility = SettingsWindowVisibility()
+    @FocusState private var focusedPane: SettingsPane?
 
     var body: some View {
-        @Bindable var navigation = navigation
-        HStack(spacing: 0) {
-            List(selection: $navigation.selectedPane) {
-                ForEach(SettingsPane.allCases) { pane in
-                    Label(pane.title, systemImage: pane.systemImage)
-                        .tag(pane)
-                        .accessibilityIdentifier("settings.pane.\(pane.rawValue)")
-                }
+        ZStack {
+            if windowVisibility.displaysContent {
+                settingsContent
+            } else {
+                Color.clear
             }
-            .listStyle(.sidebar)
+        }
+        .frame(minWidth: 680, idealWidth: 720, maxWidth: .infinity,
+               minHeight: 480, idealHeight: 520, maxHeight: .infinity)
+        .background {
+            SettingsWindowVisibilityReader(visibility: windowVisibility)
+                .frame(width: 0, height: 0)
+        }
+    }
+
+    private var settingsContent: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(SettingsPane.allCases) { pane in
+                    Button {
+                        navigation.selectedPane = pane
+                    } label: {
+                        Label(pane.title, systemImage: pane.systemImage)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background {
+                                if navigation.selectedPane == pane {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.accentColor.opacity(0.18))
+                                }
+                            }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusable()
+                    .focused($focusedPane, equals: pane)
+                    .accessibilityAddTraits(navigation.selectedPane == pane ? .isSelected : [])
+                    .accessibilityIdentifier("settings.pane.\(pane.rawValue)")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 12)
             .frame(minWidth: 156, idealWidth: 168, maxWidth: 188)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("Settings Categories")
+            .onMoveCommand { direction in
+                guard direction == .up || direction == .down,
+                      let pane = navigation.moveSidebarSelection(
+                        forward: direction == .down, focusedPane: focusedPane
+                      ) else { return }
+                focusedPane = pane
+            }
 
             Divider()
 
@@ -43,14 +100,6 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("settings.content.\(navigation.selectedPane.rawValue)")
         }
-        .frame(
-            minWidth: 680,
-            idealWidth: 720,
-            maxWidth: .infinity,
-            minHeight: 480,
-            idealHeight: 520,
-            maxHeight: .infinity
-        )
     }
 
     @ViewBuilder
@@ -114,7 +163,7 @@ private struct StorageSettingsTab: View {
     @State private var confirmsDiscard = false
 
     var body: some View {
-        Form {
+        SettingsForm {
             Section("Managed Storage") {
                 LabeledContent("Materialized files") {
                     Text(ByteCountFormatter.string(
@@ -237,7 +286,6 @@ private struct StorageSettingsTab: View {
                 }
             }
         }
-        .formStyle(.grouped)
         .onAppear { storage.refresh() }
         .alert("Restore Shelf Data?", isPresented: Binding(
             get: { snapshotToRestore != nil },
@@ -285,7 +333,7 @@ private struct TriggerSettingsTab: View {
 
     var body: some View {
         @Bindable var settings = settings
-        Form {
+        SettingsForm {
             Section("Side Shelf Reveal") {
                 Toggle("Preview side shelf on hover", isOn: $settings.classicShelfHoverRevealEnabled)
                     .disabled(!settings.classicShelfEnabled)
@@ -365,7 +413,6 @@ private struct TriggerSettingsTab: View {
                 .disabled(!settings.shakeTriggerEnabled)
             }
         }
-        .formStyle(.grouped)
     }
 
     /// UX1/2: 随模式变化的说明文案（immediate 无需贴边；edgeOnly 在 custom
@@ -391,7 +438,7 @@ private struct IgnoredAppsSettingsTab: View {
 
     var body: some View {
         @Bindable var settings = settings
-        Form {
+        SettingsForm {
             Section {
                 List(selection: $selection) {
                     ForEach(settings.ignoredAppBundleIDs, id: \.self) { bundleID in
@@ -441,7 +488,6 @@ private struct IgnoredAppsSettingsTab: View {
                     .font(.caption)
             }
         }
-        .formStyle(.grouped)
         .onAppear { reloadRunningApps() }
     }
 
@@ -519,7 +565,7 @@ private struct AboutSettingsTab: View {
     }
 
     var body: some View {
-        Form {
+        SettingsForm {
             Section {
                 LabeledContent("Version", value: versionString)
                 LabeledContent("License", value: "MIT")
@@ -543,7 +589,6 @@ private struct AboutSettingsTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
     }
 
     @ViewBuilder

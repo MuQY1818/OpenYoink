@@ -133,6 +133,7 @@ final class ShelfWindowController: NSObject {
     private var quickActionLayoutPending = false
     private var quickActionLayoutTask: Task<Void, Never>?
     private var classicFrameTransition = ShelfFrameTransitionState()
+    private var classicVisibilityTransition = ShelfVisibilityTransitionState()
 
     struct OnboardingPresentationSnapshot: Equatable, Sendable {
         fileprivate let surface: SettingsStore.PreferredShelfSurface
@@ -649,6 +650,8 @@ final class ShelfWindowController: NSObject {
         if takeKeyboardFocus, interaction.focusedItemID == nil {
             interaction.focusedItemID = store.selectedItems.first?.id ?? store.items.first?.id
         }
+        _ = classicVisibilityTransition.request(visible: true)
+        let wasOnscreen = classicPanel.isVisible
         appState.showShelf()
         let targetFrame = classicTargetFrame()
         _ = classicFrameTransition.request(targetFrame, currentFrame: classicPanel.frame)
@@ -659,8 +662,12 @@ final class ShelfWindowController: NSObject {
             if takeKeyboardFocus { classicPanel.makeKey() }
             return
         }
-        classicPanel.alphaValue = 0
-        classicPanel.setFrame(classicHiddenFrame(for: targetFrame), display: false)
+        // A closing panel is still onscreen. Reverse from its current frame and
+        // alpha instead of jumping back to the fully hidden starting position.
+        if !wasOnscreen {
+            classicPanel.alphaValue = 0
+            classicPanel.setFrame(classicHiddenFrame(for: targetFrame), display: false)
+        }
         classicPanel.orderFront(nil)
         if takeKeyboardFocus { classicPanel.makeKey() }
         NSAnimationContext.runAnimationGroup { context in
@@ -733,11 +740,13 @@ final class ShelfWindowController: NSObject {
         quickActionLayoutTask = nil
         quickActionLayoutPending = false
         isMarqueeSelectionActive = false
+        let generation = classicVisibilityTransition.request(visible: false)
+        let visibleFrame = classicFrameTransition.targetFrame ?? classicPanel.frame
         appState.hideShelf()
         classicFrameTransition.reset()
         // S6: shelf 隐藏时关掉 Quick Look 并释放会话资源（不恢复键盘焦点）。
         quickLookCoordinator.closeForShelfHide()
-        let targetFrame = classicHiddenFrame(for: classicPanel.frame)
+        let targetFrame = classicHiddenFrame(for: visibleFrame)
         guard animated else {
             classicPanel.orderOut(nil)
             return
@@ -750,7 +759,9 @@ final class ShelfWindowController: NSObject {
         }, completionHandler: { [weak self] in
             // 隐藏期间若用户重新唤出，则不打断显示状态。
             MainActor.assumeIsolated {
-                guard let self, !self.appState.isShelfVisible else { return }
+                guard let self, let generation,
+                      self.classicVisibilityTransition.isCurrent(generation, visible: false),
+                      !self.appState.isShelfVisible else { return }
                 self.classicPanel.orderOut(nil)
             }
         })
@@ -1426,6 +1437,7 @@ final class ShelfWindowController: NSObject {
             }
         } else {
             appState.hideShelf()
+            _ = classicVisibilityTransition.request(visible: false)
             classicFrameTransition.reset()
             classicPanel.orderOut(nil)
         }

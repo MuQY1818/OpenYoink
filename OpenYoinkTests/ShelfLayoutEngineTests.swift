@@ -9,6 +9,18 @@ import XCTest
 /// (0,60 1920×1020)；副屏在右侧 frame (1920,0 2560×1440)、menu bar 占顶部
 /// 25 → visibleFrame (1920,25 2560×1415)。
 final class ShelfLayoutEngineTests: XCTestCase {
+    func testGridOnlyOmitsScrollingWhenItsRowsFit() {
+        let oneRow = CGSize(width: 276, height: 132)
+        XCTAssertTrue(ShelfLayoutEngine.gridFits(itemCount: 3, viewport: oneRow))
+        XCTAssertFalse(ShelfLayoutEngine.gridFits(itemCount: 4, viewport: oneRow))
+        XCTAssertFalse(ShelfLayoutEngine.gridFits(itemCount: 1, viewport: CGSize(width: 284, height: 131)))
+        XCTAssertTrue(ShelfLayoutEngine.gridFits(itemCount: 4, viewport: CGSize(width: 284, height: 276)))
+        // Narrow shelves and incomplete initial layout must keep the scroll path.
+        XCTAssertFalse(ShelfLayoutEngine.gridFits(itemCount: 1, viewport: .zero))
+        XCTAssertFalse(ShelfLayoutEngine.gridFits(itemCount: 1, viewport: CGSize(width: 83, height: 300)))
+        XCTAssertFalse(ShelfLayoutEngine.gridFits(itemCount: 3, viewport: CGSize(width: 275, height: 132)))
+    }
+
     private let mainScreen = ShelfLayoutEngine.ScreenGeometry(
         frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
         visibleFrame: CGRect(x: 0, y: 60, width: 1920, height: 1020)
