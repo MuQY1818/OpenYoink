@@ -8,6 +8,19 @@ import UniformTypeIdentifiers
 @Observable
 final class SettingsNavigationModel {
     var selectedPane: SettingsPane = .general
+
+    /// Tab focus can move independently of selection in the button sidebar.
+    /// Arrow navigation continues from that focused button, not the old pane.
+    @discardableResult
+    func moveSidebarSelection(forward: Bool, focusedPane: SettingsPane?) -> SettingsPane? {
+        let currentPane = focusedPane ?? selectedPane
+        guard let current = SettingsPane.allCases.firstIndex(of: currentPane) else { return nil }
+        let next = current + (forward ? 1 : -1)
+        guard SettingsPane.allCases.indices.contains(next) else { return nil }
+        let pane = SettingsPane.allCases[next]
+        selectedPane = pane
+        return pane
+    }
 }
 
 /// Settings window (S8): sidebar buttons with native scrolling forms. The
@@ -75,11 +88,9 @@ struct SettingsView: View {
             .accessibilityLabel("Settings Categories")
             .onMoveCommand { direction in
                 guard direction == .up || direction == .down,
-                      let current = SettingsPane.allCases.firstIndex(of: navigation.selectedPane) else { return }
-                let next = current + (direction == .down ? 1 : -1)
-                guard SettingsPane.allCases.indices.contains(next) else { return }
-                let pane = SettingsPane.allCases[next]
-                navigation.selectedPane = pane
+                      let pane = navigation.moveSidebarSelection(
+                        forward: direction == .down, focusedPane: focusedPane
+                      ) else { return }
                 focusedPane = pane
             }
 
