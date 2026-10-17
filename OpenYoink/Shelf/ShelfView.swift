@@ -275,18 +275,39 @@ struct ShelfView: View {
     // MARK: - Grid
 
     private var itemGrid: some View {
-        ScrollView(.vertical) {
-            LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
-                ForEach(store.visibleItems) { item in
-                    gridCell(for: item)
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+        GeometryReader { viewport in
+            let fits = presentationStyle == .classic
+                && ShelfLayoutEngine.gridFits(itemCount: store.visibleItems.count,
+                                              viewport: viewport.size)
+            Group {
+                if fits {
+                    cardGrid.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                } else {
+                    scrollingGrid
                 }
             }
-            // 卡片弹入 / 删除淡出 / 重排让位统一走 §3 的 spring 动画。
-            .animation(reduceMotion ? nil : Self.cardAnimation, value: store.items)
-            .animation(reduceMotion ? nil : Self.cardAnimation, value: store.selection)
+            // Change the container immediately; do not keep an outgoing grid
+            // alive with the same card IDs and shared drag/selection geometry.
+            .animation(nil, value: fits)
+        }
+    }
+
+    private var scrollingGrid: some View {
+        ScrollView(.vertical) {
+            cardGrid
         }
         .scrollIndicators(.hidden)
+    }
+
+    private var cardGrid: some View {
+        LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
+            ForEach(store.visibleItems) { item in
+                gridCell(for: item)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+            }
+        }
+        .animation(reduceMotion ? nil : Self.cardAnimation, value: store.items)
+        .animation(reduceMotion ? nil : Self.cardAnimation, value: store.selection)
     }
 
     private func gridCell(for item: ShelfItem) -> some View {
@@ -294,14 +315,7 @@ struct ShelfView: View {
         return cellContent(for: item)
             // C5/C6: 上报卡片在窗口 .global 坐标系中的 frame（含滚动偏移），
             // 供框选命中与拖入插入定位使用；cell 离屏/移除时清除，避免陈旧几何。
-            .onGeometryChange(for: CGRect.self) { proxy in
-                proxy.frame(in: .global)
-            } action: { frame in
-                gridGeometry.cardFrames[item.id] = frame
-            }
-            .onDisappear {
-                gridGeometry.cardFrames.removeValue(forKey: item.id)
-            }
+            .modifier(ShelfCardGeometryReporter(itemID: item.id))
             // S4: 插入指示线 —— insertionIndex 命中时画在卡片前缘。
             .overlay(alignment: .leading) {
                 if dropTargetState.insertionIndex != nil, dropTargetState.insertionIndex == index {
@@ -797,6 +811,23 @@ enum ShelfPreviewFixtures {
         .environment(ShelfNoticeModel())
         .environment(TransferStore())
         .frame(width: 320, height: 600)
+}
+
+/// Each mounted cell owns its geometry registration. Container changes may
+/// dispose an old cell after a new cell with the same item ID has reported.
+private struct ShelfCardGeometryReporter: ViewModifier {
+    let itemID: UUID
+    @Environment(ShelfGridGeometry.self) private var geometry
+    @State private var owner = UUID()
+
+    func body(content: Content) -> some View {
+        content.onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            geometry.report(frame, for: itemID, owner: owner)
+        }
+        .onDisappear { geometry.removeFrame(for: itemID, owner: owner) }
+    }
 }
 
 #Preview("Empty shelf") {

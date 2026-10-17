@@ -7,6 +7,21 @@ import XCTest
 /// 行 0：indices 0/1/2，x = 0/112/224，y 0...64
 /// 行 1：indices 3/4，  x = 0/112，    y 76...140
 final class DropInsertionLocatorTests: XCTestCase {
+    @MainActor
+    func testOutgoingGridCannotRemoveReplacementCellsGeometry() {
+        let geometry = ShelfGridGeometry()
+        let itemID = UUID()
+        let oldOwner = UUID()
+        let newOwner = UUID()
+        geometry.report(CGRect(x: 0, y: 50, width: 84, height: 100), for: itemID, owner: oldOwner)
+        let replacement = CGRect(x: 0, y: 60, width: 84, height: 100)
+        geometry.report(replacement, for: itemID, owner: newOwner)
+        geometry.removeFrame(for: itemID, owner: oldOwner)
+        XCTAssertEqual(geometry.cardFrames[itemID], replacement)
+        geometry.removeFrame(for: itemID, owner: newOwner)
+        XCTAssertNil(geometry.cardFrames[itemID])
+    }
+
     private func frame(_ x: CGFloat, _ y: CGFloat) -> CGRect {
         CGRect(x: x, y: y, width: 100, height: 64)
     }

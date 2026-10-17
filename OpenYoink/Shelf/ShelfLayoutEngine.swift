@@ -62,6 +62,16 @@ enum ShelfLayoutEngine {
         return max(1, Int((gridWidth + gridSpacing) / (gridColumnMinimum + gridSpacing)))
     }
 
+    /// Use the same conservative row allowance as the window's compact layout.
+    /// The viewport width is already inside the shelf's padding and handle.
+    static func gridFits(itemCount: Int, viewport: CGSize) -> Bool {
+        guard itemCount > 0, viewport.width >= gridColumnMinimum, viewport.height > 0 else { return false }
+        let columns = max(1, Int((viewport.width + gridSpacing) / (gridColumnMinimum + gridSpacing)))
+        let rows = (itemCount + columns - 1) / columns
+        let height = CGFloat(rows) * cardRowHeight + CGFloat(rows - 1) * gridSpacing
+        return height <= viewport.height
+    }
+
     /// UX5: 内容贴合高度 —— 标题栏 + 内边距 + 行高×行数 + 行间距；
     /// 上限为可见高度的 80%（超出滚动）；空架给紧凑空态高度。
     static func contentHeight(itemCount: Int,

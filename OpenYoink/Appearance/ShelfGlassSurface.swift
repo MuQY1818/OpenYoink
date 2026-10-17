@@ -41,7 +41,14 @@ struct ShelfInteractiveGlassSurface<Content: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ShelfGlassBackdrop(appearance: appearance)
+            ZStack {
+                ShelfGlassBackdrop(appearance: appearance)
+                // Keep this coverage hit-testable and above the passthrough
+                // material. WindowServer must retain a target over empty pixels
+                // before DragContainerView can receive the file drag.
+                RoundedRectangle(cornerRadius: appearance.cornerRadius, style: .continuous)
+                    .fill(Color.black.opacity(0.01))
+            }
                 .overlay { ShelfTrackedGlassHighlights(appearance: appearance, pointer: pointer) }
                 .overlay { content }
                 .onContinuousHover { phase in

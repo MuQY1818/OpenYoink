@@ -12,7 +12,7 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         @Bindable var settings = settings
-        Form {
+        SettingsForm {
             Section("Workflow Presets") {
                 Menu("Apply a Preset…") {
                     ForEach(WorkflowPreset.allCases) { preset in
@@ -253,7 +253,6 @@ struct GeneralSettingsTab: View {
                 }
             }
         }
-        .formStyle(.grouped)
         .onAppear { launchAtLoginController.refresh() }
         .alert("Apply Workflow Preset?", isPresented: Binding(
             get: { pendingPreset != nil }, set: { if !$0 { pendingPreset = nil } }
