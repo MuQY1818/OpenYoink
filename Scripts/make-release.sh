@@ -61,6 +61,11 @@ DMG_PATH="export/OpenYoink-$VERSION.dmg"
 APPCAST="docs/appcast.xml"
 RELEASE_URL="https://github.com/MuQY1818/OpenYoink/releases/download/v$VERSION/OpenYoink-$VERSION.dmg"
 
+if ! command -v node >/dev/null 2>&1; then
+    echo "error: README 徽章刷新需要 Node.js 18+。请先安装 Node.js。" >&2
+    exit 1
+fi
+
 if [ "$RELEASE_MODE" = "developer-id" ]; then
     for required_name in DEVELOPER_ID_APPLICATION DEVELOPMENT_TEAM_ID NOTARY_PROFILE; do
         if [ -z "${!required_name:-}" ]; then
@@ -292,7 +297,11 @@ tree.write(appcast_path, encoding="utf-8", xml_declaration=True)
 print(f"    appcast 已更新：{short_version} ({bundle_version})")
 PYEOF
 
-# ---- 7. 输出 Homebrew cask 元数据（不提前修改远端）----
+# ---- 7. README 徽章本地快照（不依赖公共徽章服务，不创建定时任务）----
+echo "==> 更新 README 徽章"
+node "$REPO_ROOT/Scripts/update-readme-badges.mjs" --version "$SHORT_VERSION"
+
+# ---- 8. 输出 Homebrew cask 元数据（不提前修改远端）----
 # GitHub Release 此时尚未上传；自动推送 cask 会先发布一个失效 URL。
 # 上传后重跑整条构建链又会因签名/公证时间戳生成不同 DMG，因此这里只输出
 # 最终已公证产物的精确 SHA，留给上传完成后的独立人工提交。
@@ -304,6 +313,7 @@ echo ""
 echo "==> 完成"
 echo "    DMG:     $DMG_PATH"
 echo "    appcast: $APPCAST"
+echo "    badges:  docs/badges/（请与发布元数据一起提交）"
 echo "    mode:    $RELEASE_MODE"
-echo "下一步（本脚本不执行）：git 提交 docs/appcast.xml，并创建 GitHub Release："
+echo "下一步（本脚本不执行）：git 提交 docs/appcast.xml 和 docs/badges/，并创建 GitHub Release："
 echo "    gh release create v$VERSION $DMG_PATH --title \"OpenYoink $VERSION\""

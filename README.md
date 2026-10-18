@@ -11,11 +11,11 @@
 
 <br>
 
-[![最新版本](https://img.shields.io/github/v/release/MuQY1818/OpenYoink?display_name=tag&sort=semver&style=flat-square)](https://github.com/MuQY1818/OpenYoink/releases/latest)
-[![下载量](https://img.shields.io/github/downloads/MuQY1818/OpenYoink/total?style=flat-square)](https://github.com/MuQY1818/OpenYoink/releases)
-[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?style=flat-square&logo=apple&logoColor=white)](https://developer.apple.com/macos/)
-[![GitHub Stars](https://img.shields.io/github/stars/MuQY1818/OpenYoink?style=flat-square)](https://github.com/MuQY1818/OpenYoink/stargazers)
-[![MIT 许可证](https://img.shields.io/github/license/MuQY1818/OpenYoink?style=flat-square)](LICENSE)
+[![最新版本](docs/badges/release.svg)](https://github.com/MuQY1818/OpenYoink/releases/latest)
+[![下载量](docs/badges/downloads.svg)](https://github.com/MuQY1818/OpenYoink/releases)
+[![macOS 15+](docs/badges/macos.svg)](https://developer.apple.com/macos/)
+[![GitHub Stars](docs/badges/stars.svg)](https://github.com/MuQY1818/OpenYoink/stargazers)
+[![MIT 许可证](docs/badges/license.svg)](LICENSE)
 
 [下载](https://github.com/MuQY1818/OpenYoink/releases/latest) ·
 [官网](https://muqy1818.github.io/OpenYoink/) ·
