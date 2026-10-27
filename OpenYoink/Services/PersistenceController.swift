@@ -54,6 +54,9 @@ final class PersistenceController {
     private var shelfFileURL: URL { directoryURL.appendingPathComponent("shelf.json") }
     private var backupShelfFileURL: URL { directoryURL.appendingPathComponent("shelf.json.backup") }
     private static let corruptSnapshotPrefix = "shelf.json.corrupt-"
+    // Older releases recognize this as quarantined recovery data and therefore
+    // refuse orphan cleanup instead of deleting archived managed copies.
+    private static let removalSnapshotPrefix = "shelf.json.corrupt-removed-"
     private var pendingItems: [ShelfItem]?
     private var saveTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "Persistence")
@@ -157,7 +160,18 @@ final class PersistenceController {
         guard fileManager.fileExists(atPath: directoryURL.path) else { return true }
         do {
             let names = try fileManager.contentsOfDirectory(atPath: directoryURL.path)
-            return !names.contains { $0.hasPrefix(Self.corruptSnapshotPrefix) }
+            for name in names {
+                if Self.isRemovalSnapshotName(name) {
+                    // A damaged removal archive can still own the only retained
+                    // managed copy. Never infer that its files are unreferenced.
+                    guard (try? decodeSnapshot(at: directoryURL.appendingPathComponent(name))) != nil else {
+                        return false
+                    }
+                    continue
+                }
+                if name.hasPrefix(Self.corruptSnapshotPrefix) { return false }
+            }
+            return true
         } catch {
             logger.error("Cannot inspect persistence directory before orphan cleanup: \(error.localizedDescription, privacy: .public)")
             return false
@@ -170,6 +184,7 @@ final class PersistenceController {
         enum Kind: Equatable, Sendable {
             case lastKnownGood
             case quarantined
+            case removedItems
         }
 
         let url: URL
@@ -196,8 +211,22 @@ final class PersistenceController {
         }
     }
 
-    /// 返回上一份有效快照与所有隔离文件。损坏文件也展示，方便用户在 Finder
-    /// 中取回人工修复；只有完整解码成功的条目才标记为可自动恢复。
+    /// Retains the complete shelf before a batch removal, independently of the
+    /// rotating last-known-good backup. Archives are deleted only by an explicit
+    /// recovery-data action, so removed managed copies remain protected on launch.
+    func saveRemovalRecoverySnapshot(_ items: [ShelfItem]) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let snapshot = ShelfSnapshot(schemaVersion: Self.currentSchemaVersion, items: items)
+        let data = try encoder.encode(snapshot)
+        let url = directoryURL.appendingPathComponent(
+            Self.removalSnapshotPrefix + UUID().uuidString + ".json"
+        )
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// Lists independent removal archives, the last known good shelf and
+    /// quarantined data. Only fully decodable snapshots are restorable.
     func recoverySnapshots() -> [RecoverySnapshot] {
         let fileManager = FileManager.default
         guard let urls = try? fileManager.contentsOfDirectory(
@@ -210,6 +239,8 @@ final class PersistenceController {
             let kind: RecoverySnapshot.Kind
             if url.lastPathComponent == backupShelfFileURL.lastPathComponent {
                 kind = .lastKnownGood
+            } else if Self.isRemovalSnapshotName(url.lastPathComponent) {
+                kind = .removedItems
             } else if url.lastPathComponent.hasPrefix(Self.corruptSnapshotPrefix) {
                 kind = .quarantined
             } else {
@@ -258,6 +289,11 @@ final class PersistenceController {
         }
         return standardized.lastPathComponent == backupShelfFileURL.lastPathComponent
             || standardized.lastPathComponent.hasPrefix(Self.corruptSnapshotPrefix)
+            || Self.isRemovalSnapshotName(standardized.lastPathComponent)
+    }
+
+    private static func isRemovalSnapshotName(_ name: String) -> Bool {
+        name.hasPrefix(removalSnapshotPrefix) && name.hasSuffix(".json")
     }
 
     private func decodeSnapshot(at url: URL) throws -> ShelfSnapshot {

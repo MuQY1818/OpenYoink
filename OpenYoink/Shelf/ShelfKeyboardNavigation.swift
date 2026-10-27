@@ -33,6 +33,11 @@ enum ShelfKeyboardNavigator {
 @MainActor
 @Observable
 final class ShelfInteractionState {
+    var isSelecting = false {
+        didSet {
+            if oldValue != isSelecting { onActionSelectionDidChange?() }
+        }
+    }
     var focusedItemID: UUID?
     var expandedStackID: UUID? {
         didSet {
@@ -60,6 +65,7 @@ final class ShelfInteractionState {
 
     func enterStack(_ stack: ShelfItem) {
         guard stack.kind == .stack, let children = stack.children, !children.isEmpty else { return }
+        isSelecting = false
         expandedStackID = stack.id
         childSelection.removeAll()
         focusedItemID = children[0].id

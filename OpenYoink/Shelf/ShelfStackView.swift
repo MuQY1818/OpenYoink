@@ -8,6 +8,7 @@ import SwiftUI
 /// 点击语义：普通点击 = 单选该 Stack 并展开/收起浮层；⌘点击 = 仅切换选中
 /// （多选语义与普通卡片一致，不展开）。展开浮层由 ShelfView 以 overlay 呈现。
 struct ShelfStackView: View {
+    @Environment(\.shelfSelectionMode) private var selectionMode
     let item: ShelfItem
     let isSelected: Bool
     var isKeyboardFocused: Bool = false
@@ -26,10 +27,10 @@ struct ShelfStackView: View {
     var body: some View {
         ShelfItemCard(
             item: item,
-            isSelected: isSelected || isExpanded,
+            isSelected: isSelected || (!selectionMode && isExpanded),
             isKeyboardFocused: isKeyboardFocused,
             onSelect: { additive in
-                if additive {
+                if selectionMode || additive {
                     onSelect(true)
                 } else {
                     onSelect(false)
@@ -43,7 +44,7 @@ struct ShelfStackView: View {
             thumbnailItem: item.children?.first(where: { $0.fileURL != nil }),
             dragContentsProvider: dragContentsProvider
         )
-        .overlay(alignment: .topTrailing) { countBadge }
+        .overlay(alignment: selectionMode ? .topLeading : .topTrailing) { countBadge }
     }
 
     /// 数量角标（accent 胶囊，右上角）。
@@ -74,6 +75,7 @@ struct ShelfStackExpandedView: View {
     @Environment(TransferStore.self) private var transferStore
     @Environment(DropTargetState.self) private var dropTargetState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shelfSelectionMode) private var selectionMode
     let stack: ShelfItem
     let onDismiss: () -> Void
     let interaction: ShelfInteractionState
@@ -97,7 +99,7 @@ struct ShelfStackExpandedView: View {
                             isKeyboardFocused: interaction.focusedItemID == child.id,
                             onSelect: { additive in
                                 interaction.focusedItemID = child.id
-                                if additive {
+                                if selectionMode || additive {
                                     interaction.childSelection.formSymmetricDifference([child.id])
                                 } else {
                                     interaction.childSelection = [child.id]
