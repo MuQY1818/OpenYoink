@@ -48,6 +48,15 @@ final class ShelfStore {
         return removed
     }
 
+    /// Keep a durable recovery copy before a bulk action can orphan managed
+    /// files. If recovery cannot be written, leave the shelf unchanged.
+    @discardableResult
+    func removeBatchForUser(ids: Set<UUID>) throws -> [ShelfItem] {
+        guard items.contains(where: { ids.contains($0.id) }) else { return [] }
+        try persistence?.saveRemovalRecoverySnapshot(items)
+        return removeForUser(ids: ids)
+    }
+
     @discardableResult
     func removeChildrenForUser(ids: Set<UUID>, fromStack stackID: UUID) -> Bool {
         let before = items
@@ -256,11 +265,16 @@ final class ShelfStore {
 
     /// Replaces the selection; unknown ids are ignored.
     func setSelection(_ ids: Set<UUID>) {
-        selection = ids.filter { item(withID: $0) != nil }
+        selection = ids.intersection(Set(items.map(\.id)))
     }
 
     func selectAll() {
         selection = Set(items.map(\.id))
+    }
+
+    /// Match the visible grid and the panel's Select All keyboard command.
+    func selectAllVisible() {
+        setSelection(Set(visibleItems.map(\.id)))
     }
 
     func clearSelection() {

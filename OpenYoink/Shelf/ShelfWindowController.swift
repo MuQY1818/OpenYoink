@@ -1,17 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// UX6: 空架自动隐藏裁决（纯逻辑，与 AppKit 解耦供单测）。
-///
-/// 基于「非空 → 空」的迁移而非「为空」状态：shelf 可见且 items 从 >0 变 0
-/// （移除/拖出导致）→ 应动画隐藏。状态式实现（可见且为空即隐）会把用户
-/// 在空架状态的手动唤出（快捷键/菜单/摇动/边缘 —— 显式意图）立刻收回，
-/// 迁移式天然豁免该场景。首次评估只建立基线，不触发。
-///
-/// 任务二不变式：拖拽进行中（`isDragInProgress`）不自动隐藏已可见的 shelf ——
-/// 真机验收怀疑「拖拽中 shelf 被意外隐藏导致 drop 落空」，典型场景是拖拽
-/// 期间 items 从 >0 变 0（如另一只手按 Delete 清空）。被抑制的隐藏不补发：
-/// 拖结束后 shelf 保持可见（空架），由用户显式收起，安全方向。
+/// Hides on a non-empty → empty transition when enabled. Explicit shelf
+/// management removals and in-progress drags keep the shelf open, while still
+/// advancing the baseline so a suppressed hide is never replayed later.
 struct EmptyShelfAutoHideRule: Sendable, Equatable {
     private var previousCount: Int?
 
@@ -22,13 +14,13 @@ struct EmptyShelfAutoHideRule: Sendable, Equatable {
                  isDragInProgress: false)
     }
 
-    /// 带拖拽状态门控的评估（任务二）：`isDragInProgress == true` 期间恒不触发，
-    /// 基线照常更新（拖拽结束后的下一次变更以最新数量为基准裁决）。
+    /// Suppressed transitions still update the baseline. Future delivery-driven
+    /// removals continue to follow the user's empty-shelf setting.
     mutating func evaluate(itemCount: Int, isVisible: Bool, isEnabled: Bool,
-                           isDragInProgress: Bool) -> Bool {
+                           isDragInProgress: Bool, isUserRemoval: Bool = false) -> Bool {
         defer { previousCount = itemCount }
         guard let previousCount else { return false }
-        guard !isDragInProgress else { return false }
+        guard !isDragInProgress, !isUserRemoval else { return false }
         return isEnabled && isVisible && previousCount > 0 && itemCount == 0
     }
 
@@ -63,6 +55,7 @@ final class ShelfWindowController: NSObject {
     private let store: ShelfStore
     /// UX6: 空架自动隐藏裁决状态（跨 items 变更保持上一轮数量基线）。
     private var emptyAutoHideRule = EmptyShelfAutoHideRule()
+    private var isUserRemovalInProgress = false
     /// S4: 拖入分派（pasteboard → ShelfItem），供 DragContainerView 调用。
     private let importCoordinator: DropImportCoordinator
     /// S4: 拖入悬停高亮/插入位置状态，DragContainerView 驱动、ShelfView 渲染。
@@ -215,6 +208,20 @@ final class ShelfWindowController: NSObject {
                     } else {
                         self?.hideShelf(animated: true)
                     }
+                })
+                .environment(\.shelfFocusAction, { [weak panel] in
+                    guard let panel else { return }
+                    panel.makeKey()
+                    if let editor = panel.firstResponder as? NSTextView, editor.isFieldEditor {
+                        panel.makeFirstResponder(nil)
+                    }
+                })
+                .environment(\.shelfUserRemovalAction, { [weak self] action in
+                    guard let self else { action(); return }
+                    let previous = self.isUserRemovalInProgress
+                    self.isUserRemovalInProgress = true
+                    defer { self.isUserRemovalInProgress = previous }
+                    action()
                 })
                 .environment(\.shelfMarqueeActivityAction, { [weak self] isActive in
                     guard presentationStyle == .classic else { return }
@@ -1013,6 +1020,11 @@ final class ShelfWindowController: NSObject {
                 quickLookCoordinator.dismiss()
                 return true
             }
+            if interaction.isSelecting {
+                interaction.isSelecting = false
+                store.clearSelection()
+                return true
+            }
             if sourcePanel === islandPanel {
                 collapseIsland(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
                 return true
@@ -1104,7 +1116,7 @@ final class ShelfWindowController: NSObject {
         if interaction.expandedStackID != nil {
             interaction.childSelection = Set(visible.map(\.id))
         } else {
-            store.setSelection(Set(visible.map(\.id)))
+            store.selectAllVisible()
         }
         if interaction.focusedItemID == nil {
             interaction.focusedItemID = visible[0].id
@@ -1120,6 +1132,7 @@ final class ShelfWindowController: NSObject {
             let selected = visible.filter { store.selection.contains($0.id) }
             if !selected.isEmpty { return selected }
         }
+        if interaction.isSelecting { return [] }
         guard let focusedItemID = interaction.focusedItemID,
               let focused = visible.first(where: { $0.id == focusedItemID }) else { return [] }
         return [focused]
@@ -1148,6 +1161,10 @@ final class ShelfWindowController: NSObject {
 
     private func openFocusedItem() -> Bool {
         guard let item = focusedItem() else { return false }
+        if interaction.isSelecting, interaction.expandedStackID == nil {
+            store.toggleSelection(item.id)
+            return true
+        }
         if item.availability != .available {
             itemRecoveryController.recover(item)
             return true
@@ -1168,6 +1185,9 @@ final class ShelfWindowController: NSObject {
     }
 
     private func removeKeyboardItems() -> Bool {
+        let previous = isUserRemovalInProgress
+        isUserRemovalInProgress = true
+        defer { isUserRemovalInProgress = previous }
         let items = keyboardActionItems()
         guard !items.isEmpty else { return false }
         let ids = Set(items.map(\.id))
@@ -1175,7 +1195,12 @@ final class ShelfWindowController: NSObject {
             guard store.removeChildrenForUser(ids: ids, fromStack: stackID) else { return false }
             interaction.childSelection.subtract(ids)
         } else {
-            store.removeForUser(ids: ids)
+            do {
+                try store.removeBatchForUser(ids: ids)
+            } catch {
+                importCoordinator.noticeCenter.show(String(localized: "Could not save a recovery copy. Nothing was removed."))
+                return true
+            }
         }
         interaction.normalize(for: store.items)
         quickLookCoordinator.refreshPreview(contextItem: focusedItem())
@@ -1237,6 +1262,7 @@ final class ShelfWindowController: NSObject {
     }
 
     private var hasVisibleQuickActions: Bool {
+        guard !interaction.isSelecting else { return false }
         let items = ShelfActionSelectionResolver.explicitItems(
             topLevelItems: store.items,
             topLevelSelection: store.selection,
@@ -1358,15 +1384,16 @@ final class ShelfWindowController: NSObject {
     /// UX5/UX6: items 变更（store.onItemsDidChange 钩子）统一处理：
     /// 1. UX5 紧凑高度 —— 可见时数量变化动画过渡到新目标 frame（custom
     ///    位置的目标 frame 不含内容高度，天然 no-op）；
-    /// 2. UX6 空架自动隐藏 —— 非空→空迁移且设置开启时动画收回。
-    ///    任务二：拖拽进行中不收回（不变式见 EmptyShelfAutoHideRule）。
+    /// 2. Apply empty-shelf auto-hide unless a management removal or drag
+    ///    currently owns the transition.
     private func handleItemsDidChange() {
         interaction.normalize(for: store.items)
         let shouldAutoHide = emptyAutoHideRule.evaluate(
             itemCount: store.items.count,
             isVisible: appState.isShelfVisible,
             isEnabled: settings.autoHideWhenEmpty && onboardingPresentationCount == 0,
-            isDragInProgress: dragStartMonitor.isDragInProgress
+            isDragInProgress: dragStartMonitor.isDragInProgress,
+            isUserRemoval: isUserRemovalInProgress
         )
         if appState.isShelfVisible {
             applyClassicLayout()
