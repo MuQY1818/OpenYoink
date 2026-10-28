@@ -47,20 +47,6 @@ final class EmptyShelfAutoHideTests: XCTestCase {
         XCTAssertTrue(rule.evaluate(itemCount: 0, isVisible: true, isEnabled: true))
     }
 
-    func testUserRemovalKeepsShelfOpenButLaterDeliveryStillHides() {
-        var rule = EmptyShelfAutoHideRule()
-        XCTAssertFalse(rule.evaluate(itemCount: 2, isVisible: true, isEnabled: true,
-                                     isDragInProgress: false))
-        XCTAssertFalse(rule.evaluate(itemCount: 0, isVisible: true, isEnabled: true,
-                                     isDragInProgress: false, isUserRemoval: true))
-        XCTAssertFalse(rule.evaluate(itemCount: 0, isVisible: true, isEnabled: true,
-                                     isDragInProgress: false))
-        XCTAssertFalse(rule.evaluate(itemCount: 1, isVisible: true, isEnabled: true,
-                                     isDragInProgress: false))
-        XCTAssertTrue(rule.evaluate(itemCount: 0, isVisible: true, isEnabled: true,
-                                    isDragInProgress: false))
-    }
-
     // MARK: - 任务二：拖拽进行中不自动隐藏（不变式门控）
 
     /// 拖拽进行中 items 从 >0 变 0（如另一只手按 Delete 清空）→ 不得隐藏，

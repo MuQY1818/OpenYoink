@@ -113,7 +113,6 @@ struct ShelfItemCard: View {
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.shelfPresentationStyle) private var presentationStyle
-    @Environment(\.shelfSelectionMode) private var selectionMode
     @Environment(SettingsStore.self) private var settings
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -170,7 +169,7 @@ struct ShelfItemCard: View {
         .contentShape(RoundedRectangle(cornerRadius: cardCornerRadius))
         .overlay { availabilityBorder }
         .overlay { keyboardFocusRing }
-        .overlay(alignment: selectionMode ? .topTrailing : .topLeading) { selectionBadge }
+        .overlay(alignment: .topLeading) { selectionBadge }
         // S5 拖出事件层：透明 NSView 覆盖整卡，成为左键事件权威
         //（mouseDown 记录 → mouseDragged 超阈值开始拖拽；mouseUp 无拖拽回落为
         // 点击选择 / 双击 Quick Look）。右键（contextMenu）与滚动透传给 SwiftUI。
@@ -178,11 +177,8 @@ struct ShelfItemCard: View {
             if item.availability == .available {
                 CardDragSourceBridge(
                     itemID: item.id,
-                    onClick: { additive in onSelect(selectionMode || additive) },
-                    onDoubleClick: {
-                        guard !selectionMode else { return }
-                        quickLookCoordinator?.toggle(contextItem: item)
-                    },
+                    onClick: onSelect,
+                    onDoubleClick: { quickLookCoordinator?.toggle(contextItem: item) },
                     onDragBegin: { sourceView, event in
                         guard let dragOutController else { return }
                         let contents = dragContentsProvider?(item)
@@ -211,7 +207,6 @@ struct ShelfItemCard: View {
         .accessibilityLabel(cardAccessibilityLabel)
         .accessibilityHint(Text(cardAccessibilityHint))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { onSelect(selectionMode) }
         .accessibilityActions {
             if item.availability == .available,
                quickLookCoordinator != nil,
@@ -244,7 +239,7 @@ struct ShelfItemCard: View {
         }
         .simultaneousGesture(TapGesture().onEnded {
             guard item.availability != .available else { return }
-            onSelect(selectionMode || NSEvent.modifierFlags.contains(.command))
+            onSelect(NSEvent.modifierFlags.contains(.command))
         })
         .task(id: item) { await loadAssets() }
     }
@@ -254,7 +249,7 @@ struct ShelfItemCard: View {
     /// 为 nil 时不渲染）。
     @ViewBuilder
     private var removeButton: some View {
-        if !selectionMode, let onRemove {
+        if let onRemove {
             Button(action: onRemove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
@@ -322,9 +317,6 @@ struct ShelfItemCard: View {
     }
 
     private var cardAccessibilityHint: String {
-        if selectionMode {
-            return String(localized: "Click to select or deselect.")
-        }
         if item.availability != .available {
             return availabilityActionHint
         }
@@ -583,9 +575,8 @@ struct ShelfItemCard: View {
     private var keyboardFocusRing: some View {
         if isKeyboardFocused {
             RoundedRectangle(cornerRadius: cardCornerRadius - 2)
-                .strokeBorder(selectionMode ? Color.primary.opacity(0.5) : Color(nsColor: .keyboardFocusIndicatorColor),
-                              style: StrokeStyle(lineWidth: selectionMode ? 1 : (colorSchemeContrast == .increased ? 4 : 3),
-                                                 dash: selectionMode ? [3, 3] : []))
+                .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor),
+                              lineWidth: colorSchemeContrast == .increased ? 4 : 3)
                 .padding(2)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -594,25 +585,7 @@ struct ShelfItemCard: View {
 
     @ViewBuilder
     private var selectionBadge: some View {
-        if selectionMode {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.06))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 3)
-                        .strokeBorder(isSelected ? Color.clear : Color.primary.opacity(0.55), lineWidth: 1)
-                }
-                .overlay {
-                    if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .frame(width: 14, height: 14)
-                .padding(5)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        } else if isSelected && differentiateWithoutColor {
+        if isSelected && differentiateWithoutColor {
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption.weight(.bold))
                 .symbolRenderingMode(.hierarchical)

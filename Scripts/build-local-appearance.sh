@@ -6,7 +6,7 @@ TASK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$TASK_ROOT"
 xcodebuild -project Open-Yoink.xcodeproj -scheme OpenYoink \
     -destination 'platform=macOS' -derivedDataPath .build/DerivedData \
-    -configuration Release ENABLE_CODE_COVERAGE=NO build
+    -configuration Release build
 
 TASK_OUTPUT="$TASK_ROOT/export/OpenYoink-Appearance.app"
 if [ -e "$TASK_OUTPUT" ]; then

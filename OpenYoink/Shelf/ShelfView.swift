@@ -10,96 +10,10 @@ private struct ShelfPresentationStyleEnvironmentKey: EnvironmentKey {
     static let defaultValue: ShelfPresentationStyle = .classic
 }
 
-private struct ShelfSelectionModeEnvironmentKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-private struct ShelfFocusActionEnvironmentKey: EnvironmentKey {
-    static var defaultValue: (@MainActor () -> Void)? { nil }
-}
-
-private struct ShelfUserRemovalActionEnvironmentKey: EnvironmentKey {
-    static var defaultValue: (@MainActor (@MainActor () -> Void) -> Void)? { nil }
-}
-
 extension EnvironmentValues {
-    var shelfUserRemovalAction: (@MainActor (@MainActor () -> Void) -> Void)? {
-        get { self[ShelfUserRemovalActionEnvironmentKey.self] }
-        set { self[ShelfUserRemovalActionEnvironmentKey.self] = newValue }
-    }
-    var shelfFocusAction: (@MainActor () -> Void)? {
-        get { self[ShelfFocusActionEnvironmentKey.self] }
-        set { self[ShelfFocusActionEnvironmentKey.self] = newValue }
-    }
-    var shelfSelectionMode: Bool {
-        get { self[ShelfSelectionModeEnvironmentKey.self] }
-        set { self[ShelfSelectionModeEnvironmentKey.self] = newValue }
-    }
     var shelfPresentationStyle: ShelfPresentationStyle {
         get { self[ShelfPresentationStyleEnvironmentKey.self] }
         set { self[ShelfPresentationStyleEnvironmentKey.self] = newValue }
-    }
-}
-
-private struct ShelfActionStripReveal: ViewModifier, @MainActor Animatable {
-    var progress: CGFloat
-
-    var animatableData: CGFloat {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .frame(width: 130 * max(0, min(1, progress)), alignment: .trailing)
-            .clipped()
-            .opacity(progress)
-    }
-}
-
-private struct ShelfIconButtonStyle: ButtonStyle {
-    var active = false
-    var expanded = false
-    var destructive = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        HoverContent(configuration: configuration, active: active,
-                     expanded: expanded, destructive: destructive)
-    }
-
-    private struct HoverContent: View {
-        let configuration: Configuration
-        let active: Bool
-        let expanded: Bool
-        let destructive: Bool
-        @State private var isHovering = false
-        @Environment(\.isEnabled) private var isEnabled
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-        var body: some View {
-            configuration.label
-                .foregroundStyle(foregroundColor)
-                .background {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(active ? Color.accentColor.opacity(0.14) :
-                              expanded ? Color.primary.opacity(0.07) : Color.clear)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Color.primary.opacity(isEnabled && configuration.isPressed ? 0.16 :
-                                                           isEnabled && isHovering ? 0.09 : 0))
-                        }
-                }
-                .contentShape(Rectangle())
-                .onHover { isHovering = $0 }
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: isHovering)
-        }
-
-        private var foregroundColor: Color {
-            guard isEnabled else { return Color.primary.opacity(0.25) }
-            if active { return .accentColor }
-            if destructive && (isHovering || configuration.isPressed) { return .red }
-            return Color.primary.opacity(isHovering ? 0.95 : 0.72)
-        }
     }
 }
 
@@ -151,8 +65,6 @@ struct ShelfView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     /// 任务三：内缘收起把手的收起动作（ShelfWindowController 注入；Preview 为 nil 空操作）。
     @Environment(\.shelfHideAction) private var shelfHideAction
-    @Environment(\.shelfFocusAction) private var shelfFocusAction
-    @Environment(\.shelfUserRemovalAction) private var shelfUserRemovalAction
     /// Marquee hit-testing uses global coordinates, so window resizing is held
     /// until the gesture ends.
     @Environment(\.shelfMarqueeActivityAction) private var shelfMarqueeActivityAction
@@ -161,7 +73,6 @@ struct ShelfView: View {
     @State private var marqueeCurrent: CGPoint?
     /// ⌘ 起拖（追加模式）时的基底选中集合；非追加为空白。
     @State private var marqueeBaseSelection: Set<UUID> = []
-    @State private var showsManagementActions = false
     @FocusState private var searchFocused: Bool
 
     /// 卡片弹入/让位动画（§3：spring, response 0.35, damping 0.7）。
@@ -176,7 +87,6 @@ struct ShelfView: View {
 
     var body: some View {
         presentedSurface
-            .environment(\.shelfSelectionMode, interaction.isSelecting)
             .environment(\.colorScheme, presentationStyle == .classic
                          ? (settings.appearance.theme.colorScheme ?? systemColorScheme) : .dark)
             .environment(\.shelfPresentationStyle, presentationStyle)
@@ -184,7 +94,6 @@ struct ShelfView: View {
             .onChange(of: store.items) {
                 dropTargetState.reset()
                 interaction.normalize(for: store.visibleItems)
-                if store.items.isEmpty { interaction.isSelecting = false }
             }
             .onChange(of: store.searchQuery) { normalizeSearch() }
             .onChange(of: store.contentFilter) { normalizeSearch() }
@@ -254,13 +163,9 @@ struct ShelfView: View {
             }
             if store.items.isEmpty {
                 ShelfEmptyState()
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: clearSelectionAndCollapse)
             } else if store.visibleItems.isEmpty {
                 Text("No Results").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: clearSelectionAndCollapse)
             } else {
                 itemGrid
             }
@@ -284,10 +189,8 @@ struct ShelfView: View {
             // macOS 上滚动走 scroll wheel 事件，与左键拖拽手势无冲突。
             Color.clear
                 .contentShape(Rectangle())
-                // A marquee drag and a plain tap must not replace each other.
-                .gesture(marqueeGesture.exclusively(before:
-                    TapGesture().onEnded { clearSelectionAndCollapse() }
-                ))
+                .onTapGesture(perform: clearSelectionAndCollapse)
+                .gesture(marqueeGesture)
         }
     }
 
@@ -348,137 +251,11 @@ struct ShelfView: View {
                     ForEach(ShelfContentFilter.allCases) { Text($0.title).tag($0) }
                 }.labelsHidden().controlSize(.small)
                 Spacer(minLength: 2)
-                managementMenu
+                Button { _ = store.undoLastRemoval() } label: { Image(systemName: "arrow.uturn.backward") }
+                    .disabled(!store.canUndoRemoval)
+                    .help(Text("Undo Remove (⌘Z)")).accessibilityLabel("Undo Remove")
             }
         }.font(.caption).buttonStyle(.plain)
-    }
-
-    private var visibleSelection: Set<UUID> {
-        store.selection.intersection(Set(store.visibleItems.map(\.id)))
-    }
-
-    private var managementMenu: some View {
-        HStack(spacing: 0) {
-            if showsManagementActions {
-                HStack(spacing: 0) {
-                    managementAction("Batch Selection", symbol: interaction.isSelecting ? "checkmark.circle.fill" : "checkmark.circle",
-                                     identifier: "shelf.selection.toggle", enabled: !store.items.isEmpty,
-                                     active: interaction.isSelecting) {
-                        setSelectionMode(!interaction.isSelecting)
-                    }
-                    managementAction(allVisibleItemsSelected ? "Deselect All" : "Select All",
-                                     symbol: allVisibleItemsSelected ? "checkmark.rectangle.stack.fill" : "checkmark.rectangle.stack",
-                                     identifier: "shelf.selection.all", enabled: !store.visibleItems.isEmpty) {
-                        if allVisibleItemsSelected {
-                            store.clearSelection()
-                        } else {
-                            setSelectionMode(true)
-                            store.selectAllVisible()
-                        }
-                    }
-                    managementDivider
-                    managementAction("Remove Selected", symbol: "trash",
-                                     identifier: "shelf.selection.remove", enabled: !visibleSelection.isEmpty,
-                                     destructive: true) {
-                        removeShelfItems(ids: visibleSelection)
-                    }
-                    managementAction("Clear Shelf", symbol: "xmark.bin",
-                                     identifier: "shelf.clear", enabled: !store.items.isEmpty,
-                                     destructive: true) {
-                        removeShelfItems(ids: Set(store.items.map(\.id)))
-                    }
-                    managementDivider
-                    managementAction("Undo Remove", symbol: "arrow.uturn.backward",
-                                     identifier: "shelf.undoRemoval", enabled: store.canUndoRemoval) {
-                        _ = store.undoLastRemoval()
-                    }
-                }
-                .fixedSize()
-                .transition(.modifier(active: ShelfActionStripReveal(progress: 0),
-                                      identity: ShelfActionStripReveal(progress: 1)))
-                .allowsHitTesting(showsManagementActions)
-                .accessibilityHidden(!showsManagementActions)
-            }
-            Button {
-                shelfFocusAction?()
-                showsManagementActions.toggle()
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 28, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(ShelfIconButtonStyle(active: interaction.isSelecting,
-                                              expanded: showsManagementActions))
-            .help(Text("Manage Shelf"))
-            .accessibilityLabel("Manage Shelf")
-            .accessibilityIdentifier("shelf.manage")
-
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.88),
-                   value: showsManagementActions)
-    }
-
-    private var managementDivider: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.14))
-            .frame(width: 1, height: 12)
-            .padding(.horizontal, 2)
-            .accessibilityHidden(true)
-    }
-
-    private func managementAction(_ title: LocalizedStringKey, symbol: String,
-                                  identifier: String, enabled: Bool, active: Bool = false,
-                                  destructive: Bool = false, help: LocalizedStringKey? = nil,
-                                  action: @escaping () -> Void) -> some View {
-        Button {
-            searchFocused = false
-            shelfFocusAction?()
-            action()
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 24, height: 26)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(ShelfIconButtonStyle(active: active, destructive: destructive))
-        .disabled(!enabled)
-        .help(Text(help ?? title))
-        .accessibilityLabel(Text(title))
-        .accessibilityValue(active ? Text("Selected") : Text(""))
-        .accessibilityIdentifier(identifier)
-    }
-
-    private func setSelectionMode(_ enabled: Bool) {
-        if enabled {
-            collapseStack()
-            shelfFocusAction?()
-        }
-        interaction.isSelecting = enabled
-        if !enabled { store.clearSelection() }
-    }
-
-    private var allVisibleItemsSelected: Bool {
-        !store.visibleItems.isEmpty && visibleSelection.count == store.visibleItems.count
-    }
-
-    private func removeShelfItems(ids: Set<UUID>) {
-        let remove: @MainActor () -> Void = {
-            do {
-                let removed = try store.removeBatchForUser(ids: ids)
-                guard !removed.isEmpty else { return }
-                interaction.normalize(for: store.visibleItems)
-                quickLookCoordinator?.refreshPreview(contextItem: nil)
-                notices.show(String(localized: "Removed from Shelf. Undo with ⌘Z, or recover in Settings → Storage."))
-            } catch {
-                notices.show(String(localized: "Could not save a recovery copy. Nothing was removed."))
-            }
-        }
-        if let shelfUserRemovalAction {
-            shelfUserRemovalAction(remove)
-        } else {
-            remove()
-        }
     }
 
     private func normalizeSearch() {
@@ -509,10 +286,6 @@ struct ShelfView: View {
                     scrollingGrid
                 }
             }
-            .contentShape(Rectangle())
-            .gesture(marqueeGesture.exclusively(before:
-                TapGesture().onEnded { clearSelectionAndCollapse() }
-            ))
             // Change the container immediately; do not keep an outgoing grid
             // alive with the same card IDs and shared drag/selection geometry.
             .animation(nil, value: fits)
@@ -791,15 +564,14 @@ struct ShelfView: View {
     }
 
     private var shouldShowTopLevelQuickActions: Bool {
-        !interaction.isSelecting
-            && interaction.expandedStackID == nil
+        interaction.expandedStackID == nil
             && !dropTargetState.isTargeted
             && ShelfActionCatalog.hasAnyAction(for: topLevelActionItems)
     }
 
     private func select(_ id: UUID, additive: Bool) {
         interaction.focusedItemID = id
-        if additive || interaction.isSelecting {
+        if additive {
             store.toggleSelection(id)
         } else {
             store.select(id)
@@ -809,11 +581,7 @@ struct ShelfView: View {
     }
 
     private func clearSelectionAndCollapse() {
-        searchFocused = false
-        shelfFocusAction?()
-        showsManagementActions = false
         collapseStack()
-        interaction.isSelecting = false
         store.clearSelection()
     }
 

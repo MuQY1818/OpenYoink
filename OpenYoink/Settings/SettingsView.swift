@@ -242,7 +242,9 @@ private struct StorageSettingsTab: View {
                                   : "exclamationmark.triangle")
                                 .foregroundStyle(snapshot.isRecoverable ? Color.secondary : Color.orange)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(storage.snapshotTitle(snapshot))
+                                Text(snapshot.kind == .lastKnownGood
+                                     ? "Last Known Good Shelf"
+                                     : "Quarantined Shelf Data")
                                 HStack(spacing: 6) {
                                     if let date = snapshot.modifiedAt {
                                         Text(date, style: .date)

@@ -54,17 +54,8 @@ final class StorageManagementController {
 
     var canCleanUnusedFiles: Bool {
         !hasQuarantinedData
-            && !snapshots.contains { !$0.isRecoverable }
             && (managedMoveJournal?.permitsManagedOrphanCleanup ?? true)
             && (pendingImportJournal?.permitsOrphanCleanup ?? true)
-    }
-
-    func snapshotTitle(_ snapshot: PersistenceController.RecoverySnapshot) -> String {
-        switch snapshot.kind {
-        case .lastKnownGood: String(localized: "Last Known Good Shelf")
-        case .quarantined: String(localized: "Quarantined Shelf Data")
-        case .removedItems: String(localized: "Removed from Shelf")
-        }
     }
 
     func refresh() {
@@ -242,7 +233,7 @@ final class StorageManagementController {
             return
         }
         guard persistence.canSafelyCleanupMaterializedOrphans(after: .loaded(shelfStore.items)) else {
-            errorMessage = String(localized: "Resolve or delete unreadable recovery data before cleaning files.")
+            errorMessage = String(localized: "Resolve or delete quarantined recovery data before cleaning files.")
             refresh()
             return
         }
