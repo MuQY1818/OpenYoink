@@ -2,8 +2,9 @@ import Foundation
 
 /// S10: shelf 网格几何共享模型 —— 顶层卡片在窗口内容坐标系（SwiftUI `.global`，
 /// 左上原点）中的 frame，含滚动偏移。由 `ShelfView` 的网格 cell 经
-/// `onGeometryChange` 实时上报；拖入插入定位（C6，`DragContainerView` →
-/// `DropInsertionLocator`）使用这份数据。
+/// `onGeometryChange` 实时上报；框选多选（C5）与拖入插入定位（C6，
+/// `DragContainerView` → `DropInsertionLocator`）共用同一份数据，
+/// 保证两条路径的坐标系一致。
 @MainActor
 @Observable
 final class ShelfGridGeometry {

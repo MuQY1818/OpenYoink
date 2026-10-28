@@ -111,6 +111,7 @@ private struct ShelfIconButtonStyle: ButtonStyle {
 /// 投影仍由窗口层（`ShelfPanel.hasShadow`）承担，此处不重画。
 ///
 /// 交互：普通点击单选、⌘点击切换多选、空白处点击清除选择并收起 Stack；
+/// 空白处拖拽出框选选框（C5：命中卡片纳入多选，⌘ 起拖为追加模式）；
 /// 点击 Stack 卡片展开浮层（同时只展开一个），点击外部或再次点击收起。
 ///
 /// S4：`isDropTargeted` / `dropInsertionIndex` 两个预留状态已收敛为
@@ -152,6 +153,14 @@ struct ShelfView: View {
     @Environment(\.shelfHideAction) private var shelfHideAction
     @Environment(\.shelfFocusAction) private var shelfFocusAction
     @Environment(\.shelfUserRemovalAction) private var shelfUserRemovalAction
+    /// Marquee hit-testing uses global coordinates, so window resizing is held
+    /// until the gesture ends.
+    @Environment(\.shelfMarqueeActivityAction) private var shelfMarqueeActivityAction
+    /// C5 框选状态：起点/当前点均在窗口 .global 坐标系（与卡片 frame 一致）。
+    @State private var marqueeStart: CGPoint?
+    @State private var marqueeCurrent: CGPoint?
+    /// ⌘ 起拖（追加模式）时的基底选中集合；非追加为空白。
+    @State private var marqueeBaseSelection: Set<UUID> = []
     @State private var showsManagementActions = false
     @FocusState private var searchFocused: Bool
 
@@ -171,6 +180,7 @@ struct ShelfView: View {
             .environment(\.colorScheme, presentationStyle == .classic
                          ? (settings.appearance.theme.colorScheme ?? systemColorScheme) : .dark)
             .environment(\.shelfPresentationStyle, presentationStyle)
+            .overlay(alignment: .topLeading) { marqueeOverlay }
             .onChange(of: store.items) {
                 dropTargetState.reset()
                 interaction.normalize(for: store.visibleItems)
@@ -268,10 +278,16 @@ struct ShelfView: View {
         .padding(collapseHandleSide == .leading ? .leading : .trailing,
                  collapseHandleSide == nil ? 0 : ShelfLayoutEngine.handleContentAllowance)
         .background {
-            // 空白处点击清除选择并收起 Stack；卡片点击由卡片自己的事件层处理。
+            // 空白处点击：清除选择并收起 Stack（卡片自身的点击优先命中，不会触达这里）。
+            // C5: 同一背景上挂框选拖拽手势 —— 起始于卡片的事件被
+            // CardDragSourceAnchorView 接管、不会到达这里，天然避开与卡片拖出冲突；
+            // macOS 上滚动走 scroll wheel 事件，与左键拖拽手势无冲突。
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture(perform: clearSelectionAndCollapse)
+                // A marquee drag and a plain tap must not replace each other.
+                .gesture(marqueeGesture.exclusively(before:
+                    TapGesture().onEnded { clearSelectionAndCollapse() }
+                ))
         }
     }
 
@@ -493,6 +509,10 @@ struct ShelfView: View {
                     scrollingGrid
                 }
             }
+            .contentShape(Rectangle())
+            .gesture(marqueeGesture.exclusively(before:
+                TapGesture().onEnded { clearSelectionAndCollapse() }
+            ))
             // Change the container immediately; do not keep an outgoing grid
             // alive with the same card IDs and shared drag/selection geometry.
             .animation(nil, value: fits)
@@ -845,6 +865,68 @@ struct ShelfView: View {
         interaction.childSelection = [itemID]
     }
 
+    // MARK: - Marquee selection (C5)
+
+    /// 框选手势：只会在空白区起始（卡片区域左键事件被 CardDragSourceAnchorView
+    /// 接管）。⌘ 起拖为追加模式 —— 以手势开始时的选中集合为基底并集命中项；
+    /// 否则命中集合直接替换选择（选框缩小时选择随之收缩，标准框选行为）。
+    private var marqueeGesture: some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
+            .onChanged { value in
+                if marqueeStart == nil {
+                    marqueeStart = value.startLocation
+                    marqueeBaseSelection = NSEvent.modifierFlags.contains(.command)
+                        ? store.selection : []
+                    shelfMarqueeActivityAction?(true)
+                }
+                marqueeCurrent = value.location
+                updateMarqueeSelection()
+            }
+            .onEnded { _ in
+                marqueeStart = nil
+                marqueeCurrent = nil
+                marqueeBaseSelection = []
+                shelfMarqueeActivityAction?(false)
+            }
+    }
+
+    private func updateMarqueeSelection() {
+        guard let rect = marqueeRect else { return }
+        let hits = Set(gridGeometry.cardFrames.lazy
+            .filter { $0.value.intersects(rect) }
+            .map(\.key))
+        let newSelection = marqueeBaseSelection.union(hits)
+        if newSelection != store.selection {
+            store.setSelection(newSelection)
+        }
+    }
+
+    /// 起终点归一化的选框矩形（.global 坐标）。
+    private var marqueeRect: CGRect? {
+        guard let marqueeStart, let marqueeCurrent else { return nil }
+        return CGRect(x: min(marqueeStart.x, marqueeCurrent.x),
+                      y: min(marqueeStart.y, marqueeCurrent.y),
+                      width: abs(marqueeStart.x - marqueeCurrent.x),
+                      height: abs(marqueeStart.y - marqueeCurrent.y))
+    }
+
+    /// 选框渲染（accent 浅填充 + 描边）；坐标与卡片 frame 同一 .global 空间，
+    /// 直接按窗口原点偏移绘制（见 body 中 overlay 挂载位置的说明）。
+    @ViewBuilder
+    private var marqueeOverlay: some View {
+        if let rect = marqueeRect {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.accentColor.opacity(0.12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+                }
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
+        }
+    }
+
     // MARK: - Inline notice (D10)
 
     /// 拖入/物化失败的瞬态提示胶囊（标题栏下方，自动消失；选内联而非
@@ -861,6 +943,17 @@ struct ShelfView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
                 .allowsHitTesting(false)
         }
+    }
+}
+
+private struct ShelfMarqueeActivityActionEnvironmentKey: EnvironmentKey {
+    static var defaultValue: (@MainActor (Bool) -> Void)? { nil }
+}
+
+extension EnvironmentValues {
+    var shelfMarqueeActivityAction: (@MainActor (Bool) -> Void)? {
+        get { self[ShelfMarqueeActivityActionEnvironmentKey.self] }
+        set { self[ShelfMarqueeActivityActionEnvironmentKey.self] = newValue }
     }
 }
 

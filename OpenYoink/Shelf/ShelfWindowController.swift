@@ -120,6 +120,10 @@ final class ShelfWindowController: NSObject {
     private var isOpeningClassicHoverPreview = false
     /// 快速上手期间只暂停自动隐藏，不改写用户的 autoHide 设置。
     private var onboardingPresentationCount = 0
+    /// Freeze compact-height changes during global-coordinate marquee gestures;
+    /// the task also coalesces select+expand into one layout pass.
+    private var isMarqueeSelectionActive = false
+    private var quickActionLayoutPending = false
     private var quickActionLayoutTask: Task<Void, Never>?
     private var classicFrameTransition = ShelfFrameTransitionState()
     private var classicVisibilityTransition = ShelfVisibilityTransitionState()
@@ -218,6 +222,10 @@ final class ShelfWindowController: NSObject {
                     self.isUserRemovalInProgress = true
                     defer { self.isUserRemovalInProgress = previous }
                     action()
+                })
+                .environment(\.shelfMarqueeActivityAction, { [weak self] isActive in
+                    guard presentationStyle == .classic else { return }
+                    self?.setMarqueeSelectionActive(isActive)
                 })
         )
         let dropOverride: DragContainerDropOverride? = presentationStyle == .island
@@ -737,6 +745,8 @@ final class ShelfWindowController: NSObject {
         stopClassicHoverPreviewMonitoring()
         quickActionLayoutTask?.cancel()
         quickActionLayoutTask = nil
+        quickActionLayoutPending = false
+        isMarqueeSelectionActive = false
         let generation = classicVisibilityTransition.request(visible: false)
         let visibleFrame = classicFrameTransition.targetFrame ?? classicPanel.frame
         appState.hideShelf()
@@ -1406,11 +1416,26 @@ final class ShelfWindowController: NSObject {
     /// auto-hide state machines.
     private func handleQuickActionVisibilityDidChange() {
         guard appState.isShelfVisible else { return }
+        if isMarqueeSelectionActive {
+            quickActionLayoutPending = true
+            quickActionLayoutTask?.cancel()
+            quickActionLayoutTask = nil
+            return
+        }
+
+        quickActionLayoutPending = false
         quickActionLayoutTask?.cancel()
         quickActionLayoutTask = Task { @MainActor [weak self] in
             await Task.yield()
             guard !Task.isCancelled else { return }
             self?.applyQuickActionLayoutChange()
+        }
+    }
+
+    private func setMarqueeSelectionActive(_ isActive: Bool) {
+        isMarqueeSelectionActive = isActive
+        if !isActive, quickActionLayoutPending {
+            handleQuickActionVisibilityDidChange()
         }
     }
 
