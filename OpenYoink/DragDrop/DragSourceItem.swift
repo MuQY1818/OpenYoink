@@ -109,6 +109,10 @@ final class DragOutController {
                 }
             }
         )
+        let fileAccess = DragPayloadBuilder.makeFileAccessLease(
+            for: effectiveContents.items,
+            bookmarkService: bookmarkService
+        )
         let draggingItems = DragPayloadBuilder.makeDraggingItems(
             for: effectiveContents.items,
             frame: sourceView.bounds,
@@ -136,7 +140,8 @@ final class DragOutController {
                                                    tutorialTokenForItem(item.id) == nil ? nil : item.id
                                                }
                                            ),
-                                           onSuccessfulDrop: onSuccessfulDrop)
+                                           onSuccessfulDrop: onSuccessfulDrop,
+                                           fileAccess: fileAccess)
         sourceView.beginDraggingSession(with: draggingItems, event: event, source: source)
     }
 }
@@ -156,6 +161,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
     /// 常规拖出策略影响，也绝不能进入「最近项目」。
     private let policyExcludedItemIDs: Set<UUID>
     private let onSuccessfulDrop: (@MainActor () -> Void)?
+    private var fileAccess: BookmarkAccessLease?
 
     init(contents: DragOutContents,
          sessionID: UUID = UUID(),
@@ -164,7 +170,8 @@ final class DragSessionController: NSObject, NSDraggingSource {
          recents: RecentItemsService,
          delivery: DeliveryCoordinator? = nil,
          policyExcludedItemIDs: Set<UUID> = [],
-         onSuccessfulDrop: (@MainActor () -> Void)? = nil) {
+         onSuccessfulDrop: (@MainActor () -> Void)? = nil,
+         fileAccess: BookmarkAccessLease? = nil) {
         self.contents = contents
         self.sessionID = sessionID
         self.store = store
@@ -173,6 +180,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
         self.delivery = delivery
         self.policyExcludedItemIDs = policyExcludedItemIDs
         self.onSuccessfulDrop = onSuccessfulDrop
+        self.fileAccess = fileAccess
         super.init()
     }
 
@@ -203,6 +211,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
     }
 
     func completeDrag(operation: NSDragOperation) {
+        defer { fileAccess = nil }
         if acceptedByFolderCopy {
             delivery?.noteSessionEnded(id: sessionID, accepted: false)
             return

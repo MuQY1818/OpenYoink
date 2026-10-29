@@ -5,6 +5,38 @@ import AppKit
 /// removal policy.
 @MainActor
 enum ClipboardController {
+    private struct ExportAccess {
+        let changeCount: Int
+        let lease: BookmarkAccessLease
+    }
+    private static var exportAccess: [NSPasteboard.Name: ExportAccess] = [:]
+    private static var expirationTimer: Timer?
+
+    /// Pasteboard consumers read file URLs after copy() returns. Keep the
+    /// source grants alive until another operation replaces that pasteboard.
+    private static func retainAccess(_ urls: [URL],
+                                     to pasteboard: NSPasteboard,
+                                     bookmarkService: BookmarkService) {
+        exportAccess[pasteboard.name] = urls.isEmpty ? nil : ExportAccess(
+            changeCount: pasteboard.changeCount,
+            lease: BookmarkAccessLease(accessedURLs: urls, service: bookmarkService)
+        )
+        guard !exportAccess.isEmpty, expirationTimer == nil else { return }
+        let timer = Timer(timeInterval: 0.5, repeats: true) { _ in
+            Task { @MainActor in
+                exportAccess = exportAccess.filter { name, access in
+                    NSPasteboard(name: name).changeCount == access.changeCount
+                }
+                if exportAccess.isEmpty {
+                    expirationTimer?.invalidate()
+                    expirationTimer = nil
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        expirationTimer = timer
+    }
+
     struct Result: Equatable, Sendable {
         var copiedCount: Int
         var skippedCount: Int
@@ -55,6 +87,10 @@ enum ClipboardController {
         }
         pasteboard.clearContents()
         let didWrite = pasteboard.writeObjects(writers)
+        if didWrite {
+            retainAccess(accessedURLs, to: pasteboard, bookmarkService: bookmarkService)
+            accessedURLs.removeAll()
+        }
         return Result(
             copiedCount: didWrite ? writers.count : 0,
             skippedCount: flattened.count - writers.count,

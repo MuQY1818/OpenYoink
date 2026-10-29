@@ -3,6 +3,37 @@ import XCTest
 
 @MainActor
 final class WorkflowUpgradeTests: XCTestCase {
+    func testDragRetainsFileAccessUntilEveryCompletionPath() throws {
+        let suite = "OpenYoinkExportAccess-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let settings = SettingsStore(defaults: defaults)
+        settings.dragOutRemovalPolicy = .keep
+        let item = ShelfItem(kind: .file, displayName: "fixture")
+        let store = ShelfStore(items: [item])
+        for path in 0..<3 {
+            var access: BookmarkAccessLease? = BookmarkAccessLease(
+                accessedURLs: [], service: BookmarkService()
+            )
+            weak var retainedAccess = access
+            let source = DragSessionController(
+                contents: .init(items: [item], topLevelIDs: [item.id]),
+                sessionID: UUID(), store: store, settings: settings,
+                recents: RecentItemsService(directoryURL: directory), fileAccess: access
+            )
+            access = nil
+            XCTAssertNotNil(retainedAccess)
+            source.acceptedByFolderCopy = path == 2
+            source.completeDrag(operation: path == 0 ? [] : .copy)
+            XCTAssertNil(retainedAccess)
+            XCTAssertEqual(store.items, [item])
+        }
+    }
+
     func testSearchMatchesNamesTextURLsAndStackChildren() {
         let file = ShelfItem(kind: .file, displayName: "Report.PDF")
         let text = ShelfItem(kind: .text, displayName: "Note", text: "meeting Tuesday")

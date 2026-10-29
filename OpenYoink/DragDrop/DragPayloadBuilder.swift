@@ -110,6 +110,22 @@ enum DragPayloadBuilder {
 
     // MARK: - Writer construction
 
+    /// AppKit transfers file access when the destination reads the pasteboard,
+    /// which can happen well after the writers have been constructed.
+    static func makeFileAccessLease(for items: [ShelfItem],
+                                    bookmarkService: BookmarkService) -> BookmarkAccessLease {
+        var accessedURLs: [URL] = []
+        for item in flattenedItems(items) where !item.isCut {
+            guard strategy(for: item) == .fileBacked || strategy(for: item) == .fileBackedImage,
+                  let bookmark = item.bookmark,
+                  let resolved = try? bookmarkService.resolve(bookmark) else { continue }
+            if bookmarkService.startAccessing(resolved.url) {
+                accessedURLs.append(resolved.url)
+            }
+        }
+        return BookmarkAccessLease(accessedURLs: accessedURLs, service: bookmarkService)
+    }
+
     /// 单个项目的 pasteboard writer。无法构造（text 无内容、url 无地址、
     /// file 无路径、stack 未展开）时返回 nil。
     /// `delivery` 只观察托管剪切项的 file promise；普通文件由会话结果确认。
