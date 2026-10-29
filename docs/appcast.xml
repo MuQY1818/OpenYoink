@@ -9,6 +9,13 @@
         <description>Most recent changes with links to updates for OpenYoink.</description>
         <language>en</language>
         <item>
+            <title>Version 1.8.4</title>
+            <pubDate>Wed, 28 Oct 2026 23:43:39 -0700</pubDate>
+            <sparkle:version>42</sparkle:version>
+            <sparkle:shortVersionString>1.8.4</sparkle:shortVersionString>
+            <enclosure url="https://github.com/MuQY1818/OpenYoink/releases/download/v1.8.4/OpenYoink-1.8.4.dmg" sparkle:edSignature="tdie/kbaMvRlOaH0V9jV9uevEbcJ+63PirMoBWt7c0sl3gFrmVUHnv35ZSYyYtq66GcKe52jx0edTGfli/OKDQ==" length="5299008" type="application/octet-stream" />
+        </item>
+        <item>
             <title>Version 1.8.3</title>
             <pubDate>Wed, 28 Oct 2026 07:36:06 -0700</pubDate>
             <sparkle:version>41</sparkle:version>
