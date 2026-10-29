@@ -1,6 +1,23 @@
 import Foundation
 import Synchronization
 
+/// Owns already-started file access until an asynchronous export is finished.
+final class BookmarkAccessLease: Sendable {
+    private let urls: [URL]
+    private let service: BookmarkService
+
+    init(accessedURLs: [URL], service: BookmarkService) {
+        self.urls = accessedURLs
+        self.service = service
+    }
+
+    deinit {
+        for url in urls {
+            service.stopAccessing(url)
+        }
+    }
+}
+
 /// Result of resolving a bookmark.
 struct ResolvedBookmark: Equatable, Sendable {
     let url: URL
