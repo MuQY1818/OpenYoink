@@ -192,7 +192,6 @@ struct ShelfView: View {
                 Color.clear
                     .overlay { content }
                     .overlay { dropTargetHighlight }
-                    .overlay(alignment: collapseHandleAlignment) { collapseHandle }
                     .overlay { expandedStackOverlay }
                     .overlay(alignment: .top) { noticeBanner }
                     .overlay(alignment: .bottom) { dropModeHint }
@@ -262,11 +261,6 @@ struct ShelfView: View {
             }
         }
         .padding(8)
-        // 内缘把手让位：把手可见（左/右锚）时在把手侧额外加 4pt —— 把手
-        // 10pt 占带 + 2pt 间隙，内容与首列卡片不再与把手交叠（custom 无
-        // 把手不让位；`ShelfLayoutEngine.handleContentAllowance` 同步）。
-        .padding(collapseHandleSide == .leading ? .leading : .trailing,
-                 collapseHandleSide == nil ? 0 : ShelfLayoutEngine.handleContentAllowance)
         .background {
             // 空白处点击清除选择并收起 Stack；卡片点击由卡片自己的事件层处理。
             Color.clear
@@ -286,6 +280,11 @@ struct ShelfView: View {
                     .foregroundStyle(.tertiary)
                     .accessibilityLabel(Text("Drag to move"))
             }
+            // 左贴边：按钮放在标题前（屏幕缘一侧），箭头与位置同向。
+            if collapseHandleSide == .trailing {
+                collapseButton(side: .trailing)
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+            }
             Text("Shelf")
                 .font(.headline)
             Spacer()
@@ -293,6 +292,10 @@ struct ShelfView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+            if collapseHandleSide == .leading {
+                collapseButton(side: .leading)
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+            }
         }
         .padding(.horizontal, 8)
         .padding(.top, 4)
@@ -322,11 +325,26 @@ struct ShelfView: View {
                     .textFieldStyle(.plain).focused($searchFocused)
                     .onKeyPress(.escape) { store.searchQuery = ""; searchFocused = false; return .handled }
                 if !store.searchQuery.isEmpty {
-                    Button { store.searchQuery = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    Button { store.searchQuery = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    }
                         .help(Text("Clear Search")).accessibilityLabel("Clear Search")
                 }
             }
-            .padding(6).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            // issue #10: a soft capsule that sits *in* the glass instead of a
+            // flat grey slab on top of it.
+            .background {
+                Capsule(style: .continuous)
+                    .fill(Color.primary.opacity(searchFocused ? 0.09 : 0.06))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(Color.primary.opacity(searchFocused ? 0.14 : 0.07),
+                                          lineWidth: 0.5)
+                    }
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: searchFocused)
             HStack {
                 Picker("Content Type", selection: $store.contentFilter) {
                     ForEach(ShelfContentFilter.allCases) { Text($0.title).tag($0) }
@@ -640,29 +658,35 @@ struct ShelfView: View {
         }
     }
 
-    // MARK: - 内缘收起把手（任务三）
+    // MARK: - 收起按钮（issue #10）
 
-    /// 把手贴附侧（纯逻辑在 `ShelfLayoutEngine.innerEdgeHandleSide`）；
-    /// custom 自由位置模式为 nil —— 不显示把手。
+    /// 收起方向（纯逻辑在 `ShelfLayoutEngine.innerEdgeHandleSide`）；
+    /// custom 自由位置模式为 nil —— 不显示收起按钮。
     private var collapseHandleSide: ShelfLayoutEngine.InnerEdgeHandleSide? {
         guard presentationStyle == .classic else { return nil }
         return ShelfLayoutEngine.innerEdgeHandleSide(for: settings.shelfPosition)
     }
 
-    private var collapseHandleAlignment: Alignment {
-        collapseHandleSide == .trailing ? .trailing : .leading
-    }
-
-    /// 把手覆盖在面板边距带内（overlay 挂在 `.padding(8)` 之前，对齐的是
-    /// vibrancy 面板形状的边缘），不占网格宽度 —— 卡片 frame 上报（C5/C6）、
-    /// 框选与拖入插入定位的坐标系均不受把手影响。
-    @ViewBuilder
-    private var collapseHandle: some View {
-        if let side = collapseHandleSide {
-            ShelfCollapseHandle(side: side) {
-                shelfHideAction?()
-            }
+    /// 标题栏收起按钮。此前是贴在面板内缘的整条 chevron 竖列，单侧加宽的
+    /// 边距和孤立的箭头破坏了面板左右对称（issue #10）；现在与下方「⋯」
+    /// 管理按钮同列同风格，chevron 指向贴附的屏幕缘（收回拉环的方向）。
+    private func collapseButton(side: ShelfLayoutEngine.InnerEdgeHandleSide) -> some View {
+        Button {
+            shelfHideAction?()
+        } label: {
+            Image(systemName: side == .leading ? "chevron.right" : "chevron.left")
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 28, height: 22)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(ShelfIconButtonStyle())
+        // 抵消标题栏 8pt 水平内边距：右贴边时与「⋯」按钮（28pt 宽、贴内容
+        // 右缘）同列；左贴边时贴内容左缘，与下方「全部」筛选对齐。
+        .padding(side == .leading ? .trailing : .leading, -8)
+        .padding(.vertical, -3)
+        .help(Text("Hide Shelf"))
+        .accessibilityLabel(Text("Hide Shelf"))
+        .accessibilityIdentifier("shelf.hide.handle")
     }
 
     // MARK: - 外缘隐形收起热区（互斥模型）

@@ -110,8 +110,7 @@ struct ShelfAppearance: Codable, Equatable, Sendable {
     func shouldTrackPointer(isClassicShelf: Bool,
                             reduceMotion: Bool,
                             reduceTransparency: Bool) -> Bool {
-        !usesNativeGlass(reduceTransparency: reduceTransparency)
-            && isClassicShelf && followsPointer && !reduceMotion
+        isClassicShelf && followsPointer && !reduceMotion
             && highlightStrength > 0 && elasticity > 0
             && (reduceTransparency || backgroundOpacity > 0)
     }

@@ -8,8 +8,9 @@ import SwiftUI
 struct ShelfEmptyState: View {
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "tray")
-                .font(.system(size: 44, weight: .light))
+            // 与屏幕边缘拉环同一字形，暗示「收起后就在那里」（issue #10）。
+            Image(systemName: "tray.and.arrow.down")
+                .font(.system(size: 34, weight: .light))
                 .foregroundStyle(.tertiary)
 
             VStack(spacing: 4) {
@@ -29,11 +30,16 @@ struct ShelfEmptyState: View {
         .accessibilityIdentifier("shelf.emptyState")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(16)
+        // issue #10：更轻的连续圆角虚线框 + 极淡底色，融入玻璃而不是压在上面。
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.025))
+        }
         .overlay {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(
-                    Color(nsColor: .separatorColor),
-                    style: StrokeStyle(lineWidth: 1, dash: [6, 4])
+                    Color.primary.opacity(0.13),
+                    style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [5, 5])
                 )
         }
         .padding(8)

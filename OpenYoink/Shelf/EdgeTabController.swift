@@ -21,6 +21,7 @@ import AppKit
 @MainActor
 final class EdgeTabController: NSObject {
     private static let fadeDuration: TimeInterval = 0.18
+    private static let handOffFadeDuration: TimeInterval = 0.08
     private static let emphasisDuration: TimeInterval = 0.15
     /// 驻点/回位等 frame 迁移时长（与 ShelfWindowController 显隐动画同拍）。
     private static let moveDuration: TimeInterval = 0.2
@@ -165,6 +166,7 @@ final class EdgeTabController: NSObject {
             hideTab(animated: animated)
             return
         }
+        let wasHiddenForShelf = visibilityTransition.isVisible == false
         let visibilityChanged = visibilityTransition.request(visible: true) != nil
         let target = currentTargetFrame()
         if panel.isVisible {
@@ -185,12 +187,15 @@ final class EdgeTabController: NSObject {
                 }
             }
         } else {
-            showTab(target, animated: animated)
+            // issue #10: the shelf folds back into the tab first; only then
+            // does the tab itself fade in, so the two never double up.
+            showTab(target, animated: animated,
+                    delay: wasHiddenForShelf ? ShelfRevealState.collapseDuration * 0.7 : 0)
         }
         updateEmphasis(animated: animated)
     }
 
-    private func showTab(_ frame: NSRect, animated: Bool) {
+    private func showTab(_ frame: NSRect, animated: Bool, delay: TimeInterval = 0) {
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         panel.setFrame(frame, display: false)
         guard animated else {
@@ -200,7 +205,18 @@ final class EdgeTabController: NSObject {
         }
         panel.alphaValue = 0
         panel.orderFront(nil)
-        restoreTabAlpha(animated: animated)
+        guard delay > 0 else {
+            restoreTabAlpha(animated: animated)
+            return
+        }
+        let generation = visibilityTransition.generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.visibilityTransition.isCurrent(generation, visible: true),
+                      self.panel.isVisible else { return }
+                self.restoreTabAlpha(animated: true)
+            }
+        }
     }
 
     private func restoreTabAlpha(animated: Bool) {
@@ -224,7 +240,9 @@ final class EdgeTabController: NSObject {
             return
         }
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = Self.fadeDuration
+            // The shelf's glass starts exactly on the tab and covers it, so the
+            // tab only needs a brief hand-off fade (issue #10).
+            context.duration = appState.isShelfVisible ? Self.handOffFadeDuration : Self.fadeDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
@@ -594,8 +612,12 @@ final class EdgeTabView: NSView {
                 appearance.tintOpacity(reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency)
             ).cgColor
         }
-        if #available(macOS 27.0, *), let glass = nativeGlassView as? NSGlassEffectView {
-            glass.effectIsInteractive = !workspace.accessibilityDisplayShouldReduceMotion
+        // issue #10: interactive glass inflates past the tab's window on press
+        // and gets clipped into a hard outline. Hover/press feedback is drawn
+        // by `applyEmphasisAppearance` instead.
+        if #available(macOS 27.0, *), let glass = nativeGlassView as? NSGlassEffectView,
+           glass.effectIsInteractive {
+            glass.effectIsInteractive = false
         }
     }
 
@@ -762,7 +784,8 @@ final class EdgeTabView: NSView {
                 : NSColor.labelColor.withAlphaComponent(nativeGlass ? 0 : (interacting ? 0.24 : 0.10)).cgColor
             let fill: CGColor = isEmphasized
                 ? NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
-                : NSColor.labelColor.withAlphaComponent(nativeGlass ? 0 : (isRepositioning ? 0.10 : (interacting ? 0.05 : 0))).cgColor
+                : NSColor.labelColor.withAlphaComponent(isRepositioning ? (nativeGlass ? 0.08 : 0.10)
+                                                         : (interacting ? (nativeGlass ? 0.04 : 0.05) : 0)).cgColor
             // 平滑过渡：显式 CATransaction 时长让颜色变化走隐式动画。
             CATransaction.begin()
             CATransaction.setDisableActions(!animated)

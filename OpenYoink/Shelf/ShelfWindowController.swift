@@ -126,6 +126,15 @@ final class ShelfWindowController: NSObject {
     private var quickActionLayoutTask: Task<Void, Never>?
     private var classicFrameTransition = ShelfFrameTransitionState()
     private var classicVisibilityTransition = ShelfVisibilityTransitionState()
+    /// issue #10：侧边 shelf 从拉环长出 / 收回拉环的形变状态。
+    private let classicReveal = ShelfRevealState()
+    /// 拉环 ↔ 面板形变进行中：期间不改窗口阴影与 frame（任意偏好写入都会
+    /// 触发 applyPresentationSettings），结束后统一恢复。
+    private var isClassicMorphing = false
+    /// 形变期间被推迟的布局请求（数量/设置变化），形变结束后补做。
+    private var isClassicLayoutDeferred = false
+    /// 面板窗口与玻璃面之间的透明边距（ShelfView classic 分支的 `.padding(8)`）。
+    private static let classicSurfaceInset: CGFloat = 8
 
     struct OnboardingPresentationSnapshot: Equatable, Sendable {
         fileprivate let surface: SettingsStore.PreferredShelfSurface
@@ -201,6 +210,8 @@ final class ShelfWindowController: NSObject {
                 .environment(\.accessibilityAnnouncementCenter,
                               accessibilityAnnouncementCenter)
                 // 任务三：内缘收起把手点击 → 走标准 hideShelf 滑出动画。
+                .environment(\.shelfRevealState,
+                             presentationStyle == .classic ? classicReveal : nil)
                 .environment(\.shelfHideAction, { [weak self] in
                     if presentationStyle == .island {
                         self?.collapseIsland(animated: true)
@@ -668,18 +679,29 @@ final class ShelfWindowController: NSObject {
         if takeKeyboardFocus, interaction.focusedItemID == nil {
             interaction.focusedItemID = store.selectedItems.first?.id ?? store.items.first?.id
         }
-        _ = classicVisibilityTransition.request(visible: true)
+        let generation = classicVisibilityTransition.request(visible: true)
         let wasOnscreen = classicPanel.isVisible
         appState.showShelf()
         let targetFrame = classicTargetFrame()
         _ = classicFrameTransition.request(targetFrame, currentFrame: classicPanel.frame)
         guard animated else {
+            endClassicMorph()
+            classicReveal.showImmediately()
+            classicPanel.hasShadow = classicWantsWindowShadow
             classicPanel.alphaValue = 1
             classicPanel.setFrame(targetFrame, display: false)
             classicPanel.orderFront(nil)
             if takeKeyboardFocus { classicPanel.makeKey() }
             return
         }
+        if let origin = classicRevealOrigin(for: targetFrame), let generation {
+            growClassicShelf(from: origin, to: targetFrame, wasOnscreen: wasOnscreen,
+                             generation: generation, takeKeyboardFocus: takeKeyboardFocus)
+            return
+        }
+        endClassicMorph()
+        classicReveal.showImmediately()
+        classicPanel.hasShadow = classicWantsWindowShadow
         // A closing panel is still onscreen. Reverse from its current frame and
         // alpha instead of jumping back to the fully hidden starting position.
         if !wasOnscreen {
@@ -693,6 +715,123 @@ final class ShelfWindowController: NSObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             classicPanel.animator().alphaValue = 1
             classicPanel.animator().setFrame(targetFrame, display: true)
+        }
+    }
+
+    // MARK: - Edge tab ↔ shelf morph (issue #10)
+
+    /// 原生液态玻璃自带边缘光学；再叠窗口阴影会在面板外多出一圈深色描边，
+    /// 且只能在形变结束后整块出现（issue #10）。其余材质没有玻璃边缘，
+    /// 仍靠窗口阴影体现层次。
+    private var classicWantsWindowShadow: Bool {
+        !settings.appearance.usesNativeGlass(
+            reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        )
+    }
+
+    /// 拉环在玻璃面局部坐标中的矩形；custom 位置（无贴附缘）返回 nil，
+    /// 显隐退回原有的滑入/淡入。
+    private func classicRevealOrigin(for panelFrame: NSRect) -> CGRect? {
+        let surface = panelFrame.insetBy(dx: Self.classicSurfaceInset, dy: Self.classicSurfaceInset)
+        let visibleFrame = Self.screen(containing: CGPoint(x: panelFrame.midX, y: panelFrame.midY))
+            .visibleFrame
+        guard let tab = ShelfLayoutEngine.edgeTabFrame(position: settings.shelfPosition,
+                                                       offset: CGFloat(settings.shelfEdgeOffset),
+                                                       visibleFrame: visibleFrame) else { return nil }
+        return ShelfLayoutEngine.revealOriginRect(surfaceFrame: surface, tabFrame: tab,
+                                                  position: settings.shelfPosition,
+                                                  windowInset: Self.classicSurfaceInset)
+    }
+
+    /// 窗口直接就位到目标 frame，只让 SwiftUI 玻璃面从拉环矩形弹性长出
+    /// （窗口 frame 不参与动画 → 网格不在动画中重排）。
+    private func growClassicShelf(from origin: CGRect, to targetFrame: NSRect, wasOnscreen: Bool,
+                                  generation: UInt, takeKeyboardFocus: Bool) {
+        // 形变期间窗口形状每帧都在变；AppKit 的窗口阴影只按某一帧计算，会残留
+        // 成错位的轮廓。动画结束后再恢复并重算。
+        isClassicMorphing = true
+        classicPanel.hasShadow = false
+        if !wasOnscreen {
+            classicReveal.prepareCollapsed(at: origin)
+        }
+        classicReveal.capturesWholeSurface = dragStartMonitor.isDragInProgress
+        // 悬停预览要跟手：用更快、不回弹的版本。
+        let quick = isOpeningClassicHoverPreview
+        classicPanel.alphaValue = 1
+        if classicPanel.frame != targetFrame {
+            classicPanel.setFrame(targetFrame, display: false)
+        }
+        classicPanel.orderFront(nil)
+        if takeKeyboardFocus { classicPanel.makeKey() }
+        // 先让收拢态真正提交一帧，再在下一拍开始生长，避免两次状态合并成跳变。
+        classicPanel.contentView?.layoutSubtreeIfNeeded()
+        classicPanel.displayIfNeeded()
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      self.classicVisibilityTransition.isCurrent(generation, visible: true) else { return }
+                self.classicReveal.expand(quick: quick)
+                let settle = quick ? ShelfRevealState.quickExpandSettleDuration
+                                   : ShelfRevealState.expandSettleDuration
+                DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self,
+                              self.classicVisibilityTransition.isCurrent(generation, visible: true)
+                        else { return }
+                        self.finishClassicGrow(generation: generation)
+                    }
+                }
+            }
+        }
+    }
+
+    private func finishClassicGrow(generation: UInt) {
+        // 先撤掉拖放兜底覆盖层，等 SwiftUI 重绘后再按最终圆角形状计算阴影，
+        // 否则阴影会按整块矩形算出来。
+        let hadWholeSurfaceCapture = classicReveal.capturesWholeSurface
+        classicReveal.capturesWholeSurface = false
+        let restore = { [weak self] in
+            guard let self,
+                  self.classicVisibilityTransition.isCurrent(generation, visible: true) else { return }
+            self.endClassicMorph()
+            self.classicPanel.hasShadow = self.classicWantsWindowShadow
+            self.classicPanel.invalidateShadow()
+        }
+        if hadWholeSurfaceCapture {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                MainActor.assumeIsolated { restore() }
+            }
+        } else {
+            restore()
+        }
+    }
+
+    /// 结束形变：补做形变期间被推迟的布局。
+    private func endClassicMorph() {
+        guard isClassicMorphing else { return }
+        isClassicMorphing = false
+        if isClassicLayoutDeferred {
+            isClassicLayoutDeferred = false
+            applyClassicLayout(animated: true)
+        }
+    }
+
+    /// 内容先淡出，玻璃面收回拉环矩形，结束后 orderOut（拉环随即淡入）。
+    private func foldClassicShelf(into origin: CGRect, generation: UInt) {
+        isClassicMorphing = true
+        classicPanel.hasShadow = false
+        classicReveal.capturesWholeSurface = false
+        classicReveal.collapse(to: origin)
+        DispatchQueue.main.asyncAfter(deadline: .now() + ShelfRevealState.collapseDuration) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      self.classicVisibilityTransition.isCurrent(generation, visible: false),
+                      !self.appState.isShelfVisible else { return }
+                // 已隐藏：推迟的布局下次显示时会按最新目标 frame 重新计算。
+                self.isClassicLayoutDeferred = false
+                self.isClassicMorphing = false
+                self.classicPanel.orderOut(nil)
+            }
         }
     }
 
@@ -765,6 +904,14 @@ final class ShelfWindowController: NSObject {
         let targetFrame = classicHiddenFrame(for: visibleFrame)
         guard animated else {
             classicPanel.orderOut(nil)
+            isClassicMorphing = false
+            isClassicLayoutDeferred = false
+            classicReveal.showImmediately()
+            classicPanel.hasShadow = classicWantsWindowShadow
+            return
+        }
+        if let generation, let origin = classicRevealOrigin(for: classicPanel.frame) {
+            foldClassicShelf(into: origin, generation: generation)
             return
         }
         NSAnimationContext.runAnimationGroup({ context in
@@ -1388,6 +1535,11 @@ final class ShelfWindowController: NSObject {
 
     private func applyClassicLayout(animated: Bool = true) {
         guard appState.isShelfVisible else { return }
+        // 形变以当前窗口 frame 为画布；中途改 frame 会让拉环起点错位。
+        guard !isClassicMorphing else {
+            isClassicLayoutDeferred = true
+            return
+        }
         let target = classicTargetFrame()
         guard classicFrameTransition.request(target, currentFrame: classicPanel.frame) else { return }
         guard target != classicPanel.frame else { return }
@@ -1459,7 +1611,8 @@ final class ShelfWindowController: NSObject {
         islandModuleRegistry.apply(settings: settings)
         classicPanel.allowsTopEdgeOverlap = false
         classicPanel.level = .floating
-        classicPanel.hasShadow = true
+        // 形变中途按半成品形状算出的阴影会残留成错位轮廓；形变结束时会恢复。
+        if !isClassicMorphing { classicPanel.hasShadow = classicWantsWindowShadow }
         if settings.classicShelfEnabled {
             if appState.isShelfVisible {
                 applyClassicLayout(animated: animated)

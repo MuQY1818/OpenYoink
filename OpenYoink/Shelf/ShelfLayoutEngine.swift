@@ -24,10 +24,9 @@ enum ShelfLayoutEngine {
     static let gridSpacing: CGFloat = 12
     /// 面板内水平/垂直固定边距合计：窗口外层 padding 8×2 + 内容 padding 8×2。
     static let contentPadding: CGFloat = 32
-    /// 内缘收起把手可见时（左/右锚，非 custom），内容区在把手侧额外让出的
-    /// 水平宽度 —— 修复「把手与第一列卡片水平交叠」（把手 10pt 占带 +
-    /// 2pt 间隙 = 内容从形状缘 12pt 起排，列数推算必须同步扣减）。
-    static let handleContentAllowance: CGFloat = 4
+    /// 内容区在收起控件侧额外让出的水平宽度。收起按钮已移入标题栏（issue #10：
+    /// 内缘竖条把手打破左右对称），内容两侧边距恢复一致，故为 0。
+    static let handleContentAllowance: CGFloat = 0
     /// 标题栏块高度（含 VStack 间距）。
     static let headerHeight: CGFloat = 28
     /// ActivityStrip 自身与 VStack 间距。只在状态可见时预留，避免覆盖卡片。
@@ -122,6 +121,39 @@ enum ShelfLayoutEngine {
         case .right: return frame.offsetBy(dx: frame.width, dy: 0)
         case .left: return frame.offsetBy(dx: -frame.width, dy: 0)
         case .custom: return frame
+        }
+    }
+
+    // MARK: - 把手 ↔ 面板形变（issue #10）
+
+    /// 形变时把手矩形向屏幕外侧多延伸的宽度：让收拢态玻璃的外侧圆角落在
+    /// 窗口之外被裁掉，与拉环「外侧圆角藏在屏幕边缘外」的外观一致。
+    static let revealEdgeBleed: CGFloat = 12
+
+    /// 展开/收起形变的起止矩形：拉环在 shelf **玻璃面**局部坐标系（左上原点，
+    /// 与 SwiftUI 一致）中的位置。
+    /// - surfaceFrame: 玻璃面的屏幕 frame（面板窗口 frame 内缩 `windowInset`）。
+    /// - tabFrame: 拉环的屏幕 frame（`edgeTabFrame`）。
+    /// 竖直方向夹取进玻璃面（拉环偏移与面板不同高时从最近处长出），水平方向
+    /// 贴住屏幕缘并向外延伸 `revealEdgeBleed`。custom 无贴附缘 → nil（只淡入淡出）。
+    static func revealOriginRect(surfaceFrame: CGRect,
+                                 tabFrame: CGRect,
+                                 position: SettingsStore.ShelfPosition,
+                                 windowInset: CGFloat) -> CGRect? {
+        guard surfaceFrame.width > 0, surfaceFrame.height > 0 else { return nil }
+        let height = min(tabFrame.height, surfaceFrame.height)
+        let top = min(max(surfaceFrame.maxY - tabFrame.maxY, 0), surfaceFrame.height - height)
+        let width = min(tabFrame.width, surfaceFrame.width) + revealEdgeBleed
+        switch position {
+        case .right:
+            let screenEdge = surfaceFrame.width + windowInset
+            return CGRect(x: screenEdge - width + revealEdgeBleed, y: top,
+                          width: width, height: height)
+        case .left:
+            return CGRect(x: -windowInset - revealEdgeBleed, y: top,
+                          width: width, height: height)
+        case .custom:
+            return nil
         }
     }
 

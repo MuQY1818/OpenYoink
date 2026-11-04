@@ -77,14 +77,15 @@ final class AppearanceSettingsTests: XCTestCase {
                                                      reduceTransparency: false))
     }
 
-    func testNativeGlassDoesNotAddNeutralVeilOrSyntheticPointerHighlights() throws {
+    func testNativeGlassHasNoNeutralVeilButStillFollowsThePointer() throws {
         guard #available(macOS 26.0, *) else { return }
         var appearance = ShelfAppearance.default
         XCTAssertTrue(appearance.usesNativeGlass(reduceTransparency: false))
         XCTAssertNil(appearance.nativeGlassTint)
-        XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: true,
-                                                     reduceMotion: false,
-                                                     reduceTransparency: false))
+        // issue #10: a faint pointer glow replaces the removed interactive glass.
+        XCTAssertTrue(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                    reduceMotion: false,
+                                                    reduceTransparency: false))
         appearance.tint = .blue
         XCTAssertNotNil(appearance.nativeGlassTint)
         XCTAssertEqual(try XCTUnwrap(appearance.nativeGlassTint).alphaComponent,

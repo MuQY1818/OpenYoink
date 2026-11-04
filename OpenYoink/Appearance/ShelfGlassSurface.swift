@@ -2,6 +2,39 @@ import AppKit
 import Observation
 import SwiftUI
 
+/// One corner-radius rule for every layer of the shelf glass (issue #10).
+/// While the glass grows out of the edge tab it starts at the tab's own 8pt
+/// radius and eases into the appearance radius as it widens, instead of jumping
+/// to a half-height capsule.
+enum ShelfGlassCornerRadius {
+    /// Matches `EdgeTabView.cornerRadius`.
+    static let edgeTabRadius: Double = 8
+
+    static func resolved(preferred: Double, size: CGSize) -> Double {
+        let shortSide = Double(min(size.width, size.height))
+        guard shortSide > 0 else { return 0 }
+        return min(preferred, shortSide / 2, max(edgeTabRadius, shortSide * 0.3))
+    }
+}
+
+struct ShelfGlassShape: InsettableShape {
+    var preferredRadius: Double
+    var insetAmount: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        // Resolve against the full rect so an inset stroke follows the same curve.
+        let radius = ShelfGlassCornerRadius.resolved(preferred: preferredRadius, size: rect.size)
+        return RoundedRectangle(cornerRadius: max(0, radius - Double(insetAmount)), style: .continuous)
+            .path(in: rect.insetBy(dx: insetAmount, dy: insetAmount))
+    }
+
+    func inset(by amount: CGFloat) -> ShelfGlassShape {
+        var shape = self
+        shape.insetAmount += amount
+        return shape
+    }
+}
+
 /// A decorative backdrop: the shelf's content and drag/drop geometry remain native
 /// and untransformed. Clear glass uses an unblurred transparent pane; liquid glass
 /// and frosted materials use macOS effects. Native glass owns its reflections;
@@ -25,6 +58,8 @@ struct ShelfInteractiveGlassSurface<Content: View>: View {
     let appearance: ShelfAppearance
     private let content: Content
     @State private var pointer = ShelfGlassPointer()
+    /// issue #10：拉环 ↔ 面板形变（nil 时始终展开）。
+    @Environment(\.shelfRevealState) private var reveal
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -41,16 +76,43 @@ struct ShelfInteractiveGlassSurface<Content: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
-                ShelfGlassBackdrop(appearance: appearance)
-                // Keep this coverage hit-testable and above the passthrough
-                // material. WindowServer must retain a target over empty pixels
-                // before DragContainerView can receive the file drag.
-                RoundedRectangle(cornerRadius: appearance.cornerRadius, style: .continuous)
-                    .fill(Color.black.opacity(0.01))
+            let bounds = CGRect(origin: .zero, size: geometry.size)
+            let glassRect = reveal?.glassRect(in: bounds) ?? bounds
+            let contentVisible = reveal?.isContentVisible ?? true
+            ZStack(alignment: .topLeading) {
+                // A file drag can open the shelf. Keep the whole surface a drop
+                // target while the glass is still growing out of the tab.
+                if reveal?.capturesWholeSurface == true {
+                    Color.black.opacity(0.01)
+                        .frame(width: bounds.width, height: bounds.height)
+                }
+                // The glass morphs by resizing (never by scaling) so the system
+                // material keeps sampling the real backdrop and its own edge optics.
+                ZStack {
+                    ShelfGlassBackdrop(appearance: appearance)
+                    // Keep this coverage hit-testable and above the passthrough
+                    // material. WindowServer must retain a target over empty pixels
+                    // before DragContainerView can receive the file drag.
+                    ShelfGlassShape(preferredRadius: appearance.cornerRadius)
+                        .fill(Color.black.opacity(0.01))
+                }
+                    .overlay { ShelfTrackedGlassHighlights(appearance: appearance, pointer: pointer) }
+                    .frame(width: max(glassRect.width, 1), height: max(glassRect.height, 1))
+                    .offset(x: glassRect.minX, y: glassRect.minY)
+                // Content keeps its final layout and is only *revealed* inside the
+                // growing glass: it never floats outside the material, and text
+                // is never scaled mid-flight.
+                content
+                    .frame(width: bounds.width, height: bounds.height)
+                    .mask(alignment: .topLeading) {
+                        ShelfGlassShape(preferredRadius: appearance.cornerRadius)
+                            .frame(width: max(glassRect.width, 1), height: max(glassRect.height, 1))
+                            .offset(x: glassRect.minX, y: glassRect.minY)
+                    }
+                    .opacity(contentVisible ? 1 : 0)
+                    .allowsHitTesting(contentVisible)
             }
-                .overlay { ShelfTrackedGlassHighlights(appearance: appearance, pointer: pointer) }
-                .overlay { content }
+                .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
                 .onContinuousHover { phase in
                     guard tracksPointer else { return }
                     switch phase {
@@ -100,8 +162,8 @@ private struct ShelfGlassBackdrop: View {
         appearance.theme.colorScheme ?? colorScheme
     }
 
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: appearance.cornerRadius, style: .continuous)
+    private var shape: ShelfGlassShape {
+        ShelfGlassShape(preferredRadius: appearance.cornerRadius)
     }
 
     private var materialOpacity: Double {
@@ -111,8 +173,6 @@ private struct ShelfGlassBackdrop: View {
     var body: some View {
         Group {
             if appearance.usesNativeGlass(reduceTransparency: reduceTransparency) {
-                // Its cornerRadius already shapes the system effect. An extra
-                // SwiftUI mask can also cut off its edge lighting and shadow.
                 material
             } else {
                 ZStack {
@@ -121,9 +181,15 @@ private struct ShelfGlassBackdrop: View {
                         appearance.tintOpacity(reduceTransparency: reduceTransparency)
                     ))
                 }
-                .clipShape(shape)
             }
         }
+        // issue #10: native glass draws its own halo/shadow outside its shape.
+        // The shelf window only has an 8pt transparent margin, so that halo was
+        // cut off at the window's square bounds, and the window shadow (computed
+        // from those faint pixels) then outlined a rectangle around the panel.
+        // Clipping to the shape keeps every pixel inside the rounded surface, so
+        // the window shadow follows the rounded corners instead.
+        .clipShape(shape)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -168,8 +234,8 @@ private struct ShelfGlassHighlights: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: appearance.cornerRadius, style: .continuous)
+    private var shape: ShelfGlassShape {
+        ShelfGlassShape(preferredRadius: appearance.cornerRadius)
     }
 
     private var pointer: CGPoint {
@@ -184,13 +250,32 @@ private struct ShelfGlassHighlights: View {
     }
 
     var body: some View {
-        if !appearance.usesNativeGlass(reduceTransparency: reduceTransparency) {
+        if appearance.usesNativeGlass(reduceTransparency: reduceTransparency) {
+            // issue #10: native glass keeps its own edge optics; the only
+            // addition is a faint light that follows the pointer, so the panel
+            // responds to the cursor without the glass itself moving or scaling.
+            nativePointerGlow
+                .clipShape(shape)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        } else {
             edgeHighlights
                 .opacity(reduceTransparency ? 1 : appearance.backgroundOpacity)
                 .clipShape(shape)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
+    }
+
+    private var nativePointerGlow: some View {
+        shape
+            .fill(RadialGradient(colors: [.white.opacity(appearance.highlightStrength * 0.16), .clear],
+                                 center: UnitPoint(x: pointer.x, y: pointer.y),
+                                 startRadius: 0, endRadius: 150))
+            .blendMode(.plusLighter)
+            .opacity(hoverPoint == nil ? 0 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: pointer)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: hoverPoint == nil)
     }
 
     private var edgeHighlights: some View {
@@ -262,20 +347,39 @@ private struct ShelfNativeGlassBackdrop: NSViewRepresentable {
     }
 
     private func configure(_ view: ShelfPassthroughGlassView) {
-        if view.cornerRadius != cornerRadius { view.cornerRadius = cornerRadius }
+        view.preferredCornerRadius = cornerRadius
         if view.alphaValue != opacity { view.alphaValue = opacity }
         if view.tintColor != tint { view.tintColor = tint }
         let name: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
         if view.appearance?.name != name { view.appearance = NSAppearance(named: name) }
-        if #available(macOS 27.0, *) {
-            view.effectIsInteractive = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        // issue #10: interactive glass is meant for controls. On a whole panel a
+        // press inflates the glass beyond its frame while the content stays put,
+        // and the window clips the inflated edge into a stray outline.
+        if #available(macOS 27.0, *), view.effectIsInteractive {
+            view.effectIsInteractive = false
         }
     }
 }
 
 @available(macOS 26.0, *)
 private final class ShelfPassthroughGlassView: NSGlassEffectView {
+    /// The appearance radius, clamped to the current size so the glass reads as
+    /// a capsule while it grows out of the narrow edge tab.
+    var preferredCornerRadius: Double = 0 {
+        didSet { if oldValue != preferredCornerRadius { applyCornerRadius() } }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        applyCornerRadius()
+    }
+
+    private func applyCornerRadius() {
+        let radius = ShelfGlassCornerRadius.resolved(preferred: preferredCornerRadius, size: bounds.size)
+        if cornerRadius != radius { cornerRadius = radius }
+    }
 }
 
 private struct ShelfMaterialBackdrop: NSViewRepresentable {
@@ -306,12 +410,25 @@ private struct ShelfMaterialBackdrop: NSViewRepresentable {
         if view.alphaValue != opacity { view.alphaValue = opacity }
         let name: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
         if view.appearance?.name != name { view.appearance = NSAppearance(named: name) }
-        if let layer = view.layer, layer.cornerRadius != CGFloat(cornerRadius) {
-            layer.cornerRadius = CGFloat(cornerRadius)
-        }
+        view.preferredCornerRadius = CGFloat(cornerRadius)
     }
 }
 
 private final class ShelfPassthroughMaterialView: NSVisualEffectView {
+    var preferredCornerRadius: CGFloat = 0 {
+        didSet { if oldValue != preferredCornerRadius { applyCornerRadius() } }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        applyCornerRadius()
+    }
+
+    private func applyCornerRadius() {
+        let radius = CGFloat(ShelfGlassCornerRadius.resolved(preferred: Double(preferredCornerRadius),
+                                                             size: bounds.size))
+        if let layer, layer.cornerRadius != radius { layer.cornerRadius = radius }
+    }
 }
