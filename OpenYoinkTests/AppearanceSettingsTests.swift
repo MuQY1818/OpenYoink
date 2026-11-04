@@ -47,7 +47,8 @@ final class AppearanceSettingsTests: XCTestCase {
     }
 
     func testPointerTrackingStopsForIslandAndReduceMotion() {
-        let appearance = ShelfAppearance.default
+        var appearance = ShelfAppearance.default
+        appearance.material = .frosted
         XCTAssertTrue(appearance.shouldTrackPointer(isClassicShelf: true,
                                                     reduceMotion: false,
                                                     reduceTransparency: false))
@@ -62,16 +63,38 @@ final class AppearanceSettingsTests: XCTestCase {
     func testPointerTrackingStopsWhenHighlightCannotMove() {
         for keyPath in [\ShelfAppearance.highlightStrength, \.elasticity, \.backgroundOpacity] {
             var appearance = ShelfAppearance.default
+            appearance.material = .frosted
             appearance[keyPath: keyPath] = 0
             XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: true,
                                                          reduceMotion: false,
                                                          reduceTransparency: false))
         }
         var appearance = ShelfAppearance.default
+        appearance.material = .frosted
         appearance.followsPointer = false
         XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: true,
                                                      reduceMotion: false,
                                                      reduceTransparency: false))
+    }
+
+    func testNativeGlassDoesNotAddNeutralVeilOrSyntheticPointerHighlights() throws {
+        guard #available(macOS 26.0, *) else { return }
+        var appearance = ShelfAppearance.default
+        XCTAssertTrue(appearance.usesNativeGlass(reduceTransparency: false))
+        XCTAssertNil(appearance.nativeGlassTint)
+        XCTAssertFalse(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                     reduceMotion: false,
+                                                     reduceTransparency: false))
+        appearance.tint = .blue
+        XCTAssertNotNil(appearance.nativeGlassTint)
+        XCTAssertEqual(try XCTUnwrap(appearance.nativeGlassTint).alphaComponent,
+                       appearance.tintStrength, accuracy: 0.0001)
+        XCTAssertFalse(appearance.usesNativeGlass(reduceTransparency: true))
+        appearance.material = .frosted
+        XCTAssertFalse(appearance.usesNativeGlass(reduceTransparency: false))
+        XCTAssertTrue(appearance.shouldTrackPointer(isClassicShelf: true,
+                                                    reduceMotion: false,
+                                                    reduceTransparency: false))
     }
 
     func testReduceTransparencyUsesVisibleBackgroundWithoutOverridingMotionChoice() {

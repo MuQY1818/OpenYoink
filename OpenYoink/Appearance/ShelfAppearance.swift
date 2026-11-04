@@ -92,11 +92,26 @@ struct ShelfAppearance: Codable, Equatable, Sendable {
         return tintStrength * opacity
     }
 
+    func usesNativeGlass(reduceTransparency: Bool) -> Bool {
+        if #available(macOS 26.0, *) {
+            return material == .regular && !reduceTransparency
+        }
+        return false
+    }
+
+    /// Neutral native glass is untinted. A white overlay washes out the
+    /// system's own backdrop contrast, edge lighting and refraction.
+    var nativeGlassTint: NSColor? {
+        guard tint != .neutral, tintStrength > 0 else { return nil }
+        return tint.nsColor.withAlphaComponent(tintStrength)
+    }
+
     /// Avoid hover state updates when the decoration cannot visibly move.
     func shouldTrackPointer(isClassicShelf: Bool,
                             reduceMotion: Bool,
                             reduceTransparency: Bool) -> Bool {
-        isClassicShelf && followsPointer && !reduceMotion
+        !usesNativeGlass(reduceTransparency: reduceTransparency)
+            && isClassicShelf && followsPointer && !reduceMotion
             && highlightStrength > 0 && elasticity > 0
             && (reduceTransparency || backgroundOpacity > 0)
     }

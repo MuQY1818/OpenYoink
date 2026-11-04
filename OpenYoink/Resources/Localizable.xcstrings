@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Liquid Glass uses system reflections and interaction effects. Extra highlights apply to other materials." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Liquid Glass uses system reflections and interaction effects. Extra highlights apply to other materials." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "液态玻璃的光影和交互反馈由系统呈现。额外高光设置适用于其他材质。" } }
+      }
+    },
+    "Side Tab" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Side Tab" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "侧边把手" } }
+      }
+    },
+    "Show tab icon" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show tab icon" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "显示把手图标" } }
+      }
+    },
+    "Tab Icon Size" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tab Icon Size" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "图标大小" } }
+      }
+    },
+    "Hiding or resizing the icon keeps the tab clickable and draggable. The tab follows the selected glass material and theme." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Hiding or resizing the icon keeps the tab clickable and draggable. The tab follows the selected glass material and theme." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "隐藏或缩小图标后，把手仍可点击和拖动。把手会跟随下方选择的玻璃材质与主题。" } }
+      }
+    },
     "Manage Shelf": {
       "localizations": {
         "en": {

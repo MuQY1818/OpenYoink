@@ -95,6 +95,10 @@ final class IslandModuleRegistry {
 @Observable
 final class IslandActivityCoordinator {
     private(set) var surfaceState: IslandSurfaceState = .compact
+    /// A completion belongs to one specific transition, even when rapid
+    /// close/open/close gestures return to the same surface state.
+    private(set) var surfaceTransitionID: UInt64 = 0
+    private(set) var isSurfaceTransitionPending = false
     var currentLayout: IslandGeometryResolver.Layout?
     /// Visual-only hover state. It intentionally does not call
     /// `onStateDidChange`, because pointer movement must never resize the panel.
@@ -121,17 +125,26 @@ final class IslandActivityCoordinator {
         IslandSurfaceState
     ) -> Void)?
     var onStateDidChange: (@MainActor () -> Void)?
+    @ObservationIgnored var onSurfaceAnimationCompleted: (@MainActor () -> Void)?
 
     func setSurfaceState(_ state: IslandSurfaceState) {
         guard surfaceState != state else { return }
         let previousState = surfaceState
         onSurfaceStateWillChange?(previousState, state)
         surfaceState = state
+        surfaceTransitionID &+= 1
+        isSurfaceTransitionPending = true
         if state.isExpanded {
             isPointerHovering = false
             isHoverRevealSuppressed = false
         }
         onStateDidChange?()
+    }
+
+    func completeSurfaceTransition(_ transitionID: UInt64) {
+        guard transitionID == surfaceTransitionID, isSurfaceTransitionPending else { return }
+        isSurfaceTransitionPending = false
+        onSurfaceAnimationCompleted?()
     }
 
     func setPointerHovering(_ hovering: Bool) {

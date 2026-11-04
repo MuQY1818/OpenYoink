@@ -99,8 +99,13 @@ enum IslandGeometryResolver {
                                 height: activationHeight)
         return Layout(hasPhysicalNotch: hasNotch,
                       cameraHousingFrame: housing,
-                      compactFrame: compact,
-                      expandedFrame: expanded,
-                      activationFrame: activation)
+                      // NSPanel rounds half-point window origins to whole
+                      // points, even on Retina displays. Auxiliary notch
+                      // areas commonly end in .5; return integral enclosing
+                      // frames so layout comparisons use realizable windows.
+                      // Keep the hardware housing itself at its real position.
+                      compactFrame: compact.integral,
+                      expandedFrame: expanded.integral,
+                      activationFrame: activation.integral)
     }
 }

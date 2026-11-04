@@ -41,6 +41,18 @@ struct AppearanceSettingsTab: View {
     private var controls: some View {
         @Bindable var settings = settings
         return SettingsForm {
+            Section("Side Tab") {
+                Toggle("Show tab icon", isOn: $settings.edgeTabIconVisible)
+                    .accessibilityIdentifier("appearance.edgeTabIconVisible")
+                appearanceSlider("Tab Icon Size", value: $settings.edgeTabIconSize,
+                                 range: SettingsStore.edgeTabIconSizeRange,
+                                 unit: .points, id: "edgeTabIconSize")
+                    .disabled(!settings.edgeTabIconVisible)
+                Text("Hiding or resizing the icon keeps the tab clickable and draggable. The tab follows the selected glass material and theme.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Material and Theme") {
                 Picker("Glass Material", selection: $settings.appearance.material) {
                     ForEach(ShelfAppearance.Material.allCases) { material in
@@ -107,20 +119,26 @@ struct AppearanceSettingsTab: View {
             }
 
             Section("Highlights and Motion") {
-                appearanceSlider("Extra Edge Highlight", value: $settings.appearance.highlightStrength,
-                                 range: 0...1, unit: .percent, id: "highlightStrength")
-                appearanceSlider("Highlight Movement", value: Binding(
-                    get: { settings.appearance.elasticity / 0.35 },
-                    set: { settings.appearance.elasticity = $0 * 0.35 }
-                ), range: 0...1, unit: .percent, id: "elasticity", continuous: true)
-                    .disabled(!settings.appearance.followsPointer
-                              || settings.appearance.highlightStrength == 0 || reduceMotion)
-                Toggle("Highlights Follow Pointer", isOn: $settings.appearance.followsPointer)
-                    .accessibilityIdentifier("appearance.followsPointer")
-                    .disabled(settings.appearance.highlightStrength == 0 || reduceMotion)
-                Text("Raise Extra Edge Highlight above 0%, then move the pointer over the preview or shelf to see the motion.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if settings.appearance.usesNativeGlass(reduceTransparency: reduceTransparency) {
+                    Text("Liquid Glass uses system reflections and interaction effects. Extra highlights apply to other materials.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    appearanceSlider("Extra Edge Highlight", value: $settings.appearance.highlightStrength,
+                                     range: 0...1, unit: .percent, id: "highlightStrength")
+                    appearanceSlider("Highlight Movement", value: Binding(
+                        get: { settings.appearance.elasticity / 0.35 },
+                        set: { settings.appearance.elasticity = $0 * 0.35 }
+                    ), range: 0...1, unit: .percent, id: "elasticity", continuous: true)
+                        .disabled(!settings.appearance.followsPointer
+                                  || settings.appearance.highlightStrength == 0 || reduceMotion)
+                    Toggle("Highlights Follow Pointer", isOn: $settings.appearance.followsPointer)
+                        .accessibilityIdentifier("appearance.followsPointer")
+                        .disabled(settings.appearance.highlightStrength == 0 || reduceMotion)
+                    Text("Raise Extra Edge Highlight above 0%, then move the pointer over the preview or shelf to see the motion.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section {
@@ -218,6 +236,17 @@ private struct ShelfAppearancePreview: View {
                 previewShelf
                     .frame(width: max(0, min(330, geometry.size.width - 36)))
                     .environment(\.colorScheme, appearance.theme.colorScheme ?? systemColorScheme)
+
+                HStack {
+                    Spacer()
+                    EdgeTabAppearancePreview(appearance: appearance,
+                                             iconVisible: settings.edgeTabIconVisible,
+                                             iconSize: settings.edgeTabIconSize)
+                        .frame(width: ShelfLayoutEngine.edgeTabWidth,
+                               height: ShelfLayoutEngine.edgeTabHeight)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -298,5 +327,21 @@ private struct ShelfAppearancePreview: View {
                         .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
                 }
         }
+    }
+}
+
+private struct EdgeTabAppearancePreview: NSViewRepresentable {
+    let appearance: ShelfAppearance
+    let iconVisible: Bool
+    let iconSize: Double
+
+    func makeNSView(context: Context) -> EdgeTabView {
+        let view = EdgeTabView(frame: .zero)
+        view.configure(appearance: appearance, iconVisible: iconVisible, iconSize: iconSize)
+        return view
+    }
+
+    func updateNSView(_ view: EdgeTabView, context: Context) {
+        view.configure(appearance: appearance, iconVisible: iconVisible, iconSize: iconSize)
     }
 }

@@ -42,6 +42,8 @@ struct IslandRootView: View {
     @State private var isSendingCompactMediaCommand = false
     @State private var mediaAccent = ArtworkAccent.fallback
     @State private var renderedSurfaceState: IslandSurfaceState = .compact
+    @State private var activeSurfaceAnimation: UUID?
+    @State private var requestedSurfaceTransitionID: UInt64 = 0
     @State private var isShowingModuleLibrary = false
 
     var onPerformRecovery: ((RecoveryAction) -> Void)?
@@ -114,15 +116,8 @@ struct IslandRootView: View {
         } message: {
             Text((folderCopy.conflictName ?? "") + "\n" + String(localized: "The existing file will not be overwritten."))
         }
-        .onChange(of: coordinator.surfaceState, initial: true) { _, state in
-            guard renderedSurfaceState != state else { return }
-            if reduceMotion {
-                renderedSurfaceState = state
-            } else {
-                withAnimation(surfaceAnimation(for: state)) {
-                    renderedSurfaceState = state
-                }
-            }
+        .onChange(of: coordinator.surfaceTransitionID, initial: true) {
+            renderSurface(coordinator.surfaceState)
         }
         .onChange(of: settings.islandModuleConfiguration, initial: true) {
             registry.apply(settings: settings)
@@ -141,6 +136,33 @@ struct IslandRootView: View {
         }
         .onChange(of: coordinator.selectedModule) { samplingContextChanged() }
         .onChange(of: coordinator.surfaceState) { samplingContextChanged() }
+    }
+
+    private func renderSurface(_ state: IslandSurfaceState) {
+        requestedSurfaceTransitionID = coordinator.surfaceTransitionID
+        if reduceMotion {
+            activeSurfaceAnimation = nil
+            renderedSurfaceState = state
+            coordinator.completeSurfaceTransition(requestedSurfaceTransitionID)
+            return
+        }
+        guard renderedSurfaceState != state else {
+            // A coalesced close/open/close may leave the same fold running.
+            // Its real completion must still precede the host-window resize.
+            if activeSurfaceAnimation == nil {
+                coordinator.completeSurfaceTransition(requestedSurfaceTransitionID)
+            }
+            return
+        }
+        let animationID = UUID()
+        activeSurfaceAnimation = animationID
+        withAnimation(surfaceAnimation(for: state), completionCriteria: .removed) {
+            renderedSurfaceState = state
+        } completion: {
+            guard activeSurfaceAnimation == animationID else { return }
+            activeSurfaceAnimation = nil
+            coordinator.completeSurfaceTransition(requestedSurfaceTransitionID)
+        }
     }
 
     private func surfaceAnimation(for state: IslandSurfaceState) -> Animation {

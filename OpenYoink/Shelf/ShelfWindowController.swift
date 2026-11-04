@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import SwiftUI
 
 /// Hides on a non-empty → empty transition when enabled. Explicit shelf
@@ -41,6 +42,7 @@ struct EmptyShelfAutoHideRule: Sendable, Equatable {
 @MainActor
 final class ShelfWindowController: NSObject {
     private static let animationDuration: TimeInterval = 0.2
+    private let islandLogger = Logger(subsystem: "com.weijue.OpenYoink", category: "IslandPresentation")
     var onClassicDestinationEntered: ((Int) -> Void)?
     var onClassicDestinationEnded: ((Int, Bool) -> Void)?
     var onClassicPresentationRequested: (() -> Void)?
@@ -113,6 +115,7 @@ final class ShelfWindowController: NSObject {
     private var islandLocalMonitor: Any?
     private var islandHoverTask: Task<Void, Never>?
     private var islandLayoutTask: Task<Void, Never>?
+    private var islandFrameTransition = ShelfFrameTransitionState()
     private var classicHoverPreviewState = ClassicShelfHoverPreviewStateMachine()
     private var classicHoverExitTask: Task<Void, Never>?
     private var classicHoverGlobalMonitor: Any?
@@ -260,6 +263,16 @@ final class ShelfWindowController: NSObject {
         // keyDown 到达这里（空格/Delete/Esc，见 handleItemKeyDown）。
         panel.onKeyDown = { [weak self] event in
             self?.handleItemKeyDown(event, in: panel) ?? false
+        }
+        if presentationStyle == .island {
+            for name in [NSWindow.didChangeOcclusionStateNotification,
+                         NSWindow.didBecomeKeyNotification,
+                         NSWindow.didResignKeyNotification] {
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(islandWindowStateDidChange(_:)),
+                    name: name, object: panel
+                )
+            }
         }
         return panel
     }
@@ -458,6 +471,11 @@ final class ShelfWindowController: NSObject {
         islandActivityCoordinator.onStateDidChange = { [weak self] in
             self?.scheduleIslandLayoutUpdate()
         }
+        islandActivityCoordinator.onSurfaceAnimationCompleted = { [weak self] in
+            guard let self else { return }
+            self.logIslandPresentation("surface-animation-completed")
+            self.scheduleIslandLayoutUpdate()
+        }
         islandTimerStore.onActivity = { [weak self] activity in
             self?.timerModuleRuntime.replaceActivity(activity)
             if activity?.priority == .timerFinished,
@@ -524,7 +542,7 @@ final class ShelfWindowController: NSObject {
             object: nil
         )
         // S9: Space 切换后的在位校正（见 revalidateFrameAfterSpaceChange）。
-        NotificationCenter.default.addObserver(
+        NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(activeSpaceDidChange(_:)),
             name: NSWorkspace.activeSpaceDidChangeNotification,
@@ -545,6 +563,7 @@ final class ShelfWindowController: NSObject {
         islandLayoutTask?.cancel()
         classicHoverExitTask?.cancel()
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     // MARK: - Public API
@@ -767,10 +786,16 @@ final class ShelfWindowController: NSObject {
     func collapseIsland(animated: Bool = true) {
         guard settings.islandEnabled else { return }
         quickLookCoordinator.closeForShelfHide()
+        logIslandPresentation("collapse-request")
         islandActivityCoordinator.collapse()
         if !animated || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            islandPanel.setFrame(islandTargetFrame(), display: true)
-            islandPanel.orderFront(nil)
+            islandLayoutTask?.cancel()
+            islandLayoutTask = nil
+            let target = islandTargetFrame()
+            _ = islandFrameTransition.request(target, currentFrame: islandPanel.frame)
+            if islandPanel.frame != target {
+                islandPanel.setFrame(target, display: true)
+            }
         }
     }
 
@@ -1231,6 +1256,7 @@ final class ShelfWindowController: NSObject {
         from oldState: IslandSurfaceState,
         to newState: IslandSurfaceState
     ) {
+        islandLogger.notice("surface-transition \(String(describing: oldState), privacy: .public) -> \(String(describing: newState), privacy: .public) id=\(self.islandActivityCoordinator.surfaceTransitionID)")
         guard settings.islandEnabled,
               !oldState.isExpanded,
               newState.isExpanded else { return }
@@ -1247,8 +1273,11 @@ final class ShelfWindowController: NSObject {
         // canvas, while its mask grows to the expanded size. Animating the
         // AppKit window and SwiftUI hierarchy at the same time made hosting-view
         // relayout appear as a lateral jump from the right.
-        islandPanel.setFrame(layout.expandedFrame, display: true)
-        islandPanel.orderFront(nil)
+        _ = islandFrameTransition.request(layout.expandedFrame, currentFrame: islandPanel.frame)
+        if islandPanel.frame != layout.expandedFrame {
+            islandPanel.setFrame(layout.expandedFrame, display: true)
+        }
+        if !islandPanel.isVisible { islandPanel.orderFront(nil) }
     }
 
     private var hasVisibleQuickActions: Bool {
@@ -1307,7 +1336,7 @@ final class ShelfWindowController: NSObject {
             classicPanel.setFrame(target, display: true)
         }
         if settings.islandEnabled {
-            islandPanel.setFrame(islandTargetFrame(), display: true)
+            scheduleIslandLayoutUpdate()
         }
     }
 
@@ -1319,14 +1348,16 @@ final class ShelfWindowController: NSObject {
     /// 必须 nonisolated：通知按投递线程同步回调（同 userDefaultsDidChange）。
     @objc private nonisolated func activeSpaceDidChange(_ notification: Notification) {
         Task { @MainActor in
+            self.logIslandPresentation("active-space-changed")
             self.revalidateFrameAfterSpaceChange()
         }
     }
 
     private func revalidateFrameAfterSpaceChange() {
         if settings.islandEnabled {
-            islandPanel.setFrame(islandTargetFrame(), display: true)
-            islandPanel.orderFront(nil)
+            // A desktop/Space transition must not re-order an already visible
+            // Island or truncate a pending collapse with an immediate resize.
+            scheduleIslandLayoutUpdate()
         }
         guard appState.isShelfVisible else { return }
         // Validate the destination during a slide, not its offscreen start.
@@ -1450,9 +1481,10 @@ final class ShelfWindowController: NSObject {
             // status-item z-order while staying below screen-saver windows so drag
             // sessions keep reaching it.
             islandPanel.allowsTopEdgeOverlap = true
-            islandPanel.level = NSWindow.Level(
+            let level = NSWindow.Level(
                 rawValue: NSWindow.Level.statusBar.rawValue + 8
             )
+            if islandPanel.level != level { islandPanel.level = level }
             islandPanel.hasShadow = false
             startEnabledIslandModules()
             startIslandEventMonitoring()
@@ -1463,10 +1495,22 @@ final class ShelfWindowController: NSObject {
                let fallback = islandModuleRegistry.enabledDescriptors.first?.id {
                 islandActivityCoordinator.selectedModule = fallback
             }
-            islandPanel.alphaValue = 1
-            islandPanel.setFrame(islandTargetFrame(), display: true)
-            islandPanel.orderFront(nil)
+            if islandPanel.isVisible {
+                scheduleIslandLayoutUpdate()
+            } else {
+                islandLayoutTask?.cancel()
+                islandLayoutTask = nil
+                islandFrameTransition.reset()
+                let target = islandTargetFrame()
+                _ = islandFrameTransition.request(target, currentFrame: islandPanel.frame)
+                islandPanel.alphaValue = 1
+                islandPanel.setFrame(target, display: true)
+                islandPanel.orderFront(nil)
+            }
         } else {
+            islandLayoutTask?.cancel()
+            islandLayoutTask = nil
+            islandFrameTransition.reset()
             stopIslandModules()
             stopIslandEventMonitoring()
             islandActivityCoordinator.hide()
@@ -1510,50 +1554,63 @@ final class ShelfWindowController: NSObject {
 
     private func scheduleIslandLayoutUpdate() {
         guard settings.islandEnabled else { return }
+        let target = islandTargetFrame()
+        // SwiftUI owns the visible fold. A wall-clock sleep can expire before
+        // that animation has even started during Show Desktop. Keep the host
+        // canvas intact until its actual completion, including interrupted folds.
+        if !islandActivityCoordinator.surfaceState.isExpanded,
+           islandActivityCoordinator.isSurfaceTransitionPending,
+           !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            return
+        }
+        // Activity samples, defaults notifications and desktop/Space changes
+        // can all arrive during the same collapse. Compare destinations before
+        // cancelling: identical requests must not restart its deadline.
+        if islandLayoutTask == nil { islandFrameTransition.reset() }
+        guard islandFrameTransition.request(target, currentFrame: islandPanel.frame) else { return }
         islandLayoutTask?.cancel()
         islandLayoutTask = Task { @MainActor [weak self] in
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
+            defer {
+                // A cancelled task may have been replaced by a newer request.
+                if !Task.isCancelled {
+                    self.islandLayoutTask = nil
+                    self.islandFrameTransition.reset()
+                }
+            }
 
-            let target = self.islandTargetFrame()
-            self.islandPanel.orderFront(nil)
             guard target != self.islandPanel.frame else { return }
 
-            if !self.islandActivityCoordinator.surfaceState.isExpanded,
-               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                // Keep the expanded canvas until the visible surface has
-                // finished folding into its compact top-centred silhouette.
-                // The final frame change is then visually inert because both
-                // frames share the exact same top-centre anchor.
-                try? await Task.sleep(for: .seconds(
-                    max(IslandMotion.collapseContentDuration,
-                        IslandMotion.collapseWindowDuration)
-                ))
-                guard !Task.isCancelled,
-                      !self.islandActivityCoordinator.surfaceState.isExpanded else {
-                    return
-                }
+            if !self.islandActivityCoordinator.surfaceState.isExpanded {
+                guard !self.islandActivityCoordinator.isSurfaceTransitionPending
+                        || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
                 self.islandPanel.setFrame(target, display: true)
+                self.logIslandPresentation("compact-frame-applied")
                 return
             }
-            self.animateIsland(to: target)
+            await self.animateIsland(to: target)
         }
     }
 
-    private func animateIsland(to target: NSRect) {
+    private func animateIsland(to target: NSRect) async {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             islandPanel.setFrame(target, display: true)
             return
         }
         let isExpanding = target.height > islandPanel.frame.height
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = isExpanding
-                ? IslandMotion.expandWindowDuration
-                : IslandMotion.collapseWindowDuration
-            context.timingFunction = isExpanding
-                ? CAMediaTimingFunction(controlPoints: 0.22, 0.78, 0.18, 1.0)
-                : CAMediaTimingFunction(controlPoints: 0.40, 0.00, 0.20, 1.0)
-            islandPanel.animator().setFrame(target, display: true)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = isExpanding
+                    ? IslandMotion.expandWindowDuration
+                    : IslandMotion.collapseWindowDuration
+                context.timingFunction = isExpanding
+                    ? CAMediaTimingFunction(controlPoints: 0.22, 0.78, 0.18, 1.0)
+                    : CAMediaTimingFunction(controlPoints: 0.40, 0.00, 0.20, 1.0)
+                islandPanel.animator().setFrame(target, display: true)
+            }, completionHandler: {
+                continuation.resume()
+            })
         }
     }
 
@@ -1603,13 +1660,13 @@ final class ShelfWindowController: NSObject {
             }
             guard islandActivityCoordinator.surfaceState == .expanded,
                   !islandPanel.frame.contains(point) else { return }
+            islandLogger.notice("outside-click event=\(event.eventNumber) window=\(event.windowNumber)")
             collapseIsland(animated: true)
         case .mouseMoved:
             let layout = islandLayout(at: point)
             if !islandActivityCoordinator.surfaceState.isExpanded {
                 if islandActivityCoordinator.currentLayout?.compactFrame != layout.compactFrame {
-                    islandActivityCoordinator.currentLayout = layout
-                    islandPanel.setFrame(layout.compactFrame, display: true)
+                    scheduleIslandLayoutUpdate()
                 }
             }
             islandActivityCoordinator.setPointerHovering(
@@ -1637,6 +1694,21 @@ final class ShelfWindowController: NSObject {
             }
         default:
             break
+        }
+    }
+
+    /// Low-frequency lifecycle diagnostics only; never includes clipboard data,
+    /// file names, screen contents or a continuous pointer trace.
+    private func logIslandPresentation(_ reason: String) {
+        let state = String(describing: islandActivityCoordinator.surfaceState)
+        let frame = NSStringFromRect(islandPanel.frame)
+        islandLogger.notice("\(reason, privacy: .public) state=\(state, privacy: .public) id=\(self.islandActivityCoordinator.surfaceTransitionID) pending=\(self.islandActivityCoordinator.isSurfaceTransitionPending) frame=\(frame, privacy: .public) visible=\(self.islandPanel.isVisible) occluded=\(!self.islandPanel.occlusionState.contains(.visible)) key=\(self.islandPanel.isKeyWindow)")
+    }
+
+    @objc private nonisolated func islandWindowStateDidChange(_ notification: Notification) {
+        let reason = notification.name.rawValue
+        Task { @MainActor [weak self] in
+            self?.logIslandPresentation(reason)
         }
     }
 

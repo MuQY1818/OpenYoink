@@ -39,6 +39,30 @@ final class IslandGeometryResolverTests: XCTestCase {
         XCTAssertEqual(layout.expandedFrame.maxY, layout.compactFrame.maxY)
     }
 
+    func testHalfPointNotchAreasDoNotCreateAnUnreachableWindowDestination() {
+        for screenX in [CGFloat(0), CGFloat(-1512)] {
+            let screen = IslandGeometryResolver.ScreenGeometry(
+                frame: CGRect(x: screenX, y: 0, width: 1512, height: 982),
+                visibleFrame: CGRect(x: screenX, y: 0, width: 1512, height: 949),
+                safeAreaTop: 32,
+                auxiliaryTopLeftArea: CGRect(x: 0, y: 950, width: 663.5, height: 32),
+                auxiliaryTopRightArea: CGRect(x: 848.5, y: 950, width: 663.5, height: 32)
+            )
+            let layout = IslandGeometryResolver.resolve(screen: screen)
+            XCTAssertEqual(layout.cameraHousingFrame.minX, screenX + 663.5)
+            XCTAssertEqual(layout.compactFrame, layout.compactFrame.integral)
+            XCTAssertEqual(layout.expandedFrame, layout.expandedFrame.integral)
+            XCTAssertEqual(layout.compactFrame.midX, layout.expandedFrame.midX)
+            XCTAssertEqual(layout.compactFrame.maxY, screen.frame.maxY)
+            var transition = ShelfFrameTransitionState()
+            XCTAssertFalse(transition.request(layout.compactFrame,
+                                               currentFrame: layout.compactFrame.integral))
+            transition.reset()
+            XCTAssertFalse(transition.request(layout.compactFrame,
+                                               currentFrame: layout.compactFrame.integral))
+        }
+    }
+
     func testNotchHousingUsesAuxiliaryWidthsAcrossCoordinateSpaces() {
         let screen = IslandGeometryResolver.ScreenGeometry(
             frame: CGRect(x: -1512, y: 0, width: 1512, height: 982),

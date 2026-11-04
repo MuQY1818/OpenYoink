@@ -147,6 +147,9 @@ final class EdgeTabController: NSObject {
     /// 统一状态评估：可见性 / 设置 / 屏幕参数 / 拖拽状态变更后调用。
     private func applyState(animated: Bool) {
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        tabView.configure(appearance: settings.appearance,
+                          iconVisible: settings.edgeTabIconVisible,
+                          iconSize: settings.edgeTabIconSize)
         // 贴附侧同步给视图（圆角朝向 / 换边基准）；拖动会话期间位置由手势
         // 自管（可能已实时换边但尚未持久化），此处不覆盖。
         if !isTabBeingDragged {
@@ -368,7 +371,7 @@ final class EdgeTabController: NSObject {
     }
 }
 
-/// EdgeTab 内容视图：vibrancy 底（.hudWindow）+ 朝内圆角 + 1pt 内描边 +
+/// EdgeTab 内容视图：跟随外观设置的系统材质 + 朝内圆角 + 1pt 内描边 +
 /// 小号 tray SF Symbol（secondary 色）。三个职责：
 /// 1. 鼠标手势（自管，不用 `performDrag` —— 要约束沿边移动 + 换边检测）：
 ///    mouseDown 记起点 → mouseDragged 沿边移动（实时夹取；过中线逼近对缘
@@ -414,8 +417,16 @@ final class EdgeTabView: NSView {
     var onDrop: (@MainActor (NSPasteboard) -> Bool)?
 
     private let vibrancyView = NSVisualEffectView()
+    private var nativeGlassView: NSView?
+    private let solidView = NSView()
+    private let tintLayer = CALayer()
     private let iconView = NSImageView()
     private let strokeLayer = CAShapeLayer()
+    private var shelfAppearance = ShelfAppearance.default
+    private var hasConfiguredAppearance = false
+    private var iconSize = SettingsStore.defaultEdgeTabIconSize
+    private var isPointerInside = false
+    private var trackingArea: NSTrackingArea?
 
     // 手势状态（一次按下会话）。
     private var isRepositioning = false
@@ -427,6 +438,9 @@ final class EdgeTabView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        // Keep the entire handle hit-testable even with a fully clear material
+        // and hidden icon. Only the decoration changes with appearance settings.
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.01).cgColor
 
         vibrancyView.material = .hudWindow
         vibrancyView.blendingMode = .behindWindow
@@ -437,12 +451,27 @@ final class EdgeTabView: NSView {
         vibrancyView.setAccessibilityElement(false)
         vibrancyView.setAccessibilityHidden(true)
         addSubview(vibrancyView)
+        solidView.wantsLayer = true
+        solidView.setAccessibilityElement(false)
+        solidView.setAccessibilityHidden(true)
+        addSubview(solidView)
+        if #available(macOS 26.0, *) {
+            let glass = EdgeTabGlassView()
+            glass.contentView = NSView()
+            glass.cornerRadius = Self.cornerRadius
+            glass.style = .regular
+            glass.setAccessibilityElement(false)
+            glass.setAccessibilityHidden(true)
+            nativeGlassView = glass
+            addSubview(glass)
+        }
+        tintLayer.cornerRadius = Self.cornerRadius
+        layer?.addSublayer(tintLayer)
 
         iconView.image = NSImage(
             systemSymbolName: "tray.and.arrow.down",
             accessibilityDescription: String(localized: "Show Shelf")
         )
-        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
         iconView.contentTintColor = .secondaryLabelColor
         iconView.imageScaling = .scaleProportionallyUpOrDown
         // The containing EdgeTabView is the actual button and already exposes
@@ -465,7 +494,25 @@ final class EdgeTabView: NSView {
         setAccessibilityLabel(String(localized: "Show Shelf"))
 
         updateCornering()
+        configure(appearance: .default, iconVisible: true,
+                  iconSize: SettingsStore.defaultEdgeTabIconSize)
         applyEmphasisAppearance(animated: false)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(accessibilityOptionsDidChange(_:)),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    @objc private nonisolated func accessibilityOptionsDidChange(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            self?.updateMaterial()
+            self?.applyEmphasisAppearance(animated: false)
+        }
     }
 
     @available(*, unavailable)
@@ -475,13 +522,114 @@ final class EdgeTabView: NSView {
 
     override func layout() {
         super.layout()
-        vibrancyView.frame = bounds
-        let iconSize: CGFloat = 16
-        iconView.frame = NSRect(x: bounds.midX - iconSize / 2,
-                                y: bounds.midY - iconSize / 2,
-                                width: iconSize, height: iconSize)
+        if vibrancyView.frame != bounds { vibrancyView.frame = bounds }
+        // Put the outer rounded corners beyond the screen edge instead of
+        // clipping the system effect's own edge optics with a layer mask.
+        let glassFrame = NSRect(x: position == .left ? -Self.cornerRadius : 0,
+                                y: 0, width: bounds.width + Self.cornerRadius,
+                                height: bounds.height)
+        if nativeGlassView?.frame != glassFrame { nativeGlassView?.frame = glassFrame }
+        if solidView.frame != bounds { solidView.frame = bounds }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        tintLayer.frame = bounds
         strokeLayer.frame = bounds
         updateStrokePath()
+        CATransaction.commit()
+        let iconFrame = ShelfLayoutEngine.edgeTabIconFrame(in: bounds, size: iconSize)
+        iconView.frame = iconView.superview?.convert(iconFrame, from: self) ?? iconFrame
+    }
+
+    func configure(appearance: ShelfAppearance, iconVisible: Bool, iconSize: Double) {
+        let iconSize = SettingsStore.normalizedEdgeTabIconSize(iconSize)
+        guard !hasConfiguredAppearance || shelfAppearance != appearance || iconView.isHidden == iconVisible
+                || self.iconSize != iconSize else { return }
+        hasConfiguredAppearance = true
+        shelfAppearance = appearance
+        self.iconSize = iconSize
+        iconView.isHidden = !iconVisible
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(
+            pointSize: CGFloat(self.iconSize), weight: .regular
+        )
+        needsLayout = true
+        updateMaterial()
+        applyEmphasisAppearance(animated: false)
+    }
+
+    private func updateMaterial() {
+        let appearance = shelfAppearance
+        let workspace = NSWorkspace.shared
+        let opaque = workspace.accessibilityDisplayShouldReduceTransparency || appearance.material == .solid
+        let nativeGlass = appearance.usesNativeGlass(
+            reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency
+        ) && nativeGlassView != nil
+        vibrancyView.isHidden = opaque || nativeGlass || appearance.material == .clear
+        nativeGlassView?.isHidden = !nativeGlass
+        solidView.isHidden = !opaque && appearance.material != .clear
+        tintLayer.isHidden = nativeGlass
+        if #available(macOS 26.0, *), let glass = nativeGlassView as? NSGlassEffectView {
+            glass.tintColor = appearance.nativeGlassTint
+            let iconContainer = nativeGlass ? glass.contentView : self
+            if let iconContainer, iconView.superview !== iconContainer {
+                iconContainer.addSubview(iconView)
+                needsLayout = true
+            }
+        }
+        let theme: NSAppearance? = switch appearance.theme {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+        if self.appearance?.name != theme?.name { self.appearance = theme }
+        vibrancyView.material = appearance.material == .frosted ? .popover : .hudWindow
+        let opacity = appearance.surfaceOpacity(
+            reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency
+        )
+        vibrancyView.alphaValue = opacity
+        nativeGlassView?.alphaValue = opacity
+        solidView.alphaValue = opacity
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            solidView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            tintLayer.backgroundColor = appearance.tint.nsColor.withAlphaComponent(
+                appearance.tintOpacity(reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency)
+            ).cgColor
+        }
+        if #available(macOS 27.0, *), let glass = nativeGlassView as? NSGlassEffectView {
+            glass.effectIsInteractive = !workspace.accessibilityDisplayShouldReduceMotion
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            solidView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        }
+        applyEmphasisAppearance(animated: false)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Decorative native material views must never intercept tab gestures.
+        bounds.contains(convert(point, from: superview)) ? self : nil
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(rect: .zero,
+                                 options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                 owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+        applyEmphasisAppearance(animated: true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
+        applyEmphasisAppearance(animated: true)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -499,6 +647,7 @@ final class EdgeTabView: NSView {
         dragStartCenterY = window.frame.midY
         dragMoved = false
         isRepositioning = true
+        applyEmphasisAppearance(animated: true)
         onRepositionStateChanged?(true)
     }
 
@@ -531,6 +680,7 @@ final class EdgeTabView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard isRepositioning else { return }
         isRepositioning = false
+        applyEmphasisAppearance(animated: true)
         onRepositionStateChanged?(false)
         if dragMoved {
             dragMoved = false
@@ -585,6 +735,11 @@ final class EdgeTabView: NSView {
             ? [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
             : [.layerMinXMinYCorner, .layerMinXMaxYCorner]
         vibrancyView.layer?.maskedCorners = corners
+        solidView.layer?.cornerRadius = Self.cornerRadius
+        solidView.layer?.maskedCorners = corners
+        solidView.layer?.masksToBounds = true
+        tintLayer.maskedCorners = corners
+        needsLayout = true
         updateStrokePath()
     }
 
@@ -596,18 +751,26 @@ final class EdgeTabView: NSView {
     }
 
     private func applyEmphasisAppearance(animated: Bool) {
-        let stroke: CGColor = isEmphasized
-            ? NSColor.controlAccentColor.cgColor
-            : NSColor.white.withAlphaComponent(0.08).cgColor
-        let fill: CGColor = isEmphasized
-            ? NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
-            : NSColor.clear.cgColor
-        // 平滑过渡：显式 CATransaction 时长让颜色变化走隐式动画。
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(animated ? 0.15 : 0)
-        strokeLayer.strokeColor = stroke
-        strokeLayer.fillColor = fill
-        CATransaction.commit()
+        let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let interacting = isPointerInside || isRepositioning
+        let nativeGlass = shelfAppearance.usesNativeGlass(
+            reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        )
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let stroke: CGColor = isEmphasized
+                ? NSColor.controlAccentColor.cgColor
+                : NSColor.labelColor.withAlphaComponent(nativeGlass ? 0 : (interacting ? 0.24 : 0.10)).cgColor
+            let fill: CGColor = isEmphasized
+                ? NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
+                : NSColor.labelColor.withAlphaComponent(nativeGlass ? 0 : (isRepositioning ? 0.10 : (interacting ? 0.05 : 0))).cgColor
+            // 平滑过渡：显式 CATransaction 时长让颜色变化走隐式动画。
+            CATransaction.begin()
+            CATransaction.setDisableActions(!animated)
+            CATransaction.setAnimationDuration(animated ? 0.15 : 0)
+            strokeLayer.strokeColor = stroke
+            strokeLayer.fillColor = fill
+            CATransaction.commit()
+        }
     }
 
     /// 只对朝内两角加圆弧的圆角矩形路径（贴缘侧直角）。路径上下对称，
@@ -648,4 +811,9 @@ final class EdgeTabView: NSView {
         }
         return path
     }
+}
+
+@available(macOS 26.0, *)
+private final class EdgeTabGlassView: NSGlassEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -432,6 +432,27 @@ final class SettingsStore {
         didSet { defaults.set(edgeTabEnabled, forKey: Keys.edgeTabEnabled) }
     }
 
+    var edgeTabIconVisible: Bool {
+        didSet { defaults.set(edgeTabIconVisible, forKey: Keys.edgeTabIconVisible) }
+    }
+
+    var edgeTabIconSize: Double {
+        didSet {
+            let normalized = Self.normalizedEdgeTabIconSize(edgeTabIconSize)
+            if normalized != edgeTabIconSize { edgeTabIconSize = normalized }
+            defaults.set(normalized, forKey: Keys.edgeTabIconSize)
+        }
+    }
+
+    nonisolated static let edgeTabIconSizeRange: ClosedRange<Double> = 6...10
+    nonisolated static let defaultEdgeTabIconSize: Double = 10
+
+    nonisolated static func normalizedEdgeTabIconSize(_ size: Double) -> Double {
+        size.isFinite
+            ? min(edgeTabIconSizeRange.upperBound, max(edgeTabIconSizeRange.lowerBound, size))
+            : defaultEdgeTabIconSize
+    }
+
     /// Persisted panel frame for the `custom` shelf position (S9), in global
     /// screen coordinates. nil = no custom placement yet — the first switch to
     /// custom starts from the right-edge default frame (see
@@ -581,6 +602,8 @@ final class SettingsStore {
         static let shelfWidth = prefix + "shelfWidth"
         static let shelfEdgeOffset = prefix + "shelfEdgeOffset"
         static let edgeTabEnabled = prefix + "edgeTabEnabled"
+        static let edgeTabIconVisible = prefix + "edgeTabIconVisible"
+        static let edgeTabIconSize = prefix + "edgeTabIconSize"
         static let autoHide = prefix + "autoHide"
         static let keepShelfOpenAfterDrop = prefix + "keepShelfOpenAfterDrop"
         static let autoHideWhenEmpty = prefix + "autoHideWhenEmpty"
@@ -666,6 +689,8 @@ final class SettingsStore {
             Keys.shelfWidth: 320.0,
             Keys.shelfEdgeOffset: 0.5,
             Keys.edgeTabEnabled: true,
+            Keys.edgeTabIconVisible: true,
+            Keys.edgeTabIconSize: Self.defaultEdgeTabIconSize,
             Keys.autoHide: false,
             Keys.keepShelfOpenAfterDrop: true,
             Keys.autoHideWhenEmpty: true,
@@ -817,6 +842,8 @@ final class SettingsStore {
         }
         shelfEdgeOffset = defaults.double(forKey: Keys.shelfEdgeOffset)
         edgeTabEnabled = defaults.bool(forKey: Keys.edgeTabEnabled)
+        edgeTabIconVisible = defaults.bool(forKey: Keys.edgeTabIconVisible)
+        edgeTabIconSize = Self.normalizedEdgeTabIconSize(defaults.double(forKey: Keys.edgeTabIconSize))
         autoHide = defaults.bool(forKey: Keys.autoHide)
         keepShelfOpenAfterDrop = defaults.bool(forKey: Keys.keepShelfOpenAfterDrop)
         autoHideWhenEmpty = defaults.bool(forKey: Keys.autoHideWhenEmpty)

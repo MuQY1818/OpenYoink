@@ -10,6 +10,26 @@ import XCTest
 /// 测试几何与 ShelfLayoutEngineTests 相同：主屏 frame (0,0 1920×1080)、
 /// Dock 占底部 60 → visibleFrame (0,60 1920×1020)。
 final class EdgeTabLayoutTests: XCTestCase {
+    func testIconAlwaysLeavesPaddingInsideNormalAndEmphasizedTabs() {
+        for size in stride(from: 6.0, through: 10.0, by: 1) {
+            for width in [ShelfLayoutEngine.edgeTabWidth, ShelfLayoutEngine.edgeTabEmphasizedWidth] {
+                let bounds = CGRect(x: 0, y: 0, width: width, height: 84)
+                let icon = ShelfLayoutEngine.edgeTabIconFrame(in: bounds, size: size)
+                XCTAssertTrue(bounds.insetBy(dx: 2, dy: 2).contains(icon))
+                XCTAssertEqual(icon.width, CGFloat(size))
+                XCTAssertEqual(icon.midX, bounds.midX)
+                XCTAssertEqual(icon.midY, bounds.midY)
+            }
+        }
+    }
+
+    func testIconRemainsContainedWhenAvailableBoundsShrink() {
+        let bounds = CGRect(x: 0, y: 0, width: 8, height: 7)
+        let icon = ShelfLayoutEngine.edgeTabIconFrame(in: bounds, size: 10)
+        XCTAssertEqual(icon.size, CGSize(width: 3, height: 3))
+        XCTAssertTrue(bounds.insetBy(dx: 2, dy: 2).contains(icon))
+    }
+
     private let mainScreen = ShelfLayoutEngine.ScreenGeometry(
         frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
         visibleFrame: CGRect(x: 0, y: 60, width: 1920, height: 1020)

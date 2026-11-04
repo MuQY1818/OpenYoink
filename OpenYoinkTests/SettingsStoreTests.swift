@@ -15,6 +15,37 @@ final class SettingsStoreTests: XCTestCase {
 
     // MARK: - General settings persistence
 
+    func testEdgeTabIconPreferencesPersistIndependentlyOfTabVisibility() throws {
+        let (defaults, name) = try makeSuite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertTrue(store.edgeTabIconVisible)
+        XCTAssertEqual(store.edgeTabIconSize, 10)
+        store.edgeTabIconVisible = false
+        store.edgeTabIconSize = 6
+
+        let reloaded = SettingsStore(defaults: defaults)
+        XCTAssertFalse(reloaded.edgeTabIconVisible)
+        XCTAssertEqual(reloaded.edgeTabIconSize, 6)
+        XCTAssertTrue(reloaded.edgeTabEnabled, "Hiding the icon must not disable its handle")
+
+        reloaded.edgeTabIconVisible = true
+        XCTAssertEqual(SettingsStore(defaults: defaults).edgeTabIconSize, 6)
+    }
+
+    func testEdgeTabIconSizeNormalizesEditsAndPersistedValues() throws {
+        let (defaults, name) = try makeSuite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SettingsStore(defaults: defaults)
+        for (input, expected) in [(-10.0, 6.0), (100, 10), (.infinity, 10), (.nan, 10)] {
+            store.edgeTabIconSize = input
+            XCTAssertEqual(store.edgeTabIconSize, expected)
+            XCTAssertEqual(SettingsStore(defaults: defaults).edgeTabIconSize, expected)
+        }
+        defaults.set(100, forKey: "OpenYoink.edgeTabIconSize")
+        XCTAssertEqual(SettingsStore(defaults: defaults).edgeTabIconSize, 10)
+    }
+
     func testGeneralSettings_persistAcrossInstances() throws {
         let (defaults, name) = try makeSuite()
         defer { defaults.removePersistentDomain(forName: name) }

@@ -2,6 +2,31 @@ import XCTest
 @testable import OpenYoink
 
 final class ShelfFrameTransitionTests: XCTestCase {
+    func testIslandCollapseDestinationSurvivesActivityDefaultsAndSpaceRefreshes() {
+        let expanded = CGRect(x: 420, y: 420, width: 600, height: 480)
+        let compact = CGRect(x: 570, y: 868, width: 300, height: 32)
+        var transition = ShelfFrameTransitionState()
+        _ = transition.request(expanded, currentFrame: expanded)
+        XCTAssertTrue(transition.request(compact, currentFrame: expanded))
+        // The host window stays expanded while SwiftUI folds its content.
+        for _ in 0..<20 {
+            XCTAssertFalse(transition.request(compact, currentFrame: expanded),
+                           "Refreshes during a fold must not cancel or restart the pending resize")
+        }
+        XCTAssertEqual(transition.targetFrame, compact)
+        XCTAssertFalse(transition.request(compact, currentFrame: compact))
+    }
+
+    func testReopeningIslandInvalidatesItsPendingCompactDestination() {
+        let expanded = CGRect(x: 420, y: 420, width: 600, height: 480)
+        let compact = CGRect(x: 570, y: 868, width: 300, height: 32)
+        var transition = ShelfFrameTransitionState()
+        XCTAssertTrue(transition.request(compact, currentFrame: expanded))
+        XCTAssertTrue(transition.request(expanded, currentFrame: expanded))
+        XCTAssertEqual(transition.targetFrame, expanded)
+        XCTAssertFalse(transition.request(expanded, currentFrame: expanded))
+    }
+
     func testRepeatedLayoutRequestDoesNotInterruptEitherEdgeSlide() {
         for position in [SettingsStore.ShelfPosition.left, .right] {
             let target = CGRect(x: position == .left ? 0 : 1120,

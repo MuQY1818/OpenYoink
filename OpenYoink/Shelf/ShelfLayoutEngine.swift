@@ -131,6 +131,14 @@ enum ShelfLayoutEngine {
     static let edgeTabWidth: CGFloat = 14
     /// 拉环高度（沿边方向的纵向尺寸）。
     static let edgeTabHeight: CGFloat = 84
+
+    /// Keep at least 2pt around the glyph, independently of the tab's hit area.
+    static func edgeTabIconFrame(in bounds: CGRect, size: Double) -> CGRect {
+        let requested = SettingsStore.normalizedEdgeTabIconSize(size)
+        let side = min(CGFloat(requested), max(0, min(bounds.width, bounds.height) - 4))
+        return CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2,
+                      width: side, height: side)
+    }
     /// 强调态（拖拽投放暗示 / 投放悬停）的加宽加高：贴缘与中心 y 不变。
     static let edgeTabEmphasizedWidth: CGFloat = 18
     static let edgeTabEmphasizedHeight: CGFloat = 92

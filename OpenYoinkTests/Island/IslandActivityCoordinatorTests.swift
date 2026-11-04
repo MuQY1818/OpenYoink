@@ -133,6 +133,41 @@ final class IslandActivityCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.surfaceState, .expanded)
     }
 
+    func testCollapseWaitsForItsActualAnimationCompletion() {
+        let coordinator = IslandActivityCoordinator()
+        coordinator.show()
+        coordinator.completeSurfaceTransition(coordinator.surfaceTransitionID)
+        coordinator.collapse()
+        var completions = 0
+        coordinator.onSurfaceAnimationCompleted = { completions += 1 }
+        XCTAssertTrue(coordinator.isSurfaceTransitionPending)
+        let collapseID = coordinator.surfaceTransitionID
+        coordinator.publish(activity(id: "sample", module: .system, priority: .selectedModule))
+        XCTAssertTrue(coordinator.isSurfaceTransitionPending)
+        XCTAssertEqual(coordinator.surfaceTransitionID, collapseID)
+        coordinator.completeSurfaceTransition(collapseID)
+        coordinator.completeSurfaceTransition(collapseID)
+        XCTAssertFalse(coordinator.isSurfaceTransitionPending)
+        XCTAssertEqual(completions, 1)
+    }
+
+    func testOldCollapseCompletionCannotFinishANewerCollapse() {
+        let coordinator = IslandActivityCoordinator()
+        coordinator.show()
+        coordinator.collapse()
+        let oldCollapseID = coordinator.surfaceTransitionID
+        coordinator.show()
+        let reopenID = coordinator.surfaceTransitionID
+        coordinator.collapse()
+        let currentID = coordinator.surfaceTransitionID
+        coordinator.completeSurfaceTransition(oldCollapseID)
+        coordinator.completeSurfaceTransition(reopenID)
+        XCTAssertTrue(coordinator.isSurfaceTransitionPending)
+        XCTAssertEqual(coordinator.surfaceState, .compact)
+        coordinator.completeSurfaceTransition(currentID)
+        XCTAssertFalse(coordinator.isSurfaceTransitionPending)
+    }
+
     private func activity(id: String, module: IslandModuleID,
                           priority: IslandActivityPriority) -> IslandActivity {
         .init(id: id, moduleID: module, priority: priority,

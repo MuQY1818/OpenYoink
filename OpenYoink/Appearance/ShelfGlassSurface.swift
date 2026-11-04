@@ -4,8 +4,8 @@ import SwiftUI
 
 /// A decorative backdrop: the shelf's content and drag/drop geometry remain native
 /// and untransformed. Clear glass uses an unblurred transparent pane; liquid glass
-/// and frosted materials use macOS effects. Moving edge highlights are inspired
-/// by liquid-glass-react, without sampling the desktop in the application.
+/// and frosted materials use macOS effects. Native glass owns its reflections;
+/// custom edge highlights are reserved for fallback materials.
 struct ShelfGlassSurface: View {
     let appearance: ShelfAppearance
     var hoverPoint: CGPoint? = nil
@@ -109,13 +109,21 @@ private struct ShelfGlassBackdrop: View {
     }
 
     var body: some View {
-        ZStack {
-            material
-            shape.fill(appearance.tint.color.opacity(
-                appearance.tintOpacity(reduceTransparency: reduceTransparency)
-            ))
+        Group {
+            if appearance.usesNativeGlass(reduceTransparency: reduceTransparency) {
+                // Its cornerRadius already shapes the system effect. An extra
+                // SwiftUI mask can also cut off its edge lighting and shadow.
+                material
+            } else {
+                ZStack {
+                    material
+                    shape.fill(appearance.tint.color.opacity(
+                        appearance.tintOpacity(reduceTransparency: reduceTransparency)
+                    ))
+                }
+                .clipShape(shape)
+            }
         }
-        .clipShape(shape)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -134,7 +142,8 @@ private struct ShelfGlassBackdrop: View {
         } else if #available(macOS 26.0, *), appearance.material == .regular {
             ShelfNativeGlassBackdrop(cornerRadius: appearance.cornerRadius,
                                      colorScheme: effectiveScheme,
-                                     opacity: materialOpacity)
+                                     opacity: materialOpacity,
+                                     tint: appearance.nativeGlassTint)
         } else {
             ShelfMaterialBackdrop(material: fallbackMaterial,
                                   cornerRadius: appearance.cornerRadius,
@@ -175,11 +184,13 @@ private struct ShelfGlassHighlights: View {
     }
 
     var body: some View {
-        edgeHighlights
-            .opacity(reduceTransparency ? 1 : appearance.backgroundOpacity)
-            .clipShape(shape)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        if !appearance.usesNativeGlass(reduceTransparency: reduceTransparency) {
+            edgeHighlights
+                .opacity(reduceTransparency ? 1 : appearance.backgroundOpacity)
+                .clipShape(shape)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     private var edgeHighlights: some View {
@@ -236,6 +247,7 @@ private struct ShelfNativeGlassBackdrop: NSViewRepresentable {
     let cornerRadius: Double
     let colorScheme: ColorScheme
     let opacity: Double
+    let tint: NSColor?
 
     func makeNSView(context: Context) -> ShelfPassthroughGlassView {
         let view = ShelfPassthroughGlassView()
@@ -252,8 +264,12 @@ private struct ShelfNativeGlassBackdrop: NSViewRepresentable {
     private func configure(_ view: ShelfPassthroughGlassView) {
         if view.cornerRadius != cornerRadius { view.cornerRadius = cornerRadius }
         if view.alphaValue != opacity { view.alphaValue = opacity }
+        if view.tintColor != tint { view.tintColor = tint }
         let name: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
         if view.appearance?.name != name { view.appearance = NSAppearance(named: name) }
+        if #available(macOS 27.0, *) {
+            view.effectIsInteractive = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        }
     }
 }
 
