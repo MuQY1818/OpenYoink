@@ -133,8 +133,26 @@ final class ShelfWindowController: NSObject {
     private var isClassicMorphing = false
     /// 形变期间被推迟的布局请求（数量/设置变化），形变结束后补做。
     private var isClassicLayoutDeferred = false
+    /// 可见期间高度变化动画的代次；新请求或隐藏会让旧动画的收尾失效。
+    private var classicResizeGeneration: UInt = 0
     /// 面板窗口与玻璃面之间的透明边距（ShelfView classic 分支的 `.padding(8)`）。
     private static let classicSurfaceInset: CGFloat = 8
+
+    /// shelf 逻辑上占用的 frame。可见期间变矮时窗口不缩（见
+    /// `resizeClassicSurface`），只有顶部玻璃面是 shelf，底部多出的部分
+    /// 透明、不接收点击；悬停、命中与形变都以这里为准，而不是窗口 frame。
+    private var classicLogicalFrame: NSRect {
+        let frame = classicPanel.frame
+        guard let surfaceHeight = classicReveal.surfaceHeight else { return frame }
+        let height = min(frame.height, surfaceHeight + Self.classicSurfaceInset * 2)
+        return NSRect(x: frame.minX, y: frame.maxY - height, width: frame.width, height: height)
+    }
+
+    /// 窗口 frame 即将被直接改写：作废进行中的高度动画，玻璃面重新撑满窗口。
+    private func resetClassicSurfaceHeight() {
+        classicResizeGeneration &+= 1
+        classicReveal.pinSurfaceHeight(nil)
+    }
 
     struct OnboardingPresentationSnapshot: Equatable, Sendable {
         fileprivate let surface: SettingsStore.PreferredShelfSurface
@@ -683,7 +701,7 @@ final class ShelfWindowController: NSObject {
         let wasOnscreen = classicPanel.isVisible
         appState.showShelf()
         let targetFrame = classicTargetFrame()
-        _ = classicFrameTransition.request(targetFrame, currentFrame: classicPanel.frame)
+        _ = classicFrameTransition.request(targetFrame, currentFrame: classicLogicalFrame)
         guard animated else {
             endClassicMorph()
             classicReveal.showImmediately()
@@ -752,6 +770,7 @@ final class ShelfWindowController: NSObject {
         isClassicMorphing = true
         classicPanel.hasShadow = false
         if !wasOnscreen {
+            classicReveal.pinSurfaceHeight(nil)
             classicReveal.prepareCollapsed(at: origin)
         }
         classicReveal.capturesWholeSurface = dragStartMonitor.isDragInProgress
@@ -759,6 +778,7 @@ final class ShelfWindowController: NSObject {
         let quick = isOpeningClassicHoverPreview
         classicPanel.alphaValue = 1
         if classicPanel.frame != targetFrame {
+            resetClassicSurfaceHeight()
             classicPanel.setFrame(targetFrame, display: false)
         }
         classicPanel.orderFront(nil)
@@ -883,7 +903,7 @@ final class ShelfWindowController: NSObject {
             return islandActivityCoordinator.surfaceState.isExpanded
                 ? islandPanel.frame : islandTargetFrame()
         }
-        return appState.isShelfVisible ? classicPanel.frame : classicTargetFrame()
+        return appState.isShelfVisible ? classicLogicalFrame : classicTargetFrame()
     }
 
     /// 向贴附缘滑出并淡出，结束后 orderOut。
@@ -896,7 +916,8 @@ final class ShelfWindowController: NSObject {
         quickActionLayoutTask?.cancel()
         quickActionLayoutTask = nil
         let generation = classicVisibilityTransition.request(visible: false)
-        let visibleFrame = classicFrameTransition.targetFrame ?? classicPanel.frame
+        classicResizeGeneration &+= 1
+        let visibleFrame = classicFrameTransition.targetFrame ?? classicLogicalFrame
         appState.hideShelf()
         classicFrameTransition.reset()
         // S6: shelf 隐藏时关掉 Quick Look 并释放会话资源（不恢复键盘焦点）。
@@ -910,7 +931,7 @@ final class ShelfWindowController: NSObject {
             classicPanel.hasShadow = classicWantsWindowShadow
             return
         }
-        if let generation, let origin = classicRevealOrigin(for: classicPanel.frame) {
+        if let generation, let origin = classicRevealOrigin(for: classicLogicalFrame) {
             foldClassicShelf(into: origin, generation: generation)
             return
         }
@@ -1068,7 +1089,7 @@ final class ShelfWindowController: NSObject {
         }
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged:
-            if classicPanel.frame.contains(point) { promoteClassicHoverPreview() }
+            if classicLogicalFrame.contains(point) { promoteClassicHoverPreview() }
         case .mouseMoved:
             updateClassicHoverPreviewPointer(at: point)
         default:
@@ -1077,7 +1098,7 @@ final class ShelfWindowController: NSObject {
     }
 
     private func updateClassicHoverPreviewPointer(at point: CGPoint) {
-        let event: ClassicShelfHoverPreviewStateMachine.Event = classicPanel.frame
+        let event: ClassicShelfHoverPreviewStateMachine.Event = classicLogicalFrame
             .insetBy(dx: -2, dy: -2).contains(point) ? .shelfEntered : .shelfExited
         performClassicHoverActions(classicHoverPreviewState.handle(event))
     }
@@ -1479,7 +1500,8 @@ final class ShelfWindowController: NSObject {
     @objc private func screenParametersDidChange(_ notification: Notification) {
         if appState.isShelfVisible {
             let target = classicTargetFrame()
-            _ = classicFrameTransition.request(target, currentFrame: classicPanel.frame)
+            _ = classicFrameTransition.request(target, currentFrame: classicLogicalFrame)
+            resetClassicSurfaceHeight()
             classicPanel.setFrame(target, display: true)
         }
         if settings.islandEnabled {
@@ -1508,12 +1530,13 @@ final class ShelfWindowController: NSObject {
         }
         guard appState.isShelfVisible else { return }
         // Validate the destination during a slide, not its offscreen start.
-        let frame = classicFrameTransition.targetFrame ?? classicPanel.frame
+        let frame = classicFrameTransition.targetFrame ?? classicLogicalFrame
         let corrected = ShelfLayoutEngine.onscreenCorrection(for: frame,
                                                              screens: Self.screenGeometries())
             ?? classicTargetFrame()
         guard corrected != frame else { return }
-        _ = classicFrameTransition.request(corrected, currentFrame: classicPanel.frame)
+        _ = classicFrameTransition.request(corrected, currentFrame: classicLogicalFrame)
+        resetClassicSurfaceHeight()
         classicPanel.setFrame(corrected, display: true)
     }
 
@@ -1540,17 +1563,64 @@ final class ShelfWindowController: NSObject {
             isClassicLayoutDeferred = true
             return
         }
-        let target = classicTargetFrame()
-        guard classicFrameTransition.request(target, currentFrame: classicPanel.frame) else { return }
-        guard target != classicPanel.frame else { return }
+        let current = classicLogicalFrame
+        var target = classicTargetFrame()
+        // 只是内容高度变了（选中出现操作栏、增删卡片）：顶边保持不动，否则
+        // 标题和搜索框会随高度变化上下跳。
+        let isHeightOnly = settings.shelfPosition != .custom
+            && classicPanel.isVisible
+            && target.width == current.width && target.minX == current.minX
+        if isHeightOnly {
+            let visible = Self.screen(containing: CGPoint(x: current.midX, y: current.midY)).visibleFrame
+            target.origin.y = min(max(current.maxY - target.height, visible.minY),
+                                  visible.maxY - target.height)
+        }
+        guard classicFrameTransition.request(target, currentFrame: current) else { return }
+        guard target != current else { return }
         guard animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            resetClassicSurfaceHeight()
             classicPanel.setFrame(target, display: true)
             return
         }
+        if isHeightOnly, current.maxY == target.maxY {
+            resizeClassicSurface(to: target)
+            return
+        }
+        resetClassicSurfaceHeight()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.animationDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             classicPanel.animator().setFrame(target, display: true)
+        }
+    }
+
+    /// 顶边不动的高度变化：玻璃与内容的高度交给 SwiftUI 逐帧动画，窗口
+    /// 只在需要变高时瞬间扩高（多出的部分先透明），变矮时**不缩**。
+    ///
+    /// 不缩窗口是因为 WindowServer 对「顶边固定」的缩小（高度减小 + 原点
+    /// 上移）并不保证原子：点过 Share 菜单之后尤其明显，新尺寸先生效、
+    /// 原点晚几帧才跟上，整块 shelf 会往下掉一截再弹回。多出的透明区域
+    /// 不接收点击，隐藏或下次改 frame 时自然收回。
+    private func resizeClassicSurface(to target: NSRect) {
+        classicResizeGeneration &+= 1
+        let generation = classicResizeGeneration
+        let inset = Self.classicSurfaceInset * 2
+        let window = classicPanel.frame
+        let shownHeight = classicReveal.surfaceHeight ?? (window.height - inset)
+        let targetHeight = target.height - inset
+        let needsTallerWindow = target.height > window.height
+        if needsTallerWindow {
+            classicReveal.pinSurfaceHeight(shownHeight)
+            classicPanel.setFrame(target, display: true)
+        } else if classicReveal.surfaceHeight == nil {
+            classicReveal.pinSurfaceHeight(shownHeight)
+        }
+        let fillsWindow = needsTallerWindow || target.height == window.height
+        classicReveal.animateSurfaceHeight(to: targetHeight) { [weak self] in
+            guard let self, self.classicResizeGeneration == generation else { return }
+            // 玻璃面恰好撑满窗口时解除锁定；否则保持锁定，底部维持透明。
+            if fillsWindow { self.classicReveal.pinSurfaceHeight(nil) }
+            if self.classicPanel.hasShadow { self.classicPanel.invalidateShadow() }
         }
     }
 

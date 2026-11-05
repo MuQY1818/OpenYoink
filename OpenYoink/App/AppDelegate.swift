@@ -374,6 +374,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 应用已在运行时再次打开（Finder / 启动台 / Spotlight 双击）：弹出设置。
+    /// 菜单栏图标太多时 macOS 会把 OpenYoink 的图标藏起来且不提示，这是
+    /// 此时唯一能找到的入口。
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        settingsWindowController.show()
+        return false
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         clipboardHistoryStore.stop()
         Task { @MainActor in

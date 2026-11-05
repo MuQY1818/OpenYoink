@@ -50,6 +50,34 @@ final class ShelfPanel: NSPanel {
         allowsTopEdgeOverlap ? frameRect : super.constrainFrameRect(frameRect, to: screen)
     }
 
+    /// 面板因点击空白/卡片而成为 key 时，SwiftUI 会把焦点自动交给第一个
+    /// 文本框（搜索框），聚焦样式闪一下又被收走（issue：点空白处面板抖动）。
+    /// 文本框只在两种情况下拿焦点：键盘操作（⌘F、Tab 等），或这次点击
+    /// 确实落在该文本框上。
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        if let field = responder as? NSTextField, field.isEditable,
+           !Self.allowsTextFocus(field, for: NSApp.currentEvent) {
+            return false
+        }
+        return super.makeFirstResponder(responder)
+    }
+
+    private static func allowsTextFocus(_ field: NSTextField, for event: NSEvent?) -> Bool {
+        guard let event else { return true }
+        switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown,
+             .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            guard event.window === field.window else { return false }
+            // 放大镜按钮（SwiftUI 绘制，不是独立 NSView）就在文本框左侧同一行，
+            // 点它同样应该进入搜索，所以按位置判断而不是按命中视图判断。
+            let point = field.convert(event.locationInWindow, from: nil)
+            return field.bounds.insetBy(dx: -36, dy: -8).contains(point)
+        default:
+            return true
+        }
+    }
+
+
     override func keyDown(with event: NSEvent) {
         if onKeyDown?(event) == true { return }
         super.keyDown(with: event)

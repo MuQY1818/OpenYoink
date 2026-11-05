@@ -76,7 +76,9 @@ struct ShelfInteractiveGlassSurface<Content: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let bounds = CGRect(origin: .zero, size: geometry.size)
+            let canvas = CGRect(origin: .zero, size: geometry.size)
+            // The surface can be shorter than the window while its height animates.
+            let bounds = reveal?.surfaceBounds(in: canvas) ?? canvas
             let glassRect = reveal?.glassRect(in: bounds) ?? bounds
             let contentVisible = reveal?.isContentVisible ?? true
             ZStack(alignment: .topLeading) {
@@ -112,7 +114,7 @@ struct ShelfInteractiveGlassSurface<Content: View>: View {
                     .opacity(contentVisible ? 1 : 0)
                     .allowsHitTesting(contentVisible)
             }
-                .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
+                .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
                 .onContinuousHover { phase in
                     guard tracksPointer else { return }
                     switch phase {

@@ -140,6 +140,7 @@ struct ShelfView: View {
     @Environment(ShelfGridGeometry.self) private var gridGeometry
     /// D10: 拖入/物化失败内联提示。
     @Environment(ShelfNoticeModel.self) private var notices
+    @Environment(\.shelfRevealState) private var reveal
     /// v1.2: runtime-only asynchronous batch status.
     @Environment(TransferStore.self) private var transferStore
     @Environment(ShelfInteractionState.self) private var interaction
@@ -208,7 +209,9 @@ struct ShelfView: View {
             // 外缘隐形收起热区挂在 padding **之后**（窗口内容坐标系）：拉环
             // 原位置是面板贴缘的 14pt —— 挂在 padding 前会被形状内缩 8pt
             // 带偏（真机验证点击落空），必须贴着面板真正的贴缘边。
-            .overlay(alignment: outerCollapseStripAlignment) { outerCollapseStrip }
+            .overlay(alignment: outerCollapseStripAlignment == .trailing ? .topTrailing : .topLeading) {
+                outerCollapseStrip
+            }
         } else {
             Color.clear
                 .overlay { content }
@@ -721,7 +724,8 @@ struct ShelfView: View {
             }
             .buttonStyle(.plain)
             .frame(width: ShelfLayoutEngine.innerEdgeHandleWidth)
-            .frame(maxHeight: .infinity)
+            // 窗口可能比玻璃面高（底部透明），热区只覆盖玻璃面那一段。
+            .frame(maxHeight: reveal?.surfaceHeight.map { $0 + 16 } ?? .infinity)
             .contentShape(Rectangle())
             .accessibilityLabel(Text("Hide Shelf"))
             .accessibilityIdentifier("shelf.hide.edge")

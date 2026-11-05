@@ -54,7 +54,9 @@ final class MenuBarController: NSObject {
         self.onReportIssue = onReportIssue
         self.onCheckForUpdates = onCheckForUpdates
         self.onOpenManualUpdate = onOpenManualUpdate
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // 固定方形宽度：自适应宽度加上偏宽的托盘符号会占约 36pt，比多数菜单栏
+        // 图标宽三分之一；菜单栏拥挤时 macOS 会先藏掉放不下的图标。
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
         configureButton()
         configureMenu()
@@ -68,6 +70,7 @@ final class MenuBarController: NSObject {
                             accessibilityDescription: "OpenYoink")
         image?.isTemplate = true
         button.image = image
+        button.imageScaling = .scaleProportionallyDown
     }
 
     private func configureMenu() {

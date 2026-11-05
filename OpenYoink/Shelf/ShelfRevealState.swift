@@ -26,6 +26,16 @@ final class ShelfRevealState {
     /// 拖文件唤出时，形变期间整块玻璃面都接收拖放（否则只有拉环那一小块
     /// 不透明，前几百毫秒松手会落空）。
     var capturesWholeSurface = false
+    /// 可见期间高度变化时的玻璃面高度（顶对齐）；nil = 撑满窗口。
+    ///
+    /// AppKit 动画窗口 frame 时，SwiftUI 内容不会逐帧重排：内容先跟着窗口
+    /// 底边滑动、动画结束再弹回原位（选中/取消选中时操作栏出现消失的抖动）。
+    /// 因此高度变化改为：玻璃与内容的高度由 SwiftUI 逐帧动画；窗口只在
+    /// 变高时瞬间扩高，变矮时保持原高，底部透明（见
+    /// `ShelfWindowController.resizeClassicSurface`）。
+    private(set) var surfaceHeight: CGFloat?
+
+    static let resizeAnimation = Animation.spring(response: 0.32, dampingFraction: 1)
 
     static let expandGlassAnimation = Animation.spring(response: 0.40, dampingFraction: 0.9)
     static let expandContentAnimation = Animation.easeOut(duration: 0.24).delay(0.06)
@@ -39,6 +49,27 @@ final class ShelfRevealState {
     static let quickExpandSettleDuration: TimeInterval = 0.34
     /// 收起完成时长（之后 orderOut、拉环淡入）。
     static let collapseDuration: TimeInterval = 0.3
+
+    /// 玻璃面实际占用的区域（顶对齐，高度可能小于窗口画布）。
+    func surfaceBounds(in canvas: CGRect) -> CGRect {
+        guard let surfaceHeight else { return canvas }
+        return CGRect(x: canvas.minX, y: canvas.minY, width: canvas.width,
+                      height: max(1, min(surfaceHeight, canvas.height)))
+    }
+
+    /// 无动画锁定玻璃面高度（窗口扩高之前调用，保持画面不变）。
+    func pinSurfaceHeight(_ height: CGFloat?) {
+        surfaceHeight = height
+    }
+
+    /// 以弹簧动画把玻璃面高度改到 `height`，完成后回调。
+    func animateSurfaceHeight(to height: CGFloat, completion: @escaping @MainActor () -> Void) {
+        withAnimation(Self.resizeAnimation, completionCriteria: .logicallyComplete) {
+            surfaceHeight = height
+        } completion: {
+            MainActor.assumeIsolated { completion() }
+        }
+    }
 
     /// 当前玻璃矩形：展开为整个玻璃面，收拢为拉环矩形。
     func glassRect(in bounds: CGRect) -> CGRect {
@@ -58,6 +89,7 @@ final class ShelfRevealState {
         isGlassExpanded = true
         isContentVisible = true
         capturesWholeSurface = false
+        surfaceHeight = nil
     }
 
     func expand(quick: Bool = false) {
