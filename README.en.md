@@ -98,6 +98,8 @@ These are real screenshots (Chinese UI). Click one to see it full size.
 
 There is also a Transfers module that shows the progress and failures of files being delivered in the background.
 
+**AI Usage** (new in 1.8.8, off by default): today's spend and tokens across Claude Code, Codex, Cursor and more, your 7-day, 30-day and all-time totals, and how much of each usage-limit window is used and when it resets. Island nudges you at 80% and 95%, and the collapsed Island can show today's spend. The numbers come from the free, open-source [TokenTracker](https://github.com/xiufengsun/TokenTracker), which needs to be installed and running.
+
 ### Setting it up
 
 Island is on by default for new installs (turn it off in **Settings → General**). Expand it, click the gear in the top-left corner to open the module library, turn on the modules you want, pin them, and drag to reorder. Press `Esc`, click outside, or click the top-center area to collapse it.
@@ -195,6 +197,7 @@ Regular file drags provide both a file URL and a filename Chromium understands. 
 - No account, no analytics, no telemetry. Everything stays in the local sandbox under `Application Support/OpenYoink`.
 - App Sandbox is on, so OpenYoink can only touch files you drag in or pick yourself. Everyday use needs neither Accessibility nor Input Monitoring.
 - The only background network traffic is checking for and downloading updates from GitHub Pages / Releases, and you can turn that off.
+- AI Usage only talks to TokenTracker on your own Mac (`localhost:7680`). It never goes online and doesn't read TokenTracker's files.
 - Now Playing never goes online. It reads playback info through a local helper first, and falls back to AppleScript for Apple Music / Spotify, which may trigger an Automation permission prompt. If the module breaks, the shelf keeps working.
 - Quick Access only remembers the folders you add. Removing one doesn't delete the folder, and macOS decides which app opens it.
 

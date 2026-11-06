@@ -98,6 +98,8 @@ OpenYoink Island 待在屏幕顶部。平时收成一条，显示正在播放的
 
 另外还有一个传输模块，用来看后台交付文件的进度和失败情况。
 
+**AI 用量**（1.8.8 新增，默认关着）：今天在 Claude Code、Codex、Cursor 等工具上花了多少钱、用了多少 token，近 7 天、30 天和累计用量，以及各家额度窗口用到了多少、什么时候重置。快到 80% 和 95% 会在灵动岛提醒一下，收起时也可以选择显示今日花费。数据来自免费开源的 [TokenTracker](https://github.com/xiufengsun/TokenTracker)，用这个模块需要先装好它并让它在后台跑着。
+
 ### 怎么配置
 
 新装的 OpenYoink 默认开着灵动岛（**设置 → 通用** 里可以关）。展开后点左上角的齿轮进模块库，打开想用的模块、点图钉钉到顶部，拖一拖调整顺序。收起按 `Esc`，或者点外面、点顶部中间。
@@ -196,6 +198,7 @@ xattr -dr com.apple.quarantine /Applications/OpenYoink.app
 - 开启了 App Sandbox，只能碰你自己拖进来或选中的文件。日常使用不需要辅助功能或输入监控权限。
 - 唯一的后台联网是检查和下载更新（访问 GitHub Pages / Releases），可以在设置里关掉。
 - 正在播放模块不联网。它优先用本地 helper 读取播放信息，退而用 AppleScript 控制 Apple Music / Spotify，这时系统可能会问你要"自动化"权限。这个模块出问题不会影响暂存架。
+- AI 用量模块只访问本机的 TokenTracker（`localhost:7680`），不连外网，也不读它的文件。
 - 快速访问只记住你添加的文件夹位置。取消收藏不会删除文件夹，用什么打开交给 macOS 决定。
 
 ### 剪贴板历史
