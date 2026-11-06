@@ -305,6 +305,23 @@ final class SettingsStore {
         }
     }
 
+    /// AI usage module (data from TokenTracker): the number shown in the
+    /// compact Island while the module is enabled.
+    var aiUsageCompactMetric: AIUsageCompactMetric {
+        didSet { defaults.set(aiUsageCompactMetric.rawValue, forKey: Keys.aiUsageCompactMetric) }
+    }
+
+    /// Island alert when a plan limit crosses 80% / 95%.
+    var aiUsageLimitAlertsEnabled: Bool {
+        didSet { defaults.set(aiUsageLimitAlertsEnabled, forKey: Keys.aiUsageLimitAlertsEnabled) }
+    }
+
+    /// TokenTracker's local API port. No UI: only changes for a custom
+    /// `tokentracker serve --port`.
+    var aiUsageServerPort: Int {
+        didSet { defaults.set(aiUsageServerPort, forKey: Keys.aiUsageServerPort) }
+    }
+
     /// Optional local Now Playing module. It remains opt-in so a fallback
     /// player never requests Automation access until the user asks for media
     /// controls, while the UI itself is a first-class Island module.
@@ -595,6 +612,9 @@ final class SettingsStore {
         static let islandBatteryEnabled = prefix + "islandBatteryEnabled"
         static let islandFullChargeAlertEnabled = prefix + "islandFullChargeAlertEnabled"
         static let islandMediaEnabled = prefix + "islandMediaEnabled"
+        static let aiUsageCompactMetric = prefix + "aiUsageCompactMetric"
+        static let aiUsageLimitAlertsEnabled = prefix + "aiUsageLimitAlertsEnabled"
+        static let aiUsageServerPort = prefix + "aiUsageServerPort"
         static let islandModuleConfiguration = prefix + "islandModuleConfiguration"
         static let islandModuleConfigurationCorruptBackup =
             prefix + "islandModuleConfigurationCorruptBackup"
@@ -686,6 +706,9 @@ final class SettingsStore {
             Keys.islandBatteryEnabled: true,
             Keys.islandFullChargeAlertEnabled: false,
             Keys.islandMediaEnabled: false,
+            Keys.aiUsageCompactMetric: AIUsageCompactMetric.todayCost.rawValue,
+            Keys.aiUsageLimitAlertsEnabled: true,
+            Keys.aiUsageServerPort: TokenTrackerClient.defaultPort,
             Keys.shelfWidth: 320.0,
             Keys.shelfEdgeOffset: 0.5,
             Keys.edgeTabEnabled: true,
@@ -797,6 +820,11 @@ final class SettingsStore {
         islandBatteryEnabled = resolvedIslandBatteryEnabled
         islandFullChargeAlertEnabled = resolvedIslandFullChargeAlertEnabled
         islandMediaEnabled = resolvedIslandMediaEnabled
+        aiUsageCompactMetric = defaults.string(forKey: Keys.aiUsageCompactMetric)
+            .flatMap(AIUsageCompactMetric.init(rawValue:)) ?? .todayCost
+        aiUsageLimitAlertsEnabled = defaults.bool(forKey: Keys.aiUsageLimitAlertsEnabled)
+        let storedPort = defaults.integer(forKey: Keys.aiUsageServerPort)
+        aiUsageServerPort = (1...65535).contains(storedPort) ? storedPort : TokenTrackerClient.defaultPort
         let migratedModuleConfiguration = Self.migratedModuleConfiguration(
             existingInstallation: hadPersistedAppSettings,
             shelfEnabled: resolvedIslandShelfEnabled,

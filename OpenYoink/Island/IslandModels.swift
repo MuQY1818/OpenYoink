@@ -11,6 +11,7 @@ extension IslandModuleID {
     static let system = Self(rawValue: "system")
     static let folders = Self(rawValue: "folders")
     static let clipboard = Self(rawValue: "clipboard")
+    static let aiUsage = Self(rawValue: "aiUsage")
 }
 
 enum IslandSurfaceState: Equatable, Sendable {
@@ -68,6 +69,7 @@ final class IslandModuleRegistry {
               systemImage: "folder", order: 6, isCore: false),
         .init(id: .clipboard, title: String(localized: "Clipboard History"),
               systemImage: "doc.on.clipboard", order: 7, isCore: false),
+        AIUsageModuleStore.moduleDescriptor,
     ]
 
     private(set) var enabledIDs: Set<IslandModuleID> = [.shelf, .transfers]

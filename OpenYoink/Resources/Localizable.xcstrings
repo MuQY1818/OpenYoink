@@ -1,6 +1,276 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%lld tools unavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld tools unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%lld 个工具暂时读不到额度" } }
+      }
+    },
+    "Open TokenTracker's dashboard in the browser" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open TokenTracker's dashboard in the browser" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在浏览器中打开 TokenTracker 仪表盘" } }
+      }
+    },
+    "5h" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "5h" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "5 小时" } }
+      }
+    },
+    "7d" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "7d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "7 天" } }
+      }
+    },
+    "Weekly" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每周" } }
+      }
+    },
+    "Daily" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Daily" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每日" } }
+      }
+    },
+    "Monthly" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Monthly" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每月" } }
+      }
+    },
+    "Total" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Total" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "总量" } }
+      }
+    },
+    "On-demand" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "On-demand" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按需" } }
+      }
+    },
+    "Resetting now" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Resetting now" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "即将重置" } }
+      }
+    },
+    "Resets in %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Resets in %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@后重置" } }
+      }
+    },
+    "Resets %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Resets %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 重置" } }
+      }
+    },
+    "AI Usage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI Usage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 用量" } }
+      }
+    },
+    "AI today %@ · %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI today %@ · %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 今日 %1$@ · %2$@" } }
+      }
+    },
+    "%@ limit at %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ limit at %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%1$@ 额度已用 %2$@" } }
+      }
+    },
+    "TokenTracker returned HTTP %lld" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "TokenTracker returned HTTP %lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "TokenTracker 返回了 HTTP %lld" } }
+      }
+    },
+    "Unexpected response from TokenTracker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unexpected response from TokenTracker" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "TokenTracker 返回的数据无法识别" } }
+      }
+    },
+    "Can't read TokenTracker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Can't read TokenTracker" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读不到 TokenTracker 的数据" } }
+      }
+    },
+    "Powered by TokenTracker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Powered by TokenTracker" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "数据来自 TokenTracker" } }
+      }
+    },
+    "just now" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "just now" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刚刚" } }
+      }
+    },
+    "TokenTracker · updated %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "TokenTracker · updated %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "TokenTracker · %@更新" } }
+      }
+    },
+    "Last 7 days" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last 7 days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 7 天" } }
+      }
+    },
+    "Last 30 days" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last 30 days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天" } }
+      }
+    },
+    "All time" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All time" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "累计" } }
+      }
+    },
+    "%lld active days" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld active days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "活跃 %lld 天" } }
+      }
+    },
+    "%@ per day" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ per day" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "日均 %@" } }
+      }
+    },
+    "%@ tokens" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ tokens" } }
+      }
+    },
+    "%lld conversations" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld conversations" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%lld 次对话" } }
+      }
+    },
+    "Can't read limits: %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Can't read limits: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读不到额度：%@" } }
+      }
+    },
+    "Data from TokenTracker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Data from TokenTracker" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "数据来自 TokenTracker" } }
+      }
+    },
+    "Open Dashboard" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Dashboard" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开仪表盘" } }
+      }
+    },
+    "TokenTracker isn't running" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "TokenTracker isn't running" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "TokenTracker 没有运行" } }
+      }
+    },
+    "Get TokenTracker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Get TokenTracker" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "获取 TokenTracker" } }
+      }
+    },
+    "Open TokenTracker and your AI usage shows up here." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open TokenTracker and your AI usage shows up here." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开 TokenTracker 后，AI 用量会显示在这里。" } }
+      }
+    },
+    "AI usage comes from TokenTracker, a free, open-source tracker for Claude Code, Codex, Cursor and more." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI usage comes from TokenTracker, a free, open-source tracker for Claude Code, Codex, Cursor and more." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 用量来自 TokenTracker，一个免费开源的用量统计工具，支持 Claude Code、Codex、Cursor 等。" } }
+      }
+    },
+    "Open TokenTracker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open TokenTracker" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开 TokenTracker" } }
+      }
+    },
+    "Download TokenTracker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Download TokenTracker" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下载 TokenTracker" } }
+      }
+    },
+    "Retry" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } }
+      }
+    },
+    "Show in compact Island" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show in compact Island" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收起时显示" } }
+      }
+    },
+    "Nothing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不显示" } }
+      }
+    },
+    "Today's spend" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today's spend" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今日花费" } }
+      }
+    },
+    "Today's tokens" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today's tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今日 Token" } }
+      }
+    },
+    "Highest limit usage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Highest limit usage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最高额度占用" } }
+      }
+    },
+    "Notify at 80% and 95% of a usage limit" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Notify at 80% and 95% of a usage limit" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "额度用到 80% 和 95% 时提醒" } }
+      }
+    },
+    "Token usage, spend and plan limits come from TokenTracker, a free, open-source app. It needs to be running." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Token usage, spend and plan limits come from TokenTracker, a free, open-source app. It needs to be running." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Token 用量、花费和套餐额度来自免费开源的 TokenTracker，需要它保持运行。" } }
+      }
+    },
     "Liquid Glass uses system reflections and interaction effects. Extra highlights apply to other materials." : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Liquid Glass uses system reflections and interaction effects. Extra highlights apply to other materials." } },

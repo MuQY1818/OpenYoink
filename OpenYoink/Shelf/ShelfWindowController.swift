@@ -103,6 +103,7 @@ final class ShelfWindowController: NSObject {
     let powerSourceMonitor: PowerSourceMonitor
     let nowPlayingModuleStore: NowPlayingModuleStore
     let systemStatusModuleStore: SystemStatusModuleStore
+    let aiUsageModuleStore: AIUsageModuleStore
     let favoriteFoldersStore: FavoriteFoldersStore
     let favoriteFolderDropCoordinator: FavoriteFolderDropCoordinator
     let islandModuleContainer: IslandModuleContainer
@@ -216,6 +217,7 @@ final class ShelfWindowController: NSObject {
                 .environment(powerSourceMonitor)
                 .environment(nowPlayingModuleStore)
                 .environment(systemStatusModuleStore)
+                .environment(aiUsageModuleStore)
                 .environment(favoriteFoldersStore)
                 .environment(favoriteFolderDropCoordinator)
                 .environment(clipboardHistoryStore)
@@ -362,6 +364,15 @@ final class ShelfWindowController: NSObject {
                     && islandActivityCoordinator.selectedModule == .system
             }
         )
+        let aiUsageModuleStore = AIUsageModuleStore(
+            makeProvider: { TokenTrackerClient(port: settings.aiUsageServerPort) },
+            isSelectedAndExpanded: {
+                islandActivityCoordinator.surfaceState.isExpanded
+                    && islandActivityCoordinator.selectedModule == .aiUsage
+            },
+            compactMetric: { settings.aiUsageCompactMetric },
+            alertsEnabled: { settings.aiUsageLimitAlertsEnabled }
+        )
         let favoriteFoldersStore = FavoriteFoldersStore(
             persistence: FavoriteFoldersPersistenceController(),
             bookmarkService: importCoordinator.bookmarkService
@@ -404,6 +415,7 @@ final class ShelfWindowController: NSObject {
         self.powerSourceMonitor = powerSourceMonitor
         self.nowPlayingModuleStore = nowPlayingModuleStore
         self.systemStatusModuleStore = systemStatusModuleStore
+        self.aiUsageModuleStore = aiUsageModuleStore
         self.favoriteFoldersStore = favoriteFoldersStore
         self.favoriteFolderDropCoordinator = favoriteFolderDropCoordinator
         self.transfersModuleRuntime = transfersModuleRuntime
@@ -458,6 +470,11 @@ final class ShelfWindowController: NSObject {
                     descriptor: favoriteFoldersModuleRuntime.descriptor,
                     runtime: favoriteFoldersModuleRuntime,
                     makeContentView: { _ in AnyView(FavoriteFoldersModuleView()) }
+                ),
+                IslandModuleRegistration(
+                    descriptor: aiUsageModuleStore.descriptor,
+                    runtime: aiUsageModuleStore,
+                    makeContentView: { _ in AnyView(IslandModuleScrollView { IslandAIUsageView() }) }
                 ),
             ],
             coordinator: islandActivityCoordinator

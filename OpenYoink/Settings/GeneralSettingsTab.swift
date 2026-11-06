@@ -189,6 +189,25 @@ struct GeneralSettingsTab: View {
                     islandModuleControl("Quick Access", id: .folders)
                     islandModuleControl("Clipboard History", id: .clipboard)
 
+                    islandModuleControl("AI Usage", id: .aiUsage)
+                    if settings.isIslandModuleEnabled(.aiUsage) {
+                        Picker("Show in compact Island", selection: $settings.aiUsageCompactMetric) {
+                            Text("Nothing").tag(AIUsageCompactMetric.off)
+                            Text("Today's spend").tag(AIUsageCompactMetric.todayCost)
+                            Text("Today's tokens").tag(AIUsageCompactMetric.todayTokens)
+                            Text("Highest limit usage").tag(AIUsageCompactMetric.tightestLimit)
+                        }
+                        .pickerStyle(.menu)
+                        Toggle("Notify at 80% and 95% of a usage limit",
+                               isOn: $settings.aiUsageLimitAlertsEnabled)
+                    }
+                    HStack(spacing: 4) {
+                        Text("Token usage, spend and plan limits come from TokenTracker, a free, open-source app. It needs to be running.")
+                        Link("Get TokenTracker", destination: TokenTrackerClient.projectURL)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                     Text("Open the Island module library to drag the five pinned positions into order.")
                         .font(.caption)
                         .foregroundStyle(.secondary)

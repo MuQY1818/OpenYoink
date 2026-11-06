@@ -31,6 +31,7 @@ struct IslandRootView: View {
     @Environment(PowerSourceMonitor.self) private var powerMonitor
     @Environment(NowPlayingModuleStore.self) private var nowPlayingStore
     @Environment(SystemStatusModuleStore.self) private var systemStatusStore
+    @Environment(AIUsageModuleStore.self) private var aiUsageStore
     @Environment(FavoriteFoldersStore.self) private var favoriteFoldersStore
     @Environment(ClipboardHistoryStore.self) private var clipboardHistoryStore
     @Environment(FavoriteFolderDropCoordinator.self) private var folderCopy
@@ -317,6 +318,13 @@ struct IslandRootView: View {
                     .font(.caption2.monospacedDigit().weight(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+            } else if let aiValue = aiUsageStore.compactValue {
+                // Chosen in Settings: AI usage outranks the shelf count but
+                // still yields to media, transfers and a running timer.
+                Text(aiValue)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             } else if registry.isEnabled(.shelf) {
                 Text("\(shelfStore.items.count)")
                     .font(.caption.monospacedDigit().weight(.semibold))
@@ -445,7 +453,11 @@ struct IslandRootView: View {
                 }
             }
         } else {
-            if registry.isEnabled(.system),
+            if let aiSummary = aiUsageStore.compactSummary {
+                Text(aiSummary)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+            } else if registry.isEnabled(.system),
                let cpu = systemStatusStore.snapshot.cpuUsage,
                let used = systemStatusStore.snapshot.memoryUsedBytes,
                let total = systemStatusStore.snapshot.memoryTotalBytes,
