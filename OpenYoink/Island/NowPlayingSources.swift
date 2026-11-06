@@ -112,7 +112,7 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
         let revision = snapshotRevision
         process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
         // The stream supplies artwork; the repair read stays small and cheap.
-        process.arguments = commonArguments + ["get", "--no-artwork", "--allow-missing-title"]
+        process.arguments = commonArguments + ["get", "--no-artwork", "--micros", "--allow-missing-title"]
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
         do {
@@ -235,7 +235,7 @@ final class MediaRemoteAdapterSource: NowPlayingSource {
         let stdout = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
         process.arguments = commonArguments + [
-            "stream", "--no-diff", "--debounce=250", "--allow-missing-title",
+            "stream", "--no-diff", "--debounce=250", "--micros", "--allow-missing-title",
         ]
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice

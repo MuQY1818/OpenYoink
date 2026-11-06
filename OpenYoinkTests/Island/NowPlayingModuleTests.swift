@@ -98,6 +98,51 @@ final class NowPlayingModuleTests: XCTestCase {
         XCTAssertEqual(snapshot.playbackRate, 1)
     }
 
+    func testAdapterPayloadParsesElapsedTimestamp() throws {
+        // Trimmed from a real `--micros` payload.
+        let micros = try XCTUnwrap("""
+        {"timestampEpochMicros":1793954181683549,"elapsedTimeMicros":159000000,"durationMicros":269000000,"playbackRate":1,"playing":true,"title":"Track"}
+        """.data(using: .utf8))
+        let snapshot = try XCTUnwrap(NowPlayingSnapshot.decodeAdapterPayload(micros))
+        XCTAssertEqual(snapshot.elapsedTime, 159)
+        XCTAssertEqual(snapshot.duration, 269)
+        XCTAssertEqual(try XCTUnwrap(snapshot.elapsedTimeTimestamp).timeIntervalSince1970,
+                       1_793_954_181.683549, accuracy: 0.000001)
+
+        let iso = try XCTUnwrap("""
+        {"timestamp":"2026-11-06T08:36:21Z","elapsedTime":159,"playing":true,"title":"Track"}
+        """.data(using: .utf8))
+        XCTAssertEqual(NowPlayingSnapshot.decodeAdapterPayload(iso)?.elapsedTimeTimestamp,
+                       ISO8601DateFormatter().date(from: "2026-11-06T08:36:21Z"))
+    }
+
+    func testStaleElapsedTimeIsAnchoredToItsTimestamp() throws {
+        let reportedAt = Date(timeIntervalSince1970: 1_000)
+        var snapshot = NowPlayingSnapshot(title: "Track", artist: nil, album: nil,
+                                          isPlaying: true, sourceName: nil,
+                                          duration: 269, elapsedTime: 159, playbackRate: 1)
+        snapshot.elapsedTimeTimestamp = reportedAt
+        // A payload re-emitted 26 s later still carries elapsedTime=159.
+        XCTAssertEqual(snapshot.anchoringElapsedTime(to: reportedAt.addingTimeInterval(26)).elapsedTime, 185)
+        XCTAssertEqual(snapshot.anchoringElapsedTime(to: reportedAt.addingTimeInterval(500)).elapsedTime, 269)
+        // Clock skew (timestamp in the future) never moves time backwards.
+        XCTAssertEqual(snapshot.anchoringElapsedTime(to: reportedAt.addingTimeInterval(-5)).elapsedTime, 159)
+        snapshot.isPlaying = false
+        XCTAssertEqual(snapshot.anchoringElapsedTime(to: reportedAt.addingTimeInterval(26)).elapsedTime, 159)
+    }
+
+    func testStoreProjectsFromElapsedTimestampNotReceiptTime() throws {
+        let source = FakeSource()
+        let store = NowPlayingModuleStore(sourceFactory: { source })
+        store.start()
+        var snapshot = NowPlayingSnapshot(title: "Track", artist: nil, album: nil,
+                                          isPlaying: true, sourceName: nil,
+                                          duration: 300, elapsedTime: 100, playbackRate: 1)
+        snapshot.elapsedTimeTimestamp = Date().addingTimeInterval(-30)
+        source.snapshot?(snapshot)
+        XCTAssertEqual(try XCTUnwrap(store.projectedElapsed(at: store.snapshotReceivedAt)), 130, accuracy: 0.5)
+    }
+
     func testProjectedElapsedAdvancesOnlyWhilePlayingAndClamps() throws {
         let source = FakeSource()
         let store = NowPlayingModuleStore(sourceFactory: { source })

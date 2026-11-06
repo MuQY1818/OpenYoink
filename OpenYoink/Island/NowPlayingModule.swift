@@ -18,6 +18,25 @@ struct NowPlayingSnapshot: Equatable, Sendable {
     var duration: TimeInterval? = nil
     var elapsedTime: TimeInterval? = nil
     var playbackRate: Double = 0
+    /// MediaRemote reports `elapsedTime` as of this moment, not as of when the
+    /// payload reaches us. Players only refresh it on state changes, so a
+    /// re-emitted payload (artwork, metadata, debounce) can be minutes old.
+    var elapsedTimeTimestamp: Date? = nil
+
+    /// Re-anchors `elapsedTime` to `date` so callers can project forward from
+    /// the moment the snapshot was received.
+    func anchoringElapsedTime(to date: Date) -> Self {
+        guard let timestamp = elapsedTimeTimestamp else { return self }
+        var anchored = self
+        anchored.elapsedTimeTimestamp = nil
+        guard isPlaying, let elapsed = elapsedTime else { return anchored }
+        // A timestamp from the future means clock skew; trust the raw value.
+        let age = max(0, date.timeIntervalSince(timestamp))
+        let rate = playbackRate > 0 ? playbackRate : 1
+        let projected = elapsed + age * rate
+        anchored.elapsedTime = duration.map { min(projected, $0) } ?? projected
+        return anchored
+    }
 
     static func decodeAdapterPayload(
         _ data: Data,
@@ -71,7 +90,19 @@ struct NowPlayingSnapshot: Equatable, Sendable {
                      elapsedTime: seconds(in: payload,
                                           regularKey: "elapsedTime",
                                           microsecondsKey: "elapsedTimeMicros"),
-                     playbackRate: rate)
+                     playbackRate: rate,
+                     elapsedTimeTimestamp: timestamp(in: payload))
+    }
+
+    private static func timestamp(in payload: [String: Any]) -> Date? {
+        if let micros = finiteNumber(payload["timestampEpochMicros"]), micros > 0 {
+            return Date(timeIntervalSince1970: micros / 1_000_000)
+        }
+        guard let text = payload["timestamp"] as? String else { return nil }
+        let formatter = ISO8601DateFormatter()
+        if let date = formatter.date(from: text) { return date }
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: text)
     }
 
     private static func seconds(
@@ -223,9 +254,11 @@ final class NowPlayingModuleStore: IslandModule {
                 if next.duration == nil { next.duration = previous.duration }
                 nextSnapshot = next
             }
-            nextSnapshot = self.snapshotApplyingPendingSeek(to: nextSnapshot, at: Date())
+            let receivedAt = Date()
+            nextSnapshot = nextSnapshot?.anchoringElapsedTime(to: receivedAt)
+            nextSnapshot = self.snapshotApplyingPendingSeek(to: nextSnapshot, at: receivedAt)
             self.snapshot = nextSnapshot
-            self.snapshotReceivedAt = Date()
+            self.snapshotReceivedAt = receivedAt
             self.availability = .available
             self.publishActivity()
         }, onFailure: { [weak self] in
