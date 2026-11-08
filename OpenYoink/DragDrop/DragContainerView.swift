@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 
 /// Optional destination override for module-specific drops. When active it
 /// owns the complete drop decision, so a rejected file cannot silently fall
@@ -24,18 +25,21 @@ struct DragContainerDropContext {
 @MainActor
 @Observable
 final class DropTargetState {
-    /// 有拖放正悬停在面板上且内容可导入。
+    /// A drag is hovering over the shelf and can be accepted.
     var isTargeted = false
     /// 插入位置（目标 index 卡片前缘；等于 items.count 时画在末卡片后缘）。
     var insertionIndex: Int?
     /// F-05: 当前悬停的拖入模式（⌘ 按下为 .move），驱动 ShelfView 的
     /// 高亮色调与「松开即移动/添加引用」提示。
     var mode: DropInMode = .copy
+    /// Internal Shelf-card drags reorder existing items instead of importing.
+    var isReordering = false
 
     func reset() {
         isTargeted = false
         insertionIndex = nil
         mode = .copy
+        isReordering = false
     }
 }
 
@@ -46,8 +50,9 @@ final class DropTargetState {
 /// - 注册 `PasteboardTypes.dragInTypes` 全部类型（fileURL / file promise /
 ///   文本族 / 图片族 / URL + 任务一的宽兜底泛型，「万能拖入」）；
 /// - 悬停时把高亮与插入位置桥给 `DropTargetState` → ShelfView；
-/// - `performDragOperation` 调 `DropImportCoordinator` 分派，同步 items 直接
-///   入架，异步物化（promise / 图片数据 / 通用数据）完成后经回调逐个入架。
+/// - Internal Shelf-card drags reorder existing items without importing;
+///   external drops call `DropImportCoordinator`, synchronously adding items
+///   and finishing asynchronous materializations through callbacks.
 ///
 /// 插入位置（S10/C6）：`draggingEntered/Updated` 把鼠标位置（本视图坐标，
 /// 左下原点）翻转到窗口 .global（左上原点）坐标，与 `ShelfGridGeometry`
@@ -56,6 +61,7 @@ final class DropTargetState {
 /// 就绪时回退「追加到末尾」（Yoink 语义）。
 @MainActor
 final class DragContainerView: NSView {
+    private static let reorderActivationRatio: CGFloat = 0.10
     private let store: ShelfStore
     private let coordinator: DropImportCoordinator
     private let dropTargetState: DropTargetState
@@ -65,6 +71,15 @@ final class DragContainerView: NSView {
     private let onDestinationEntered: (Int) -> Void
     private let onDestinationEnded: (Int, Bool) -> Void
     private var currentDestinationSequenceNumber: Int?
+    /// Smoothed travel of the dragged card center, used to tell a horizontal
+    /// find-the-slot move from a vertical row change.
+    private var reorderTravel = CGVector.zero
+    private var lastReorderCenter: CGPoint?
+#if DEBUG
+    private let reorderLogger = Logger(subsystem: "com.weijue.OpenYoink", category: "ShelfReorder")
+    private var lastReorderLog: (sequence: Int, insertionIndex: Int,
+                                  centerBucketX: Int, centerBucketY: Int)?
+#endif
     /// 持有的 hosting controller（addSubview 只 retain 视图，controller 需显式持有）。
     private let contentViewController: NSViewController
 
@@ -125,18 +140,34 @@ final class DragContainerView: NSView {
             dropTargetState.isTargeted = true
             dropTargetState.insertionIndex = nil
             dropTargetState.mode = .copy
+            dropTargetState.isReordering = false
             return .copy
         }
-        // S5: 来自本应用卡片的拖出（draggingSource 非空）不接受回落到自身，
-        // 避免「拖出又放回 shelf」产生重复引用。跨应用拖入 draggingSource 为 nil。
+        if let source = shelfReorderSource(from: sender) {
+            resetReorderTravel()
+            dropTargetState.isTargeted = true
+            dropTargetState.mode = .copy
+            dropTargetState.isReordering = true
+            let insertion = updateReorderInsertionIndex(sender, source: source)
+            logReorderEvent("entered", sender: sender, source: source,
+                            rawLocation: insertion.rawLocation,
+                            centerLocation: insertion.centerLocation,
+                            insertionIndex: insertion.index,
+                            force: true)
+            return .copy
+        }
+        // Ordinary internal drags are not imported back into the shelf. A
+        // Shelf reorder is handled above; tutorial drags retain their import
+        // path so onboarding can finish normally.
         guard sender.draggingSource == nil
                 || coordinator.acceptsInternalTutorialDrag(sender.draggingPasteboard) else {
             return []
         }
         guard Self.hasImportableContent(sender.draggingPasteboard) else { return [] }
         dropTargetState.isTargeted = true
+        dropTargetState.isReordering = false
         updateDropMode(sender)
-        updateInsertionIndex(sender)
+        updateExternalInsertionIndex(sender)
         return .copy
     }
 
@@ -150,6 +181,18 @@ final class DragContainerView: NSView {
                 return []
             }
             dropTargetState.isTargeted = true
+            dropTargetState.isReordering = false
+            return .copy
+        }
+        if let source = shelfReorderSource(from: sender) {
+            dropTargetState.isTargeted = true
+            dropTargetState.isReordering = true
+            let insertion = updateReorderInsertionIndex(sender, source: source)
+            logReorderEvent("updated", sender: sender, source: source,
+                            rawLocation: insertion.rawLocation,
+                            centerLocation: insertion.centerLocation,
+                            insertionIndex: insertion.index,
+                            force: false)
             return .copy
         }
         guard sender.draggingSource == nil
@@ -157,10 +200,11 @@ final class DragContainerView: NSView {
             return []
         }
         guard Self.hasImportableContent(sender.draggingPasteboard) else { return [] }
+        dropTargetState.isReordering = false
         // F-05: ⌘ 状态在拖动期间可能变化，实时刷新模式（高亮色调/提示随之切换）。
         updateDropMode(sender)
         // C6: 拖动期间实时更新插入位置（行列映射见 DropInsertionLocator）。
-        updateInsertionIndex(sender)
+        updateExternalInsertionIndex(sender)
         // 始终回 .copy（含 ⌘ 剪切模式）：剪切由我们自管（copy+trash，
         // 见 CutMoveService），不依赖来源应用配合 .move —— 若回 .move，
         // Finder 源会在 drop 后自行删除原文件，与我们已做的 trash 重复且
@@ -169,6 +213,7 @@ final class DragContainerView: NSView {
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
+        resetReorderLogState()
         dropTargetState.reset()
         dropOverride?.reset()
     }
@@ -184,6 +229,18 @@ final class DragContainerView: NSView {
             guard dropOverride.canHandle(dropContext(sender)) else { return false }
             accepted = dropOverride.perform(dropContext(sender))
             if accepted { (sender.draggingSource as? DragSessionController)?.acceptedByFolderCopy = true }
+            return accepted
+        }
+        if let source = shelfReorderSource(from: sender) {
+            let insertion = updateReorderInsertionIndex(sender, source: source)
+            logReorderEvent("commit", sender: sender, source: source,
+                            rawLocation: insertion.rawLocation,
+                            centerLocation: insertion.centerLocation,
+                            insertionIndex: insertion.index,
+                            force: true)
+            let destination = dropTargetState.insertionIndex ?? store.items.count
+            accepted = store.move(ids: source.topLevelItemIDs, toOffset: destination)
+            if accepted { source.acceptShelfReorder() }
             return accepted
         }
         // F-05: 落下瞬间以实时修饰键判定模式（⌘ = 剪切移入）。
@@ -221,11 +278,13 @@ final class DragContainerView: NSView {
         onDestinationEnded(sender.draggingSequenceNumber, false)
         guard currentDestinationSequenceNumber == sender.draggingSequenceNumber else { return }
         currentDestinationSequenceNumber = nil
+        resetReorderLogState()
         dropTargetState.reset()
         dropOverride?.reset()
     }
 
     override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+        resetReorderLogState()
         dropTargetState.reset()
         dropOverride?.reset()
     }
@@ -249,17 +308,141 @@ final class DragContainerView: NSView {
     /// C6: 把拖放鼠标位置映射为网格插入下标。`draggingLocation` 在本视图
     /// （面板 contentView）坐标系（左下原点）；卡片 frame 由 SwiftUI 以窗口
     /// `.global`（左上原点）上报 —— 本视图铺满窗口内容区，翻转 y 即对齐。
-    private func updateInsertionIndex(_ sender: NSDraggingInfo) {
+    @discardableResult
+    private func updateExternalInsertionIndex(_ sender: NSDraggingInfo) -> Int {
         let location = sender.draggingLocation
         let point = CGPoint(x: location.x, y: bounds.height - location.y)
+        let insertionIndex = insertionIndex(for: point)
+        dropTargetState.insertionIndex = insertionIndex
+        return insertionIndex
+    }
+
+    private struct ReorderInsertionSample {
+        let rawLocation: CGPoint
+        let centerLocation: CGPoint
+        let index: Int
+    }
+
+    /// Internal reorder follows the dragged card center rather than the mouse
+    /// pointer, so grabbing any edge of a wide card behaves symmetrically.
+    private func updateReorderInsertionIndex(_ sender: NSDraggingInfo,
+                                             source: DragSessionController) -> ReorderInsertionSample {
+        let rawLocation = sender.draggingLocation
+        let offset = source.dragAnchorOffset
+        let centerLocation = CGPoint(x: rawLocation.x + offset.width,
+                                     y: rawLocation.y + offset.height)
+        let point = CGPoint(x: centerLocation.x,
+                            y: bounds.height - centerLocation.y)
+        let activation = reorderActivation(following: point)
+        let insertionIndex = insertionIndex(
+            for: point,
+            activation: activation,
+            activationRatio: Self.reorderActivationRatio
+        )
+        dropTargetState.insertionIndex = insertionIndex
+        return ReorderInsertionSample(rawLocation: rawLocation,
+                                      centerLocation: centerLocation,
+                                      index: insertionIndex)
+    }
+
+    /// Horizontal drags keep the entry-edge thresholds so both directions feel
+    /// equally eager. Rows entered from above or below have no horizontal entry
+    /// edge: using one leaves the slot about one card off in the travel
+    /// direction and forces an extra sideways push, so vertical-dominant drags
+    /// fall back to the card's horizontal center.
+    private func reorderActivation(following point: CGPoint)
+        -> DropInsertionLocator.Activation {
+        if let last = lastReorderCenter {
+            let dx = point.x - last.x
+            let dy = point.y - last.y
+            reorderTravel = CGVector(dx: reorderTravel.dx * 0.65 + dx * 0.35,
+                                     dy: reorderTravel.dy * 0.65 + dy * 0.35)
+        }
+        lastReorderCenter = point
+        guard abs(reorderTravel.dx) >= abs(reorderTravel.dy),
+              reorderTravel.dx != 0 else {
+            return .center
+        }
+        return reorderTravel.dx > 0 ? .leading : .trailing
+    }
+
+    private func insertionIndex(for point: CGPoint,
+                                activation: DropInsertionLocator.Activation = .center,
+                                activationRatio: CGFloat = 0.10) -> Int {
         let frames: [(index: Int, frame: CGRect)] = store.items.enumerated().compactMap { index, item in
             gridGeometry.cardFrames[item.id].map { (index, $0) }
         }
-        dropTargetState.insertionIndex = DropInsertionLocator.insertionIndex(
+        return DropInsertionLocator.insertionIndex(
             for: point,
             frames: frames,
-            itemCount: store.items.count
+            itemCount: store.items.count,
+            activation: activation,
+            activationRatio: activationRatio
         )
+    }
+
+    private func shelfReorderSource(from sender: NSDraggingInfo) -> DragSessionController? {
+        guard let source = sender.draggingSource as? DragSessionController,
+              source.canReorderOnShelf,
+              store.visibleItems.count == store.items.count,
+              source.topLevelItemIDs.isSubset(of: Set(store.items.map(\.id))),
+              !coordinator.acceptsInternalTutorialDrag(sender.draggingPasteboard) else {
+            return nil
+        }
+        return source
+    }
+
+    private func logReorderEvent(_ phase: String,
+                                 sender: NSDraggingInfo,
+                                 source: DragSessionController,
+                                 rawLocation: CGPoint,
+                                 centerLocation: CGPoint,
+                                 insertionIndex: Int,
+                                 force: Bool) {
+#if DEBUG
+        let sequence = sender.draggingSequenceNumber
+        let centerBucketX = Int(floor(centerLocation.x / 12))
+        let centerBucketY = Int(floor(centerLocation.y / 12))
+        if !force,
+           let lastReorderLog,
+           lastReorderLog.sequence == sequence,
+           lastReorderLog.insertionIndex == insertionIndex,
+           lastReorderLog.centerBucketX == centerBucketX,
+           lastReorderLog.centerBucketY == centerBucketY {
+            return
+        }
+        lastReorderLog = (sequence, insertionIndex, centerBucketX, centerBucketY)
+        let ids = source.topLevelItemIDs.map(\.uuidString).sorted().joined(separator: ",")
+        let rawX = String(format: "%.1f", rawLocation.x)
+        let rawY = String(format: "%.1f", rawLocation.y)
+        let centerX = String(format: "%.1f", centerLocation.x)
+        let centerY = String(format: "%.1f", centerLocation.y)
+        let pointX = String(format: "%.1f", centerLocation.x)
+        let pointY = String(format: "%.1f", bounds.height - centerLocation.y)
+        let frames = store.items.enumerated().compactMap { index, item -> String? in
+            guard let frame = gridGeometry.cardFrames[item.id] else { return nil }
+            return "\(index):(\(String(format: "%.1f", frame.minX)),\(String(format: "%.1f", frame.minY)),\(String(format: "%.1f", frame.width)),\(String(format: "%.1f", frame.height)))"
+        }.joined(separator: "|")
+        let offset = source.dragAnchorOffset
+        let offsetX = String(format: "%.1f", offset.width)
+        let offsetY = String(format: "%.1f", offset.height)
+        reorderLogger.debug(
+            "Shelf reorder \(phase, privacy: .public) sequence=\(sequence, privacy: .public) raw=(\(rawX, privacy: .public),\(rawY, privacy: .public)) center=(\(centerX, privacy: .public),\(centerY, privacy: .public)) point=(\(pointX, privacy: .public),\(pointY, privacy: .public)) offset=(\(offsetX, privacy: .public),\(offsetY, privacy: .public)) insertion=\(insertionIndex, privacy: .public) frames=\(frames, privacy: .public) ids=\(ids, privacy: .public)"
+        )
+#endif
+    }
+
+    private func resetReorderLogState() {
+        resetReorderTravel()
+#if DEBUG
+        lastReorderLog = nil
+#endif
+    }
+
+    /// A new drag must not inherit the direction of the previous one.
+    private func resetReorderTravel() {
+        reorderTravel = .zero
+        lastReorderCenter = nil
     }
 
     /// 「Drop everything」语义（任务一）：宽兜底注册后能抵达这里的拖放几乎

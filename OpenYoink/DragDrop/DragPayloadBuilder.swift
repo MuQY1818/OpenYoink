@@ -157,8 +157,11 @@ enum DragPayloadBuilder {
                                   frame: NSRect,
                                   bookmarkService: BookmarkService,
                                   delivery: DeliverySink? = nil,
-                                  tutorialTokensByItemID: [UUID: String] = [:]) -> [NSDraggingItem] {
-        flattenedItems(items).compactMap { item in
+                                  tutorialTokensByItemID: [UUID: String] = [:],
+                                  cardPreviewImage: NSImage? = nil) -> [NSDraggingItem] {
+        let flattened = flattenedItems(items)
+        let singleItemPreview = flattened.count == 1 ? cardPreviewImage : nil
+        return flattened.compactMap { item in
             guard let writer = makePasteboardWriter(
                 for: item,
                 bookmarkService: bookmarkService,
@@ -168,7 +171,8 @@ enum DragPayloadBuilder {
                 return nil
             }
             let draggingItem = NSDraggingItem(pasteboardWriter: writer)
-            draggingItem.setDraggingFrame(frame, contents: dragImage(for: item))
+            draggingItem.setDraggingFrame(frame,
+                                          contents: singleItemPreview ?? dragImage(for: item))
             return draggingItem
         }
     }

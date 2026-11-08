@@ -242,6 +242,19 @@ final class ShelfStore {
         persist()
     }
 
+    /// Moves existing top-level items without replacing their identities.
+    ///
+    /// `destination` uses the same pre-move insertion coordinates as
+    /// `move(fromOffsets:toOffset:)`. Returns false when none of the IDs belong
+    /// to a current top-level item.
+    @discardableResult
+    func move(ids: Set<UUID>, toOffset destination: Int) -> Bool {
+        let offsets = IndexSet(items.indices.filter { ids.contains(items[$0].id) })
+        guard !offsets.isEmpty else { return false }
+        move(fromOffsets: offsets, toOffset: destination)
+        return true
+    }
+
     // MARK: - Selection
 
     /// Selects `id`; replaces the selection unless `additive` is true (cmd-click).

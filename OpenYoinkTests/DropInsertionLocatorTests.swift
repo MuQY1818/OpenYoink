@@ -31,10 +31,14 @@ final class DropInsertionLocatorTests: XCTestCase {
          (3, frame(0, 76)), (4, frame(112, 76))]
     }
 
-    private func locate(_ x: CGFloat, _ y: CGFloat, itemCount: Int = 5) -> Int {
+    private func locate(_ x: CGFloat,
+                        _ y: CGFloat,
+                        itemCount: Int = 5,
+                        activation: DropInsertionLocator.Activation = .center) -> Int {
         DropInsertionLocator.insertionIndex(for: CGPoint(x: x, y: y),
                                             frames: frames,
-                                            itemCount: itemCount)
+                                            itemCount: itemCount,
+                                            activation: activation)
     }
 
     func testEmptyShelfInsertsAtZero() {
@@ -58,6 +62,45 @@ final class DropInsertionLocatorTests: XCTestCase {
         XCTAssertEqual(locate(105, 32), 1)
     }
 
+    func testCenterActivationPreservesMidpointSemantics() {
+        XCTAssertEqual(locate(49, 32, itemCount: 3), 0)
+        XCTAssertEqual(locate(51, 32, itemCount: 3), 1)
+        XCTAssertEqual(locate(161, 32, itemCount: 3), 1)
+        XCTAssertEqual(locate(163, 32, itemCount: 3), 2)
+    }
+
+    func testTenPercentActivationIsSymmetricAtEachLeadingEdge() {
+        XCTAssertEqual(locate(9, 32, itemCount: 3, activation: .leading), 0)
+        XCTAssertEqual(locate(11, 32, itemCount: 3, activation: .leading), 1)
+        XCTAssertEqual(locate(121, 32, itemCount: 3, activation: .leading), 1)
+        XCTAssertEqual(locate(123, 32, itemCount: 3, activation: .leading), 2)
+    }
+
+    func testTrailingActivationMirrorsLeadingAcrossEachCard() {
+        XCTAssertEqual(locate(89, 32, itemCount: 3, activation: .trailing), 0)
+        XCTAssertEqual(locate(91, 32, itemCount: 3, activation: .trailing), 1)
+        XCTAssertEqual(locate(201, 32, itemCount: 3, activation: .trailing), 1)
+        XCTAssertEqual(locate(203, 32, itemCount: 3, activation: .trailing), 2)
+    }
+
+    /// Dragging straight up a column must take that column's slot. The old
+    /// trailing-edge rule for rows above the card left the slot one place
+    /// behind, which is what made vertical and diagonal drags feel stuck.
+    func testVerticalEntryFollowsTheColumnInsteadOfTheHorizontalEdge() {
+        XCTAssertEqual(locate(161, 100, itemCount: 5, activation: .center), 4)
+        XCTAssertEqual(locate(162, 32, itemCount: 5, activation: .center), 2)
+        XCTAssertEqual(locate(162, 32, itemCount: 5, activation: .trailing), 1)
+        XCTAssertEqual(locate(50, 32, itemCount: 5, activation: .center), 1)
+        XCTAssertEqual(locate(50, 100, itemCount: 5, activation: .center), 4)
+    }
+
+    /// A diagonal move that is mostly horizontal keeps the eager entry-edge
+    /// behavior after changing rows.
+    func testDiagonalEntryKeepsDirectionalActivation() {
+        XCTAssertEqual(locate(123, 32, itemCount: 5, activation: .leading), 2)
+        XCTAssertEqual(locate(201, 32, itemCount: 5, activation: .trailing), 1)
+    }
+
     func testPointRightOfRowEndInsertsAfterRow() {
         // 点 (300, 32)：行 0 末卡 (index 2) 右侧 → 下标 3（下一行首卡位置）。
         XCTAssertEqual(locate(300, 32), 3)
@@ -66,6 +109,30 @@ final class DropInsertionLocatorTests: XCTestCase {
     func testSecondRowMapsToSecondRowIndices() {
         XCTAssertEqual(locate(30, 100), 3)
         XCTAssertEqual(locate(105, 100), 4)
+    }
+
+    func testVariableHeightCardsWithSharedCenterStayInOneRow() {
+        let variableFrames = [
+            (0, CGRect(x: 0, y: 0, width: 100, height: 125)),
+            (1, CGRect(x: 112, y: 15.5, width: 100, height: 94)),
+            (2, CGRect(x: 224, y: 15.5, width: 100, height: 94)),
+        ]
+
+        let middle = DropInsertionLocator.insertionIndex(
+            for: CGPoint(x: 170, y: 100),
+            frames: variableFrames,
+            itemCount: 3,
+            activation: .leading
+        )
+        let trailing = DropInsertionLocator.insertionIndex(
+            for: CGPoint(x: 245, y: 100),
+            frames: variableFrames,
+            itemCount: 3,
+            activation: .leading
+        )
+
+        XCTAssertEqual(middle, 2)
+        XCTAssertEqual(trailing, 3)
     }
 
     /// 末行末卡右侧 → itemCount（追加到末尾）。

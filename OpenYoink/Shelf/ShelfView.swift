@@ -189,7 +189,8 @@ struct ShelfView: View {
     @ViewBuilder
     private var presentedSurface: some View {
         if presentationStyle == .classic {
-            ShelfInteractiveGlassSurface(appearance: settings.appearance) {
+            ShelfInteractiveGlassSurface(appearance: settings.appearance,
+                                         onBackgroundTap: clearSelectionAndCollapse) {
                 Color.clear
                     .overlay { content }
                     .overlay { dropTargetHighlight }
@@ -238,7 +239,10 @@ struct ShelfView: View {
                 header
             }
             searchControls
-            if transferStore.hasVisibleActivity {
+            // No transfer strip while a shelf drag is in flight: inserting it
+            // re-lays out the grid and clears card geometry mid-reorder, which
+            // makes the insertion line fall back to "append to the end".
+            if transferStore.hasVisibleActivity, transferStore.dragSessionsInFlight == 0 {
                 ShelfActivityStrip(onPerformRecovery: performRecovery)
                     .transition(reduceMotion
                         ? .opacity
@@ -266,9 +270,12 @@ struct ShelfView: View {
         .padding(8)
         .background {
             // 空白处点击清除选择并收起 Stack；卡片点击由卡片自己的事件层处理。
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(perform: clearSelectionAndCollapse)
+            // 经典模式改由玻璃面命中层处理（几何不跟随高度弹簧动画）。
+            if presentationStyle != .classic {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: clearSelectionAndCollapse)
+            }
         }
     }
 
@@ -514,6 +521,12 @@ struct ShelfView: View {
                     scrollingGrid
                 }
             }
+            // The grid container keeps the pre-selection bounds for a few frames
+            // while the quick-action row animates in, so it swallows clicks on
+            // the empty area below the cards. Treat a tap here as a background
+            // tap; card clicks are owned by their AppKit event layer.
+            .contentShape(Rectangle())
+            .onTapGesture(perform: clearSelectionAndCollapse)
             // Change the container immediately; do not keep an outgoing grid
             // alive with the same card IDs and shared drag/selection geometry.
             .animation(nil, value: fits)
@@ -616,7 +629,8 @@ struct ShelfView: View {
     private var insertionIndicator: some View {
         Capsule()
             .fill(Color.accentColor)
-            .frame(width: 3)
+            .frame(width: 4)
+            .shadow(color: Color.accentColor.opacity(0.32), radius: 3)
             .allowsHitTesting(false)
     }
 
@@ -627,7 +641,7 @@ struct ShelfView: View {
     /// 用 accent，⌘ 剪切移入用橙色（与卡片剪刀角标同色，语义一致）。
     @ViewBuilder
     private var dropTargetHighlight: some View {
-        if dropTargetState.isTargeted {
+        if dropTargetState.isTargeted, !dropTargetState.isReordering {
             RoundedRectangle(cornerRadius: settings.appearance.cornerRadius)
                 .strokeBorder(dropModeTint, lineWidth: 2)
                 .background {
@@ -648,7 +662,9 @@ struct ShelfView: View {
     @ViewBuilder
     private var dropModeHint: some View {
         if dropTargetState.isTargeted {
-            Text(dropTargetState.mode == .move
+            Text(dropTargetState.isReordering
+                 ? String(localized: "Release to reorder")
+                 : dropTargetState.mode == .move
                  ? String(localized: "Release to move the original here ⌘")
                  : String(localized: "Release to add a reference"))
                 .font(.caption)

@@ -119,6 +119,83 @@ final class ShelfStoreTests: XCTestCase {
         XCTAssertEqual(names(store), ["b", "c", "a"])
     }
 
+    func testMoveIDs_preservesExistingItemIdentities() {
+        let store = makeStore(names: ["a", "b", "c", "d"])
+        let originalIDs = store.items.map(\.id)
+        let a = store.items[0]
+        let c = store.items[2]
+
+        XCTAssertTrue(store.move(ids: [a.id], toOffset: 3))
+        XCTAssertEqual(names(store), ["b", "c", "a", "d"])
+        XCTAssertEqual(store.items.first(where: { $0.displayName == "a" })?.id, a.id)
+
+        XCTAssertTrue(store.move(ids: [c.id, a.id], toOffset: 0))
+        XCTAssertEqual(names(store), ["c", "a", "b", "d"])
+        XCTAssertEqual(Set(store.items.map(\.id)), Set(originalIDs))
+        XCTAssertEqual(store.items[0].id, c.id)
+        XCTAssertEqual(store.items[1].id, a.id)
+    }
+
+    func testMoveIDs_supportsEndAndUnknownIDs() {
+        let store = makeStore(names: ["a", "b", "c"])
+        let a = store.items[0]
+
+        XCTAssertTrue(store.move(ids: [a.id], toOffset: 3))
+        XCTAssertEqual(names(store), ["b", "c", "a"])
+
+        let before = store.items
+        XCTAssertFalse(store.move(ids: [UUID()], toOffset: 0))
+        XCTAssertEqual(store.items, before)
+    }
+
+    func testAcceptedShelfReorder_doesNotApplyDragOutRemovalPolicy() throws {
+        let suiteName = "OpenYoinkTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.dragOutRemovalPolicy = .remove
+
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let item = makeItem("kept-after-reorder")
+        let store = ShelfStore(items: [item])
+        let recents = RecentItemsService(directoryURL: directory)
+        let contents = DragOutContents(items: [item], topLevelIDs: [item.id])
+        let controller = DragSessionController(
+            contents: contents,
+            store: store,
+            settings: settings,
+            recents: recents
+        )
+
+        XCTAssertTrue(controller.canReorderOnShelf)
+        controller.acceptShelfReorder()
+        controller.completeDrag(operation: .copy)
+
+        XCTAssertEqual(store.items.map(\.id), [item.id])
+        XCTAssertTrue(recents.entries.isEmpty)
+    }
+
+    func testTutorialItem_cannotBeReorderedOnShelf() throws {
+        let suiteName = "OpenYoinkTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = SettingsStore(defaults: defaults)
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let item = makeItem("tutorial")
+        let store = ShelfStore(items: [item])
+        let controller = DragSessionController(
+            contents: DragOutContents(items: [item], topLevelIDs: [item.id]),
+            store: store,
+            settings: settings,
+            recents: RecentItemsService(directoryURL: directory),
+            policyExcludedItemIDs: [item.id]
+        )
+
+        XCTAssertFalse(controller.canReorderOnShelf)
+    }
+
     // MARK: - Selection
 
     func testSelection_exclusiveAdditiveToggle() {

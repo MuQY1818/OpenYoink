@@ -87,6 +87,7 @@ final class DragOutController {
             tutorialItemIDs: tutorialIDs
         )
         let sessionID = UUID()
+        let dragAnchorOffset = Self.dragAnchorOffset(from: sourceView, event: event)
         let deliveryCoordinator = deliveryCoordinator
         deliveryCoordinator.noteSessionBegan(id: sessionID, contents: effectiveContents)
         let sink = DeliverySink(
@@ -113,6 +114,9 @@ final class DragOutController {
             for: effectiveContents.items,
             bookmarkService: bookmarkService
         )
+        let cardPreviewImage = DragPayloadBuilder.flattenedItems(effectiveContents.items).count == 1
+            ? Self.snapshotCard(from: sourceView)
+            : nil
         let draggingItems = DragPayloadBuilder.makeDraggingItems(
             for: effectiveContents.items,
             frame: sourceView.bounds,
@@ -122,7 +126,8 @@ final class DragOutController {
                 uniqueKeysWithValues: DragPayloadBuilder.flattenedItems(effectiveContents.items).compactMap { item in
                     tutorialTokenForItem(item.id).map { (item.id, $0) }
                 }
-            )
+            ),
+            cardPreviewImage: cardPreviewImage
         )
         guard !draggingItems.isEmpty else {
             deliveryCoordinator.noteSessionEnded(id: sessionID, accepted: false)
@@ -141,8 +146,39 @@ final class DragOutController {
                                                }
                                            ),
                                            onSuccessfulDrop: onSuccessfulDrop,
+                                           dragAnchorOffset: dragAnchorOffset,
                                            fileAccess: fileAccess)
         sourceView.beginDraggingSession(with: draggingItems, event: event, source: source)
+    }
+
+    /// Captures the rendered card around the transparent drag-source overlay.
+    /// The system then lifts a visual copy of the card rather than a file icon.
+    private static func snapshotCard(from sourceView: NSView) -> NSImage? {
+        guard let containingView = sourceView.superview else { return nil }
+        let cardRect = containingView.convert(sourceView.bounds, from: sourceView)
+        guard cardRect.width > 1,
+              cardRect.height > 1,
+              let representation = containingView.bitmapImageRepForCachingDisplay(in: cardRect) else {
+            return nil
+        }
+        containingView.cacheDisplay(in: cardRect, to: representation)
+        let image = NSImage(size: sourceView.bounds.size)
+        image.addRepresentation(representation)
+        return image
+    }
+
+    /// Offset from the current pointer to the source card center, in window
+    /// coordinates. Adding it to a dragging location yields the card center.
+    private static func dragAnchorOffset(from sourceView: NSView,
+                                         event: NSEvent) -> CGSize {
+        guard sourceView.window != nil else { return .zero }
+        let center = sourceView.convert(
+            NSPoint(x: sourceView.bounds.midX, y: sourceView.bounds.midY),
+            to: nil
+        )
+        let pointer = event.locationInWindow
+        return CGSize(width: center.x - pointer.x,
+                      height: center.y - pointer.y)
     }
 }
 
@@ -151,7 +187,14 @@ final class DragOutController {
 final class DragSessionController: NSObject, NSDraggingSource {
     private let contents: DragOutContents
     var itemsForFolderCopy: [ShelfItem] { contents.items }
+    var topLevelItemIDs: Set<UUID> { contents.topLevelIDs }
     var acceptedByFolderCopy = false
+    var acceptedByShelfReorder = false
+    var canReorderOnShelf: Bool {
+        !topLevelItemIDs.isEmpty
+            && policyExcludedItemIDs.isDisjoint(with: topLevelItemIDs)
+    }
+    var dragAnchorOffset: CGSize { anchorOffset }
     private let sessionID: UUID
     private let store: ShelfStore
     private let settings: SettingsStore
@@ -161,6 +204,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
     /// 常规拖出策略影响，也绝不能进入「最近项目」。
     private let policyExcludedItemIDs: Set<UUID>
     private let onSuccessfulDrop: (@MainActor () -> Void)?
+    private let anchorOffset: CGSize
     private var fileAccess: BookmarkAccessLease?
 
     init(contents: DragOutContents,
@@ -171,6 +215,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
          delivery: DeliveryCoordinator? = nil,
          policyExcludedItemIDs: Set<UUID> = [],
          onSuccessfulDrop: (@MainActor () -> Void)? = nil,
+         dragAnchorOffset: CGSize = .zero,
          fileAccess: BookmarkAccessLease? = nil) {
         self.contents = contents
         self.sessionID = sessionID
@@ -180,6 +225,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
         self.delivery = delivery
         self.policyExcludedItemIDs = policyExcludedItemIDs
         self.onSuccessfulDrop = onSuccessfulDrop
+        self.anchorOffset = dragAnchorOffset
         self.fileAccess = fileAccess
         super.init()
     }
@@ -212,7 +258,8 @@ final class DragSessionController: NSObject, NSDraggingSource {
 
     func completeDrag(operation: NSDragOperation) {
         defer { fileAccess = nil }
-        if acceptedByFolderCopy {
+        delivery?.noteDragSessionEnded()
+        if acceptedByFolderCopy || acceptedByShelfReorder {
             delivery?.noteSessionEnded(id: sessionID, accepted: false)
             return
         }
@@ -233,6 +280,12 @@ final class DragSessionController: NSObject, NSDraggingSource {
         // failure arrived early, the coordinator can now safely reinsert the
         // failed snapshot instead of having this method remove it afterwards.
         delivery?.noteSessionEnded(id: sessionID, accepted: true)
+    }
+
+    /// Marks this session as an internal Shelf reorder. The source must not
+    /// treat the destination acknowledgement as an external delivery.
+    func acceptShelfReorder() {
+        acceptedByShelfReorder = true
     }
 
     /// F-05: 剔除剪切项后的顶层 id 集合（策略移除/询问只作用于非剪切项）。
@@ -368,6 +421,7 @@ final class DeliveryCoordinator {
     }
 
     func noteSessionBegan(id: UUID, contents: DragOutContents) {
+        transferStore.noteDragSessionStarted()
         let flattened = DragPayloadBuilder.flattenedItems(contents.items)
             .filter(DragPayloadBuilder.canMakePasteboardWriter)
         var itemsByID: [UUID: PendingItem] = [:]
@@ -489,6 +543,12 @@ final class DeliveryCoordinator {
                 break
             }
         }
+    }
+
+    /// Balanced with `noteSessionBegan` from the NSDraggingSource callback,
+    /// which also runs when no pasteboard content was materialized.
+    func noteDragSessionEnded() {
+        transferStore.noteDragSessionEnded()
     }
 
     /// Runtime file leases used by Storage settings. A direct drop can remove
