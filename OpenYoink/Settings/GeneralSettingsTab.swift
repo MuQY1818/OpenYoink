@@ -133,6 +133,15 @@ struct GeneralSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    Picker("Without a notch, when idle", selection: $settings.islandFloatingIdleStyle) {
+                        Text("Show the pill").tag(IslandFloatingIdleStyle.capsule)
+                        Text("Shrink to a dot").tag(IslandFloatingIdleStyle.dot)
+                        Text("Hide until the pointer reaches the top edge")
+                            .tag(IslandFloatingIdleStyle.hidden)
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityIdentifier("settings.islandFloatingIdleStyle")
+
                     Picker("Display", selection: $settings.islandDisplayTarget) {
                         Text("Main Display")
                             .tag(SettingsStore.IslandDisplayTarget.main)

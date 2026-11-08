@@ -1,6 +1,30 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Without a notch, when idle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Without a notch, when idle" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无刘海屏幕，闲置时" } }
+      }
+    },
+    "Show the pill" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show the pill" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "显示胶囊" } }
+      }
+    },
+    "Shrink to a dot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shrink to a dot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "缩成圆点" } }
+      }
+    },
+    "Hide until the pointer reaches the top edge" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Hide until the pointer reaches the top edge" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "隐藏，鼠标碰到屏幕顶边时出现" } }
+      }
+    },
     "%lld tools unavailable" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld tools unavailable" } },

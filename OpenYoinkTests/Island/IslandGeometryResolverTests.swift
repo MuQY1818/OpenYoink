@@ -39,6 +39,47 @@ final class IslandGeometryResolverTests: XCTestCase {
         XCTAssertEqual(layout.expandedFrame.maxY, layout.compactFrame.maxY)
     }
 
+    func testFloatingIdleDotSitsOnThePillsTopCentreAndRevealsFromScreenEdge() {
+        let screen = IslandGeometryResolver.ScreenGeometry(
+            frame: CGRect(x: 0, y: 0, width: 1280, height: 800),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 800),
+            safeAreaTop: 0, auxiliaryTopLeftArea: .zero,
+            auxiliaryTopRightArea: .zero
+        )
+        let layout = IslandGeometryResolver.resolve(screen: screen)
+        let dot = layout.floatingDotFrame
+        XCTAssertEqual(dot.size, IslandGeometryResolver.floatingDotHitSize)
+        XCTAssertEqual(dot.midX, layout.compactFrame.midX)
+        XCTAssertEqual(dot.maxY, layout.compactFrame.maxY)
+        // Most of the pill's area is free for the app underneath.
+        XCTAssertLessThan(dot.width * dot.height,
+                          layout.compactFrame.width * layout.compactFrame.height / 8)
+        // The top pixel row above the pill reveals it; the middle of the
+        // pill's former area does not.
+        XCTAssertTrue(layout.floatingEdgeRevealFrame.contains(CGPoint(x: 640, y: 799)))
+        // The pointer pinned to the top edge reports y == screen maxY.
+        XCTAssertTrue(layout.floatingEdgeRevealFrame.contains(CGPoint(x: 640, y: 800)))
+        XCTAssertFalse(layout.floatingEdgeRevealFrame.contains(CGPoint(x: 640, y: layout.compactFrame.midY)))
+        XCTAssertFalse(layout.floatingEdgeRevealFrame.contains(CGPoint(x: 100, y: 799)))
+        XCTAssertTrue(layout.floatingKeepRevealedFrame.contains(layout.compactFrame.center))
+        XCTAssertTrue(layout.floatingKeepRevealedFrame.contains(CGPoint(x: 640, y: 799)))
+    }
+
+    func testFloatingPresentationOnlyShrinksAnIdleCollapsedFloatingIsland() {
+        func resolve(_ style: IslandFloatingIdleStyle, notch: Bool = false, expanded: Bool = false,
+                     urgent: Bool = false, revealed: Bool = false) -> IslandFloatingPresentation {
+            .resolve(style: style, hasPhysicalNotch: notch, isExpanded: expanded,
+                     hasUrgentActivity: urgent, isRevealed: revealed)
+        }
+        XCTAssertEqual(resolve(.capsule), .capsule)
+        XCTAssertEqual(resolve(.dot), .dot)
+        XCTAssertEqual(resolve(.hidden), .hidden)
+        XCTAssertEqual(resolve(.dot, notch: true), .capsule)
+        XCTAssertEqual(resolve(.hidden, expanded: true), .capsule)
+        XCTAssertEqual(resolve(.hidden, urgent: true), .capsule)
+        XCTAssertEqual(resolve(.dot, revealed: true), .capsule)
+    }
+
     func testHalfPointNotchAreasDoNotCreateAnUnreachableWindowDestination() {
         for screenX in [CGFloat(0), CGFloat(-1512)] {
             let screen = IslandGeometryResolver.ScreenGeometry(

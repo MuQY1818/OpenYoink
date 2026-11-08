@@ -92,9 +92,14 @@ struct IslandRootView: View {
                         )
                     ))
             } else {
-                compactContent
-                    .frame(width: coordinator.currentLayout?.compactFrame.width,
-                           height: coordinator.currentLayout?.compactFrame.height,
+                floatingAwareCompactContent
+                    // Upper bounds only: a fixed size here becomes the hosting
+                    // window's minimum size, and the floating idle dot needs
+                    // the panel to shrink below the pill (issue #11).
+                    .frame(minWidth: 0,
+                           maxWidth: coordinator.currentLayout?.compactFrame.width,
+                           minHeight: 0,
+                           maxHeight: coordinator.currentLayout?.compactFrame.height,
                            alignment: .top)
                     .transition(.asymmetric(
                         insertion: .opacity,
@@ -194,6 +199,47 @@ struct IslandRootView: View {
     private var collapsedSurfaceWidth: CGFloat {
         coordinator.currentLayout?.compactFrame.width
             ?? IslandGeometryResolver.floatingCompactSize.width
+    }
+
+    /// Displays without a notch can shrink the idle pill into a dot or hide
+    /// it entirely (issue #11). The window controller sizes the panel.
+    private var floatingAwareCompactContent: some View {
+        let presentation = hasPhysicalNotch ? .capsule : coordinator.floatingPresentation
+        return ZStack(alignment: .top) {
+            switch presentation {
+            case .capsule:
+                compactContent
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.5, anchor: .top)),
+                        removal: .opacity.combined(with: .scale(scale: 0.08, anchor: .top))
+                    ))
+            case .dot:
+                floatingIdleDot
+                    .transition(.opacity.combined(with: .scale(scale: 0.3, anchor: .top)))
+            case .hidden:
+                Color.clear
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: presentation)
+    }
+
+    private var floatingIdleDot: some View {
+        let activity = coordinator.primaryActivity()
+        let ring = activity?.moduleID == .media ? mediaAccent.color : activityTint(activity)
+        let diameter = IslandGeometryResolver.floatingDotDiameter
+        return Circle()
+            .fill(Color.black.opacity(0.92))
+            .overlay {
+                Circle().strokeBorder(ring.opacity(activity == nil ? 0.32 : 0.75), lineWidth: 1)
+            }
+            .frame(width: diameter, height: diameter)
+            .padding(.top, (IslandGeometryResolver.floatingDotHitSize.height - diameter) / 2)
+            .accessibilityElement()
+            .accessibilityLabel(Text(compactAccessibilityLabel))
+            .accessibilityHint(Text("Open OpenYoink Island"))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { coordinator.show(module: defaultOpenModule) }
     }
 
     private var compactContent: some View {

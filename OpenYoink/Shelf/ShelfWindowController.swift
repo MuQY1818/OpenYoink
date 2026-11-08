@@ -116,6 +116,13 @@ final class ShelfWindowController: NSObject {
     private var islandLocalMonitor: Any?
     private var islandHoverTask: Task<Void, Never>?
     private var islandLayoutTask: Task<Void, Never>?
+    /// Floating Island idle dot / hidden mode (issue #11).
+    private var isFloatingIslandRevealed = false
+    private var floatingConcealTask: Task<Void, Never>?
+    private var floatingShrinkTask: Task<Void, Never>?
+    /// Keeps the panel at pill size while SwiftUI shrinks the pill into the
+    /// dot; shrinking the window first would clip that animation.
+    private var isFloatingShrinkPending = false
     private var islandFrameTransition = ShelfFrameTransitionState()
     private var classicHoverPreviewState = ClassicShelfHoverPreviewStateMachine()
     private var classicHoverExitTask: Task<Void, Never>?
@@ -607,6 +614,8 @@ final class ShelfWindowController: NSObject {
         quickActionLayoutTask?.cancel()
         islandHoverTask?.cancel()
         islandLayoutTask?.cancel()
+        floatingConcealTask?.cancel()
+        floatingShrinkTask?.cancel()
         classicHoverExitTask?.cancel()
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -619,6 +628,8 @@ final class ShelfWindowController: NSObject {
         quickActionLayoutTask?.cancel()
         islandHoverTask?.cancel()
         islandLayoutTask?.cancel()
+        floatingConcealTask?.cancel()
+        floatingShrinkTask?.cancel()
         classicHoverExitTask?.cancel()
         stopClassicHoverPreviewMonitoring()
         stopIslandModules()
@@ -1433,8 +1444,102 @@ final class ShelfWindowController: NSObject {
     private func islandTargetFrame() -> NSRect {
         let layout = islandLayout()
         islandActivityCoordinator.currentLayout = layout
-        return islandActivityCoordinator.surfaceState.isExpanded
-            ? layout.expandedFrame : layout.compactFrame
+        refreshFloatingPresentation(layout: layout)
+        if islandActivityCoordinator.surfaceState.isExpanded { return layout.expandedFrame }
+        return compactWindowFrame(for: layout)
+    }
+
+    /// The collapsed panel: the pill, or just the dot's hit area when the
+    /// floating Island is idle. Hidden mode keeps the dot-sized panel but
+    /// draws nothing and lets clicks through.
+    private func compactWindowFrame(for layout: IslandGeometryResolver.Layout) -> NSRect {
+        switch islandActivityCoordinator.floatingPresentation {
+        case .capsule:
+            return layout.compactFrame
+        case .dot, .hidden:
+            return isFloatingShrinkPending ? layout.compactFrame : layout.floatingDotFrame
+        }
+    }
+
+    /// Where a click or hover counts as touching the collapsed Island.
+    private func interactiveCompactFrame(for layout: IslandGeometryResolver.Layout) -> NSRect {
+        switch islandActivityCoordinator.floatingPresentation {
+        case .capsule: return layout.compactFrame
+        case .dot: return layout.floatingDotFrame
+        case .hidden: return .null
+        }
+    }
+
+    private func refreshFloatingPresentation(layout: IslandGeometryResolver.Layout) {
+        let coordinator = islandActivityCoordinator
+        let urgent = (coordinator.primaryActivity()?.priority ?? .shelfSummary) >= .powerChange
+        if layout.hasPhysicalNotch || settings.islandFloatingIdleStyle == .capsule {
+            isFloatingIslandRevealed = false
+            floatingConcealTask?.cancel()
+            floatingConcealTask = nil
+        }
+        let next = IslandFloatingPresentation.resolve(
+            style: settings.islandFloatingIdleStyle,
+            hasPhysicalNotch: layout.hasPhysicalNotch,
+            isExpanded: coordinator.surfaceState != .compact,
+            hasUrgentActivity: urgent,
+            isRevealed: isFloatingIslandRevealed
+        )
+        let current = coordinator.floatingPresentation
+        guard next != current else { return }
+        coordinator.floatingPresentation = next
+        islandPanel.ignoresMouseEvents = next == .hidden
+        if next == .capsule {
+            floatingShrinkTask?.cancel()
+            floatingShrinkTask = nil
+            isFloatingShrinkPending = false
+            // Grow the panel before SwiftUI draws the pill into it.
+            if coordinator.surfaceState == .compact, islandPanel.frame != layout.compactFrame {
+                islandLayoutTask?.cancel()
+                islandLayoutTask = nil
+                islandFrameTransition.reset()
+                _ = islandFrameTransition.request(layout.compactFrame, currentFrame: islandPanel.frame)
+                islandPanel.setFrame(layout.compactFrame, display: true)
+            }
+        } else if current == .capsule,
+                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            isFloatingShrinkPending = true
+            floatingShrinkTask?.cancel()
+            floatingShrinkTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(260))
+                guard let self, !Task.isCancelled else { return }
+                self.floatingShrinkTask = nil
+                self.isFloatingShrinkPending = false
+                self.scheduleIslandLayoutUpdate()
+            }
+        }
+    }
+
+    /// Dot / hidden mode: the pill comes back when the pointer reaches the
+    /// dot or the top edge of the screen above it, and leaves again shortly
+    /// after the pointer moves away.
+    private func updateFloatingReveal(at point: CGPoint, layout: IslandGeometryResolver.Layout) {
+        guard !layout.hasPhysicalNotch,
+              settings.islandFloatingIdleStyle != .capsule,
+              islandActivityCoordinator.surfaceState == .compact else { return }
+        if !isFloatingIslandRevealed {
+            let touchesDot = islandActivityCoordinator.floatingPresentation == .dot
+                && layout.floatingDotFrame.insetBy(dx: -4, dy: -4).contains(point)
+            guard touchesDot || layout.floatingEdgeRevealFrame.contains(point) else { return }
+            isFloatingIslandRevealed = true
+            refreshFloatingPresentation(layout: layout)
+        } else if layout.floatingKeepRevealedFrame.contains(point) {
+            floatingConcealTask?.cancel()
+            floatingConcealTask = nil
+        } else if floatingConcealTask == nil {
+            floatingConcealTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(450))
+                guard let self, !Task.isCancelled else { return }
+                self.floatingConcealTask = nil
+                self.isFloatingIslandRevealed = false
+                self.scheduleIslandLayoutUpdate()
+            }
+        }
     }
 
     private func prepareIslandPanelTransition(
@@ -1890,7 +1995,7 @@ final class ShelfWindowController: NSObject {
         case .leftMouseDown:
             if !islandActivityCoordinator.surfaceState.isExpanded {
                 let layout = islandLayout(at: point)
-                guard layout.compactFrame.contains(point) else { return }
+                guard interactiveCompactFrame(for: layout).contains(point) else { return }
                 // The right music wing owns a direct play/pause action. Let
                 // its SwiftUI button consume the click instead of expanding.
                 guard !isCompactMediaTransportHit(point, layout: layout) else { return }
@@ -1908,10 +2013,12 @@ final class ShelfWindowController: NSObject {
                 if islandActivityCoordinator.currentLayout?.compactFrame != layout.compactFrame {
                     scheduleIslandLayoutUpdate()
                 }
+                updateFloatingReveal(at: point, layout: layout)
             }
+            let interactiveFrame = interactiveCompactFrame(for: layout)
             islandActivityCoordinator.setPointerHovering(
                 !islandActivityCoordinator.surfaceState.isExpanded
-                    && layout.compactFrame.contains(point)
+                    && interactiveFrame.contains(point)
             )
             guard settings.islandHoverRevealEnabled,
                   islandActivityCoordinator.canRevealOnHover,
@@ -1920,7 +2027,8 @@ final class ShelfWindowController: NSObject {
                 islandHoverTask = nil
                 return
             }
-            guard layout.compactFrame.insetBy(dx: -4, dy: -4).contains(point) else {
+            guard islandActivityCoordinator.floatingPresentation == .capsule,
+                  interactiveFrame.insetBy(dx: -4, dy: -4).contains(point) else {
                 islandHoverTask?.cancel()
                 islandHoverTask = nil
                 return

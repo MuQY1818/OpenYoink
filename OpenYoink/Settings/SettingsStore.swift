@@ -322,6 +322,12 @@ final class SettingsStore {
         didSet { defaults.set(aiUsageServerPort, forKey: Keys.aiUsageServerPort) }
     }
 
+    /// Displays without a notch: what the collapsed Island shows while idle,
+    /// so the floating pill doesn't sit on top of other apps' toolbars.
+    var islandFloatingIdleStyle: IslandFloatingIdleStyle {
+        didSet { defaults.set(islandFloatingIdleStyle.rawValue, forKey: Keys.islandFloatingIdleStyle) }
+    }
+
     /// Optional local Now Playing module. It remains opt-in so a fallback
     /// player never requests Automation access until the user asks for media
     /// controls, while the UI itself is a first-class Island module.
@@ -613,6 +619,7 @@ final class SettingsStore {
         static let islandFullChargeAlertEnabled = prefix + "islandFullChargeAlertEnabled"
         static let islandMediaEnabled = prefix + "islandMediaEnabled"
         static let aiUsageCompactMetric = prefix + "aiUsageCompactMetric"
+        static let islandFloatingIdleStyle = prefix + "islandFloatingIdleStyle"
         static let aiUsageLimitAlertsEnabled = prefix + "aiUsageLimitAlertsEnabled"
         static let aiUsageServerPort = prefix + "aiUsageServerPort"
         static let islandModuleConfiguration = prefix + "islandModuleConfiguration"
@@ -707,6 +714,7 @@ final class SettingsStore {
             Keys.islandFullChargeAlertEnabled: false,
             Keys.islandMediaEnabled: false,
             Keys.aiUsageCompactMetric: AIUsageCompactMetric.todayCost.rawValue,
+            Keys.islandFloatingIdleStyle: IslandFloatingIdleStyle.dot.rawValue,
             Keys.aiUsageLimitAlertsEnabled: true,
             Keys.aiUsageServerPort: TokenTrackerClient.defaultPort,
             Keys.shelfWidth: 320.0,
@@ -825,6 +833,8 @@ final class SettingsStore {
         aiUsageLimitAlertsEnabled = defaults.bool(forKey: Keys.aiUsageLimitAlertsEnabled)
         let storedPort = defaults.integer(forKey: Keys.aiUsageServerPort)
         aiUsageServerPort = (1...65535).contains(storedPort) ? storedPort : TokenTrackerClient.defaultPort
+        islandFloatingIdleStyle = defaults.string(forKey: Keys.islandFloatingIdleStyle)
+            .flatMap(IslandFloatingIdleStyle.init(rawValue:)) ?? .dot
         let migratedModuleConfiguration = Self.migratedModuleConfiguration(
             existingInstallation: hadPersistedAppSettings,
             shelfEnabled: resolvedIslandShelfEnabled,
