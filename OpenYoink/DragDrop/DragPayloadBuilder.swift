@@ -171,8 +171,13 @@ enum DragPayloadBuilder {
                 return nil
             }
             let draggingItem = NSDraggingItem(pasteboardWriter: writer)
-            draggingItem.setDraggingFrame(frame,
-                                          contents: singleItemPreview ?? dragImage(for: item))
+            let contents = singleItemPreview ?? dragImage(for: item)
+            // The preview keeps the item's own aspect ratio, so the frame
+            // follows it instead of squeezing it back into the card's box.
+            let draggingFrame = singleItemPreview.map {
+                NSRect(origin: frame.origin, size: $0.size)
+            } ?? frame
+            draggingItem.setDraggingFrame(draggingFrame, contents: contents)
             return draggingItem
         }
     }
