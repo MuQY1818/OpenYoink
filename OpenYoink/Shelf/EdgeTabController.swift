@@ -200,11 +200,11 @@ final class EdgeTabController: NSObject {
         panel.setFrame(frame, display: false)
         guard animated else {
             panel.alphaValue = 1
-            panel.orderFront(nil)
+            presentTabPanel()
             return
         }
         panel.alphaValue = 0
-        panel.orderFront(nil)
+        presentTabPanel()
         guard delay > 0 else {
             restoreTabAlpha(animated: animated)
             return
@@ -217,6 +217,14 @@ final class EdgeTabController: NSObject {
                 self.restoreTabAlpha(animated: true)
             }
         }
+    }
+
+    /// Same Space handling as the shelf panel: re-assert the collection behavior
+    /// and order front regardless of activation so the tab also joins another
+    /// app's full-screen Space instead of staying on its previous one.
+    private func presentTabPanel() {
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.orderFrontRegardless()
     }
 
     private func restoreTabAlpha(animated: Bool) {
