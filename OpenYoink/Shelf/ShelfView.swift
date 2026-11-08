@@ -164,8 +164,6 @@ struct ShelfView: View {
     /// 首列卡片交叠；`ShelfLayoutEngine.gridColumnMinimum` 同步）。
     static let columnWidth: CGFloat = 84
 
-    private let columns = [GridItem(.adaptive(minimum: Self.columnWidth), spacing: Self.gridSpacing)]
-
     var body: some View {
         presentedSurface
             .environment(\.shelfSelectionMode, interaction.isSelecting)
@@ -511,14 +509,22 @@ struct ShelfView: View {
 
     private var itemGrid: some View {
         GeometryReader { viewport in
+            // Derive the column count once for this viewport so the scrolling
+            // and non-scrolling grid agree; `adaptive` used to drop to two
+            // columns inside the slightly narrower scroll container.
+            let gridColumns = Array(
+                repeating: GridItem(.flexible(minimum: 0), spacing: Self.gridSpacing),
+                count: ShelfLayoutEngine.gridColumnCount(for: viewport.size.width)
+            )
             let fits = presentationStyle == .classic
                 && ShelfLayoutEngine.gridFits(itemCount: store.visibleItems.count,
                                               viewport: viewport.size)
             Group {
                 if fits {
-                    cardGrid.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    cardGrid(columns: gridColumns)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 } else {
-                    scrollingGrid
+                    scrollingGrid(columns: gridColumns)
                 }
             }
             // The grid container keeps the pre-selection bounds for a few frames
@@ -533,14 +539,14 @@ struct ShelfView: View {
         }
     }
 
-    private var scrollingGrid: some View {
+    private func scrollingGrid(columns: [GridItem]) -> some View {
         ScrollView(.vertical) {
-            cardGrid
+            cardGrid(columns: columns)
         }
         .scrollIndicators(.hidden)
     }
 
-    private var cardGrid: some View {
+    private func cardGrid(columns: [GridItem]) -> some View {
         LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
             ForEach(store.visibleItems) { item in
                 gridCell(for: item)

@@ -58,7 +58,17 @@ enum ShelfLayoutEngine {
     /// 只服务左/右锚的紧凑高度计算，把手恒定可见；custom 不走此路径。
     static func columnCount(forPanelWidth width: CGFloat) -> Int {
         let gridWidth = width - contentPadding - handleContentAllowance
-        return max(1, Int((gridWidth + gridSpacing) / (gridColumnMinimum + gridSpacing)))
+        return gridColumnCount(for: gridWidth)
+    }
+
+    /// Column count for a grid viewport that is already inside the padding.
+    ///
+    /// SwiftUI's `adaptive` grid re-derives this from its own width, and the
+    /// scrolling container is a little narrower than the plain grid, so the
+    /// same shelf switched from three columns to two once it started
+    /// scrolling. Deriving the count here keeps both states identical.
+    static func gridColumnCount(for gridWidth: CGFloat) -> Int {
+        max(1, Int((gridWidth + gridSpacing) / (gridColumnMinimum + gridSpacing)))
     }
 
     /// Use the same conservative row allowance as the window's compact layout.
