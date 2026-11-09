@@ -31,6 +31,34 @@ final class IslandActivityCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.primaryActivity()?.id, "transfer")
     }
 
+    func testAdvisoryAlertYieldsToNowPlayingAfterItsSpotlight() {
+        let coordinator = IslandActivityCoordinator()
+        let start = Date(timeIntervalSince1970: 1_000)
+        coordinator.publish(activity(id: "media", module: .media, priority: .nowPlaying), at: start)
+        coordinator.publish(activity(id: "ai", module: .aiUsage, priority: .systemWarning), at: start)
+
+        XCTAssertEqual(coordinator.primaryActivity(at: start.addingTimeInterval(1))?.id, "ai")
+        let after = start.addingTimeInterval(IslandActivityCoordinator.advisorySpotlightDuration + 1)
+        XCTAssertEqual(coordinator.primaryActivity(at: after)?.id, "media")
+
+        // Republishing fresh numbers must not restart the spotlight.
+        coordinator.publish(activity(id: "ai", module: .aiUsage, priority: .systemWarning), at: after)
+        XCTAssertEqual(coordinator.primaryActivity(at: after)?.id, "media")
+
+        // Without media, the alert keeps the compact Island.
+        coordinator.removeActivity(id: "media")
+        XCTAssertEqual(coordinator.primaryActivity(at: after)?.id, "ai")
+    }
+
+    func testCriticalActivitiesStillOutrankNowPlaying() {
+        let coordinator = IslandActivityCoordinator()
+        let start = Date(timeIntervalSince1970: 1_000)
+        coordinator.publish(activity(id: "media", module: .media, priority: .nowPlaying), at: start)
+        coordinator.publish(activity(id: "battery", module: .battery, priority: .criticalBattery), at: start)
+        let after = start.addingTimeInterval(IslandActivityCoordinator.advisorySpotlightDuration + 60)
+        XCTAssertEqual(coordinator.primaryActivity(at: after)?.id, "battery")
+    }
+
     func testSelectedModuleSummaryDoesNotOverrideAnotherModule() {
         let coordinator = IslandActivityCoordinator()
         coordinator.publish(activity(id: "timer", module: .timer,
