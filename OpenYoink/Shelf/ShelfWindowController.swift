@@ -789,8 +789,6 @@ final class ShelfWindowController: NSObject {
                                                   windowInset: Self.classicSurfaceInset)
     }
 
-    /// 窗口直接就位到目标 frame，只让 SwiftUI 玻璃面从拉环矩形弹性长出
-    /// （窗口 frame 不参与动画 → 网格不在动画中重排）。
     /// Orders the panel in front of whatever is on screen, including another
     /// app's full-screen Space. Re-asserting the collection behavior makes
     /// AppKit re-join the active Space; a plain `orderFront` from an inactive
@@ -810,6 +808,8 @@ final class ShelfWindowController: NSObject {
         }
     }
 
+    /// 窗口直接就位到目标 frame，只让 SwiftUI 玻璃面从拉环矩形弹性长出
+    /// （窗口 frame 不参与动画 → 网格不在动画中重排）。
     private func growClassicShelf(from origin: CGRect, to targetFrame: NSRect, wasOnscreen: Bool,
                                   generation: UInt, takeKeyboardFocus: Bool) {
         // 形变期间窗口形状每帧都在变；AppKit 的窗口阴影只按某一帧计算，会残留

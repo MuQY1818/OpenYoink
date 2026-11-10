@@ -149,11 +149,13 @@ final class DragOutController {
                                            onSuccessfulDrop: onSuccessfulDrop,
                                            dragAnchorOffset: dragAnchorOffset,
                                            fileAccess: fileAccess)
+        // Counted only once a session really starts: the source's
+        // `draggingSession(_:endedAt:)` is the matching decrement, and the early
+        // return above has no session to end.
+        deliveryCoordinator.noteDragSessionStarted()
         sourceView.beginDraggingSession(with: draggingItems, event: event, source: source)
     }
 
-    /// Offset from the current pointer to the source card center, in window
-    /// coordinates. Adding it to a dragging location yields the card center.
     /// Draws the drag preview at the same size the item occupies in the shelf:
     /// the card's thumbnail area is a fixed 52pt-high box with aspect-fit, so a
     /// portrait image stays narrow and a document keeps its square icon.
@@ -254,6 +256,8 @@ final class DragOutController {
         NSGraphicsContext.restoreGraphicsState()
     }
 
+    /// Offset from the current pointer to the source card center, in window
+    /// coordinates. Adding it to a dragging location yields the card center.
     private static func dragAnchorOffset(from sourceView: NSView,
                                          event: NSEvent) -> CGSize {
         guard sourceView.window != nil else { return .zero }
@@ -506,7 +510,6 @@ final class DeliveryCoordinator {
     }
 
     func noteSessionBegan(id: UUID, contents: DragOutContents) {
-        transferStore.noteDragSessionStarted()
         let flattened = DragPayloadBuilder.flattenedItems(contents.items)
             .filter(DragPayloadBuilder.canMakePasteboardWriter)
         var itemsByID: [UUID: PendingItem] = [:]
@@ -630,8 +633,13 @@ final class DeliveryCoordinator {
         }
     }
 
-    /// Balanced with `noteSessionBegan` from the NSDraggingSource callback,
-    /// which also runs when no pasteboard content was materialized.
+    /// Brackets an AppKit dragging session so the shelf can hide its transfer
+    /// strip mid-drag. Call `noteDragSessionStarted` only right before
+    /// `beginDraggingSession`; the NSDraggingSource end callback balances it.
+    func noteDragSessionStarted() {
+        transferStore.noteDragSessionStarted()
+    }
+
     func noteDragSessionEnded() {
         transferStore.noteDragSessionEnded()
     }

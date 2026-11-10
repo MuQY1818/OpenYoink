@@ -1,5 +1,4 @@
 import AppKit
-import OSLog
 
 /// Optional destination override for module-specific drops. When active it
 /// owns the complete drop decision, so a rejected file cannot silently fall
@@ -75,11 +74,6 @@ final class DragContainerView: NSView {
     /// find-the-slot move from a vertical row change.
     private var reorderTravel = CGVector.zero
     private var lastReorderCenter: CGPoint?
-#if DEBUG
-    private let reorderLogger = Logger(subsystem: "com.weijue.OpenYoink", category: "ShelfReorder")
-    private var lastReorderLog: (sequence: Int, insertionIndex: Int,
-                                  centerBucketX: Int, centerBucketY: Int)?
-#endif
     /// 持有的 hosting controller（addSubview 只 retain 视图，controller 需显式持有）。
     private let contentViewController: NSViewController
 
@@ -148,12 +142,7 @@ final class DragContainerView: NSView {
             dropTargetState.isTargeted = true
             dropTargetState.mode = .copy
             dropTargetState.isReordering = true
-            let insertion = updateReorderInsertionIndex(sender, source: source)
-            logReorderEvent("entered", sender: sender, source: source,
-                            rawLocation: insertion.rawLocation,
-                            centerLocation: insertion.centerLocation,
-                            insertionIndex: insertion.index,
-                            force: true)
+            updateReorderInsertionIndex(sender, source: source)
             return .copy
         }
         // Ordinary internal drags are not imported back into the shelf. A
@@ -187,12 +176,7 @@ final class DragContainerView: NSView {
         if let source = shelfReorderSource(from: sender) {
             dropTargetState.isTargeted = true
             dropTargetState.isReordering = true
-            let insertion = updateReorderInsertionIndex(sender, source: source)
-            logReorderEvent("updated", sender: sender, source: source,
-                            rawLocation: insertion.rawLocation,
-                            centerLocation: insertion.centerLocation,
-                            insertionIndex: insertion.index,
-                            force: false)
+            updateReorderInsertionIndex(sender, source: source)
             return .copy
         }
         guard sender.draggingSource == nil
@@ -213,7 +197,7 @@ final class DragContainerView: NSView {
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        resetReorderLogState()
+        resetReorderTravel()
         dropTargetState.reset()
         dropOverride?.reset()
     }
@@ -232,12 +216,7 @@ final class DragContainerView: NSView {
             return accepted
         }
         if let source = shelfReorderSource(from: sender) {
-            let insertion = updateReorderInsertionIndex(sender, source: source)
-            logReorderEvent("commit", sender: sender, source: source,
-                            rawLocation: insertion.rawLocation,
-                            centerLocation: insertion.centerLocation,
-                            insertionIndex: insertion.index,
-                            force: true)
+            updateReorderInsertionIndex(sender, source: source)
             let destination = dropTargetState.insertionIndex ?? store.items.count
             accepted = store.move(ids: source.topLevelItemIDs, toOffset: destination)
             if accepted { source.acceptShelfReorder() }
@@ -278,13 +257,13 @@ final class DragContainerView: NSView {
         onDestinationEnded(sender.draggingSequenceNumber, false)
         guard currentDestinationSequenceNumber == sender.draggingSequenceNumber else { return }
         currentDestinationSequenceNumber = nil
-        resetReorderLogState()
+        resetReorderTravel()
         dropTargetState.reset()
         dropOverride?.reset()
     }
 
     override func concludeDragOperation(_ sender: NSDraggingInfo?) {
-        resetReorderLogState()
+        resetReorderTravel()
         dropTargetState.reset()
         dropOverride?.reset()
     }
@@ -317,16 +296,10 @@ final class DragContainerView: NSView {
         return insertionIndex
     }
 
-    private struct ReorderInsertionSample {
-        let rawLocation: CGPoint
-        let centerLocation: CGPoint
-        let index: Int
-    }
-
     /// Internal reorder follows the dragged card center rather than the mouse
     /// pointer, so grabbing any edge of a wide card behaves symmetrically.
     private func updateReorderInsertionIndex(_ sender: NSDraggingInfo,
-                                             source: DragSessionController) -> ReorderInsertionSample {
+                                             source: DragSessionController) {
         let rawLocation = sender.draggingLocation
         let offset = source.dragAnchorOffset
         let centerLocation = CGPoint(x: rawLocation.x + offset.width,
@@ -340,9 +313,6 @@ final class DragContainerView: NSView {
             activationRatio: Self.reorderActivationRatio
         )
         dropTargetState.insertionIndex = insertionIndex
-        return ReorderInsertionSample(rawLocation: rawLocation,
-                                      centerLocation: centerLocation,
-                                      index: insertionIndex)
     }
 
     /// Horizontal drags keep the entry-edge thresholds so both directions feel
@@ -390,53 +360,6 @@ final class DragContainerView: NSView {
             return nil
         }
         return source
-    }
-
-    private func logReorderEvent(_ phase: String,
-                                 sender: NSDraggingInfo,
-                                 source: DragSessionController,
-                                 rawLocation: CGPoint,
-                                 centerLocation: CGPoint,
-                                 insertionIndex: Int,
-                                 force: Bool) {
-#if DEBUG
-        let sequence = sender.draggingSequenceNumber
-        let centerBucketX = Int(floor(centerLocation.x / 12))
-        let centerBucketY = Int(floor(centerLocation.y / 12))
-        if !force,
-           let lastReorderLog,
-           lastReorderLog.sequence == sequence,
-           lastReorderLog.insertionIndex == insertionIndex,
-           lastReorderLog.centerBucketX == centerBucketX,
-           lastReorderLog.centerBucketY == centerBucketY {
-            return
-        }
-        lastReorderLog = (sequence, insertionIndex, centerBucketX, centerBucketY)
-        let ids = source.topLevelItemIDs.map(\.uuidString).sorted().joined(separator: ",")
-        let rawX = String(format: "%.1f", rawLocation.x)
-        let rawY = String(format: "%.1f", rawLocation.y)
-        let centerX = String(format: "%.1f", centerLocation.x)
-        let centerY = String(format: "%.1f", centerLocation.y)
-        let pointX = String(format: "%.1f", centerLocation.x)
-        let pointY = String(format: "%.1f", bounds.height - centerLocation.y)
-        let frames = store.items.enumerated().compactMap { index, item -> String? in
-            guard let frame = gridGeometry.cardFrames[item.id] else { return nil }
-            return "\(index):(\(String(format: "%.1f", frame.minX)),\(String(format: "%.1f", frame.minY)),\(String(format: "%.1f", frame.width)),\(String(format: "%.1f", frame.height)))"
-        }.joined(separator: "|")
-        let offset = source.dragAnchorOffset
-        let offsetX = String(format: "%.1f", offset.width)
-        let offsetY = String(format: "%.1f", offset.height)
-        reorderLogger.debug(
-            "Shelf reorder \(phase, privacy: .public) sequence=\(sequence, privacy: .public) raw=(\(rawX, privacy: .public),\(rawY, privacy: .public)) center=(\(centerX, privacy: .public),\(centerY, privacy: .public)) point=(\(pointX, privacy: .public),\(pointY, privacy: .public)) offset=(\(offsetX, privacy: .public),\(offsetY, privacy: .public)) insertion=\(insertionIndex, privacy: .public) frames=\(frames, privacy: .public) ids=\(ids, privacy: .public)"
-        )
-#endif
-    }
-
-    private func resetReorderLogState() {
-        resetReorderTravel()
-#if DEBUG
-        lastReorderLog = nil
-#endif
     }
 
     /// A new drag must not inherit the direction of the previous one.

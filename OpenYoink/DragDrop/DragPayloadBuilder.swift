@@ -173,9 +173,14 @@ enum DragPayloadBuilder {
             let draggingItem = NSDraggingItem(pasteboardWriter: writer)
             let contents = singleItemPreview ?? dragImage(for: item)
             // The preview keeps the item's own aspect ratio, so the frame
-            // follows it instead of squeezing it back into the card's box.
+            // follows it instead of squeezing it back into the card's box. It
+            // is centred on the card: Shelf reordering targets the card centre,
+            // and the preview the user steers must sit on that same point.
             let draggingFrame = singleItemPreview.map {
-                NSRect(origin: frame.origin, size: $0.size)
+                NSRect(x: frame.midX - $0.size.width / 2,
+                       y: frame.midY - $0.size.height / 2,
+                       width: $0.size.width,
+                       height: $0.size.height)
             } ?? frame
             draggingItem.setDraggingFrame(draggingFrame, contents: contents)
             return draggingItem

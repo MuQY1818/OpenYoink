@@ -59,6 +59,24 @@ final class DeliveryCoordinatorTests: XCTestCase {
         return id
     }
 
+    // MARK: - 拖拽会话计数
+
+    /// A drag that never starts an AppKit session (no pasteboard writer could
+    /// be built) must not leave the transfer strip hidden for good.
+    func testUnstartedDragSessionDoesNotHideTransferStrip() {
+        let context = makeContext()
+        defer { context.cleanup() }
+        let item = ShelfItem(kind: .text, displayName: "empty")
+        let sessionID = beginSession(context, items: [item])
+        context.coordinator.noteSessionEnded(id: sessionID, accepted: false)
+        XCTAssertEqual(context.transferStore.dragSessionsInFlight, 0)
+
+        context.coordinator.noteDragSessionStarted()
+        XCTAssertEqual(context.transferStore.dragSessionsInFlight, 1)
+        context.coordinator.noteDragSessionEnded()
+        XCTAssertEqual(context.transferStore.dragSessionsInFlight, 0)
+    }
+
     // MARK: - 交付闭环
 
     /// 常规时序：会话成功结束 → promise 写入完成 → 移出 shelf + 删保管文件 + 记历史。
