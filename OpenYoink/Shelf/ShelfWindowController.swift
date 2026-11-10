@@ -736,7 +736,7 @@ final class ShelfWindowController: NSObject {
             classicPanel.hasShadow = classicWantsWindowShadow
             classicPanel.alphaValue = 1
             classicPanel.setFrame(targetFrame, display: false)
-            classicPanel.orderFront(nil)
+            presentClassicPanel()
             if takeKeyboardFocus { classicPanel.makeKey() }
             return
         }
@@ -754,7 +754,7 @@ final class ShelfWindowController: NSObject {
             classicPanel.alphaValue = 0
             classicPanel.setFrame(classicHiddenFrame(for: targetFrame), display: false)
         }
-        classicPanel.orderFront(nil)
+        presentClassicPanel()
         if takeKeyboardFocus { classicPanel.makeKey() }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.animationDuration
@@ -789,6 +789,25 @@ final class ShelfWindowController: NSObject {
                                                   windowInset: Self.classicSurfaceInset)
     }
 
+    /// Orders the panel in front of whatever is on screen, including another
+    /// app's full-screen Space. Re-asserting the collection behavior makes
+    /// AppKit re-join the active Space; a plain `orderFront` from an inactive
+    /// app can leave the panel behind on the Space it last appeared on.
+    private func presentClassicPanel() {
+        // `.moveToActiveSpace` forces the panel into the Space that is on
+        // screen right now, which fixes the first reveal inside a brand-new
+        // full-screen Space. It cannot be combined with `.canJoinAllSpaces`,
+        // so the panel switches to all-spaces behavior right after ordering.
+        classicPanel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        classicPanel.orderFrontRegardless()
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                self?.classicPanel.collectionBehavior =
+                    [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            }
+        }
+    }
+
     /// 窗口直接就位到目标 frame，只让 SwiftUI 玻璃面从拉环矩形弹性长出
     /// （窗口 frame 不参与动画 → 网格不在动画中重排）。
     private func growClassicShelf(from origin: CGRect, to targetFrame: NSRect, wasOnscreen: Bool,
@@ -809,7 +828,7 @@ final class ShelfWindowController: NSObject {
             resetClassicSurfaceHeight()
             classicPanel.setFrame(targetFrame, display: false)
         }
-        classicPanel.orderFront(nil)
+        presentClassicPanel()
         if takeKeyboardFocus { classicPanel.makeKey() }
         // 先让收拢态真正提交一帧，再在下一拍开始生长，避免两次状态合并成跳变。
         classicPanel.contentView?.layoutSubtreeIfNeeded()
@@ -1810,7 +1829,7 @@ final class ShelfWindowController: NSObject {
                 applyClassicLayout(animated: animated)
                 if !classicPanel.isVisible {
                     classicPanel.alphaValue = 1
-                    classicPanel.orderFront(nil)
+                    presentClassicPanel()
                 }
             }
         } else {

@@ -34,6 +34,12 @@ final class ShelfRevealState {
     /// 变高时瞬间扩高，变矮时保持原高，底部透明（见
     /// `ShelfWindowController.resizeClassicSurface`）。
     private(set) var surfaceHeight: CGFloat?
+    /// `surfaceHeight` 的不做动画副本，供需要稳定几何的命中层使用。
+    ///
+    /// 弹簧高度动画会让 SwiftUI 布局连续变化约 0.32s：落在动画窗口里的
+    /// 点击会因为命中目标在按下/抬起之间移动而丢失（表现为「选中卡片后
+    /// 必须等一下才能点空白处取消选中」）。命中层读这个值就不会跟着弹簧走。
+    private(set) var stableSurfaceHeight: CGFloat?
 
     static let resizeAnimation = Animation.spring(response: 0.32, dampingFraction: 1)
 
@@ -57,13 +63,24 @@ final class ShelfRevealState {
                       height: max(1, min(surfaceHeight, canvas.height)))
     }
 
+    /// 与 `surfaceBounds` 相同，但忽略动画中的中间值。
+    func stableSurfaceBounds(in canvas: CGRect) -> CGRect {
+        guard let stableSurfaceHeight else { return canvas }
+        return CGRect(x: canvas.minX, y: canvas.minY, width: canvas.width,
+                      height: max(1, min(stableSurfaceHeight, canvas.height)))
+    }
+
     /// 无动画锁定玻璃面高度（窗口扩高之前调用，保持画面不变）。
     func pinSurfaceHeight(_ height: CGFloat?) {
         surfaceHeight = height
+        stableSurfaceHeight = height
     }
 
     /// 以弹簧动画把玻璃面高度改到 `height`，完成后回调。
     func animateSurfaceHeight(to height: CGFloat, completion: @escaping @MainActor () -> Void) {
+        // 命中层直接取目标高度：动画期间新区域立即可点，旧区域也不会因为
+        // 逐帧缩小而丢掉点击。
+        stableSurfaceHeight = height
         withAnimation(Self.resizeAnimation, completionCriteria: .logicallyComplete) {
             surfaceHeight = height
         } completion: {
@@ -90,6 +107,7 @@ final class ShelfRevealState {
         isContentVisible = true
         capturesWholeSurface = false
         surfaceHeight = nil
+        stableSurfaceHeight = nil
     }
 
     func expand(quick: Bool = false) {

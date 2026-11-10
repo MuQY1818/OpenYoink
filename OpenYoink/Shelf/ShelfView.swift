@@ -164,8 +164,6 @@ struct ShelfView: View {
     /// 首列卡片交叠；`ShelfLayoutEngine.gridColumnMinimum` 同步）。
     static let columnWidth: CGFloat = 84
 
-    private let columns = [GridItem(.adaptive(minimum: Self.columnWidth), spacing: Self.gridSpacing)]
-
     var body: some View {
         presentedSurface
             .environment(\.shelfSelectionMode, interaction.isSelecting)
@@ -189,7 +187,8 @@ struct ShelfView: View {
     @ViewBuilder
     private var presentedSurface: some View {
         if presentationStyle == .classic {
-            ShelfInteractiveGlassSurface(appearance: settings.appearance) {
+            ShelfInteractiveGlassSurface(appearance: settings.appearance,
+                                         onBackgroundTap: clearSelectionAndCollapse) {
                 Color.clear
                     .overlay { content }
                     .overlay { dropTargetHighlight }
@@ -238,7 +237,10 @@ struct ShelfView: View {
                 header
             }
             searchControls
-            if transferStore.hasVisibleActivity {
+            // No transfer strip while a shelf drag is in flight: inserting it
+            // re-lays out the grid and clears card geometry mid-reorder, which
+            // makes the insertion line fall back to "append to the end".
+            if transferStore.hasVisibleActivity, transferStore.dragSessionsInFlight == 0 {
                 ShelfActivityStrip(onPerformRecovery: performRecovery)
                     .transition(reduceMotion
                         ? .opacity
@@ -266,9 +268,12 @@ struct ShelfView: View {
         .padding(8)
         .background {
             // 空白处点击清除选择并收起 Stack；卡片点击由卡片自己的事件层处理。
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(perform: clearSelectionAndCollapse)
+            // 经典模式改由玻璃面命中层处理（几何不跟随高度弹簧动画）。
+            if presentationStyle != .classic {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: clearSelectionAndCollapse)
+            }
         }
     }
 
@@ -504,30 +509,44 @@ struct ShelfView: View {
 
     private var itemGrid: some View {
         GeometryReader { viewport in
+            // Derive the column count once for this viewport so the scrolling
+            // and non-scrolling grid agree; `adaptive` used to drop to two
+            // columns inside the slightly narrower scroll container.
+            let gridColumns = Array(
+                repeating: GridItem(.flexible(minimum: 0), spacing: Self.gridSpacing),
+                count: ShelfLayoutEngine.gridColumnCount(for: viewport.size.width)
+            )
             let fits = presentationStyle == .classic
                 && ShelfLayoutEngine.gridFits(itemCount: store.visibleItems.count,
                                               viewport: viewport.size)
             Group {
                 if fits {
-                    cardGrid.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    cardGrid(columns: gridColumns)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 } else {
-                    scrollingGrid
+                    scrollingGrid(columns: gridColumns)
                 }
             }
+            // The grid container keeps the pre-selection bounds for a few frames
+            // while the quick-action row animates in, so it swallows clicks on
+            // the empty area below the cards. Treat a tap here as a background
+            // tap; card clicks are owned by their AppKit event layer.
+            .contentShape(Rectangle())
+            .onTapGesture(perform: clearSelectionAndCollapse)
             // Change the container immediately; do not keep an outgoing grid
             // alive with the same card IDs and shared drag/selection geometry.
             .animation(nil, value: fits)
         }
     }
 
-    private var scrollingGrid: some View {
+    private func scrollingGrid(columns: [GridItem]) -> some View {
         ScrollView(.vertical) {
-            cardGrid
+            cardGrid(columns: columns)
         }
         .scrollIndicators(.hidden)
     }
 
-    private var cardGrid: some View {
+    private func cardGrid(columns: [GridItem]) -> some View {
         LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
             ForEach(store.visibleItems) { item in
                 gridCell(for: item)
@@ -616,7 +635,8 @@ struct ShelfView: View {
     private var insertionIndicator: some View {
         Capsule()
             .fill(Color.accentColor)
-            .frame(width: 3)
+            .frame(width: 4)
+            .shadow(color: Color.accentColor.opacity(0.32), radius: 3)
             .allowsHitTesting(false)
     }
 
@@ -627,7 +647,7 @@ struct ShelfView: View {
     /// 用 accent，⌘ 剪切移入用橙色（与卡片剪刀角标同色，语义一致）。
     @ViewBuilder
     private var dropTargetHighlight: some View {
-        if dropTargetState.isTargeted {
+        if dropTargetState.isTargeted, !dropTargetState.isReordering {
             RoundedRectangle(cornerRadius: settings.appearance.cornerRadius)
                 .strokeBorder(dropModeTint, lineWidth: 2)
                 .background {
@@ -648,7 +668,9 @@ struct ShelfView: View {
     @ViewBuilder
     private var dropModeHint: some View {
         if dropTargetState.isTargeted {
-            Text(dropTargetState.mode == .move
+            Text(dropTargetState.isReordering
+                 ? String(localized: "Release to reorder")
+                 : dropTargetState.mode == .move
                  ? String(localized: "Release to move the original here ⌘")
                  : String(localized: "Release to add a reference"))
                 .font(.caption)

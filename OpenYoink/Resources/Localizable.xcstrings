@@ -3135,6 +3135,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "松开将原文件移动到此处 ⌘" } }
       }
     },
+    "Release to reorder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Release to reorder" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "松开以调整顺序" } }
+      }
+    },
     "Remove" : {
       "extractionState" : "manual",
       "localizations" : {

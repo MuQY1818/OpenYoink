@@ -157,8 +157,11 @@ enum DragPayloadBuilder {
                                   frame: NSRect,
                                   bookmarkService: BookmarkService,
                                   delivery: DeliverySink? = nil,
-                                  tutorialTokensByItemID: [UUID: String] = [:]) -> [NSDraggingItem] {
-        flattenedItems(items).compactMap { item in
+                                  tutorialTokensByItemID: [UUID: String] = [:],
+                                  cardPreviewImage: NSImage? = nil) -> [NSDraggingItem] {
+        let flattened = flattenedItems(items)
+        let singleItemPreview = flattened.count == 1 ? cardPreviewImage : nil
+        return flattened.compactMap { item in
             guard let writer = makePasteboardWriter(
                 for: item,
                 bookmarkService: bookmarkService,
@@ -168,7 +171,18 @@ enum DragPayloadBuilder {
                 return nil
             }
             let draggingItem = NSDraggingItem(pasteboardWriter: writer)
-            draggingItem.setDraggingFrame(frame, contents: dragImage(for: item))
+            let contents = singleItemPreview ?? dragImage(for: item)
+            // The preview keeps the item's own aspect ratio, so the frame
+            // follows it instead of squeezing it back into the card's box. It
+            // is centred on the card: Shelf reordering targets the card centre,
+            // and the preview the user steers must sit on that same point.
+            let draggingFrame = singleItemPreview.map {
+                NSRect(x: frame.midX - $0.size.width / 2,
+                       y: frame.midY - $0.size.height / 2,
+                       width: $0.size.width,
+                       height: $0.size.height)
+            } ?? frame
+            draggingItem.setDraggingFrame(draggingFrame, contents: contents)
             return draggingItem
         }
     }

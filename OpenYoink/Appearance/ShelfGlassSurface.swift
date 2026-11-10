@@ -56,6 +56,9 @@ struct ShelfGlassSurface: View {
 /// the shelf content, the tracking container, or the native glass backdrop.
 struct ShelfInteractiveGlassSurface<Content: View>: View {
     let appearance: ShelfAppearance
+    /// 空白处的点击（清选择/收起 Stack）。命中层独立于高度弹簧动画，
+    /// 见下方 `stableSurfaceBounds`。
+    var onBackgroundTap: (() -> Void)?
     private let content: Content
     @State private var pointer = ShelfGlassPointer()
     /// issue #10：拉环 ↔ 面板形变（nil 时始终展开）。
@@ -63,8 +66,11 @@ struct ShelfInteractiveGlassSurface<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    init(appearance: ShelfAppearance, @ViewBuilder content: () -> Content) {
+    init(appearance: ShelfAppearance,
+         onBackgroundTap: (() -> Void)? = nil,
+         @ViewBuilder content: () -> Content) {
         self.appearance = appearance
+        self.onBackgroundTap = onBackgroundTap
         self.content = content()
     }
 
@@ -101,6 +107,20 @@ struct ShelfInteractiveGlassSurface<Content: View>: View {
                     .overlay { ShelfTrackedGlassHighlights(appearance: appearance, pointer: pointer) }
                     .frame(width: max(glassRect.width, 1), height: max(glassRect.height, 1))
                     .offset(x: glassRect.minX, y: glassRect.minY)
+                // Empty-surface taps live on a layer that ignores the height
+                // spring. While the surface animates (selection inserts the
+                // quick-action row), a moving hit target swallows the click that
+                // should clear the selection, so this layer uses the static
+                // target height instead of `surfaceHeight`.
+                if let onBackgroundTap {
+                    let hitRect = reveal?.stableSurfaceBounds(in: canvas) ?? bounds
+                    Color.clear
+                        .frame(width: max(hitRect.width, 1),
+                               height: max(hitRect.height, 1))
+                        .contentShape(ShelfGlassShape(preferredRadius: appearance.cornerRadius))
+                        .offset(x: hitRect.minX, y: hitRect.minY)
+                        .onTapGesture(perform: onBackgroundTap)
+                }
                 // Content keeps its final layout and is only *revealed* inside the
                 // growing glass: it never floats outside the material, and text
                 // is never scaled mid-flight.

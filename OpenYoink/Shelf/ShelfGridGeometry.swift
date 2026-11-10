@@ -35,21 +35,41 @@ enum DropInsertionLocator {
     ///
     /// 行领地纵向上扩/下延 `rowGapSlack`：行间空隙归属上一行；首行之上
     /// （如标题栏区域）与末行之下（网格空白区）不命中任何行 → 追加末尾。
-    /// 行内取第一张水平中线在点右侧的卡片之下标；点在本行末卡片右侧 →
+    /// 行内取第一张激活线在点右侧的卡片之下标；点在本行末卡片右侧 →
     /// 本行末尾之后（下一行首卡位置；末行即 itemCount）。
     /// 无可用几何（布局尚未上报）时回退追加末尾（S4 的既有行为）。
+    ///
+    /// `activation` decides which line inside a card the dragged point has to
+    /// cross before the slot moves in front of it:
+    /// - `.center` follows the card's horizontal middle. Vertical drags and
+    ///   external imports use it, so the slot follows the column under the
+    ///   pointer instead of the horizontal edge the card came from.
+    /// - `.leading` / `.trailing` measure `activationRatio` inward from that
+    ///   edge. Horizontal Shelf reordering uses them so both directions swap
+    ///   as soon as the dragged card barely enters the next one.
+    nonisolated enum Activation: Sendable {
+        case center
+        case leading
+        case trailing
+    }
+
     nonisolated static func insertionIndex(for point: CGPoint,
                                            frames: [(index: Int, frame: CGRect)],
-                                           itemCount: Int) -> Int {
+                                           itemCount: Int,
+                                           activation: Activation = .center,
+                                           activationRatio: CGFloat = 0.10) -> Int {
         guard itemCount > 0 else { return 0 }
+        let ratio = min(max(activationRatio, 0), 1)
         let sorted = frames.sorted { $0.index < $1.index }
         guard !sorted.isEmpty else { return itemCount }
 
-        // 行分组：同行卡片 minY 一致（4pt 容差抗浮点抖动）。
+        // 行分组：同一行的卡片垂直中心一致。Card heights can differ when a
+        // title wraps, so minY would split one visual row into overlapping
+        // pseudo-rows.
         var rows: [[(index: Int, frame: CGRect)]] = []
         for entry in sorted {
-            if let rowMinY = rows.last?.first?.frame.minY,
-               abs(entry.frame.minY - rowMinY) <= 4 {
+            if let rowMidY = rows.last?.first?.frame.midY,
+               abs(entry.frame.midY - rowMidY) <= 4 {
                 rows[rows.count - 1].append(entry)
             } else {
                 rows.append([entry])
@@ -60,7 +80,17 @@ enum DropInsertionLocator {
             let rowTop = (row.map(\.frame.minY).min() ?? 0) - rowGapSlack
             let rowBottom = (row.map(\.frame.maxY).max() ?? 0) + rowGapSlack
             guard point.y >= rowTop, point.y <= rowBottom else { continue }
-            for entry in row where point.x < entry.frame.midX {
+            for entry in row {
+                let activationX: CGFloat
+                switch activation {
+                case .center:
+                    activationX = entry.frame.midX
+                case .leading:
+                    activationX = entry.frame.minX + entry.frame.width * ratio
+                case .trailing:
+                    activationX = entry.frame.maxX - entry.frame.width * ratio
+                }
+                guard point.x < activationX else { continue }
                 return entry.index
             }
             let lastIndex = row.map(\.index).max() ?? (itemCount - 1)

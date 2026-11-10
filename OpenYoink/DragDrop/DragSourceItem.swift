@@ -87,6 +87,7 @@ final class DragOutController {
             tutorialItemIDs: tutorialIDs
         )
         let sessionID = UUID()
+        let dragAnchorOffset = Self.dragAnchorOffset(from: sourceView, event: event)
         let deliveryCoordinator = deliveryCoordinator
         deliveryCoordinator.noteSessionBegan(id: sessionID, contents: effectiveContents)
         let sink = DeliverySink(
@@ -113,6 +114,7 @@ final class DragOutController {
             for: effectiveContents.items,
             bookmarkService: bookmarkService
         )
+        let flattenedPreviewItems = DragPayloadBuilder.flattenedItems(effectiveContents.items)
         let draggingItems = DragPayloadBuilder.makeDraggingItems(
             for: effectiveContents.items,
             frame: sourceView.bounds,
@@ -122,7 +124,11 @@ final class DragOutController {
                 uniqueKeysWithValues: DragPayloadBuilder.flattenedItems(effectiveContents.items).compactMap { item in
                     tutorialTokenForItem(item.id).map { (item.id, $0) }
                 }
-            )
+            ),
+            cardPreviewImage: flattenedPreviewItems.count == 1
+                ? Self.makeCardPreview(for: flattenedPreviewItems[0],
+                                       appearance: settings.appearance)
+                : nil
         )
         guard !draggingItems.isEmpty else {
             deliveryCoordinator.noteSessionEnded(id: sessionID, accepted: false)
@@ -141,8 +147,127 @@ final class DragOutController {
                                                }
                                            ),
                                            onSuccessfulDrop: onSuccessfulDrop,
+                                           dragAnchorOffset: dragAnchorOffset,
                                            fileAccess: fileAccess)
+        // Counted only once a session really starts: the source's
+        // `draggingSession(_:endedAt:)` is the matching decrement, and the early
+        // return above has no session to end.
+        deliveryCoordinator.noteDragSessionStarted()
         sourceView.beginDraggingSession(with: draggingItems, event: event, source: source)
+    }
+
+    /// Draws the drag preview at the same size the item occupies in the shelf:
+    /// the card's thumbnail area is a fixed 52pt-high box with aspect-fit, so a
+    /// portrait image stays narrow and a document keeps its square icon.
+    private static func makeCardPreview(for item: ShelfItem,
+                                        appearance: ShelfAppearance) -> NSImage? {
+        let thumbnail = thumbnailImage(for: item)
+        let aspect = thumbnail.flatMap { image -> CGFloat? in
+            guard image.size.width > 0, image.size.height > 0 else { return nil }
+            return image.size.height / image.size.width
+        } ?? 1
+        let thumbnailHeight: CGFloat = 52
+        let thumbnailWidth = min(max(thumbnailHeight / max(aspect, 0.1), 20), 88)
+        let labelHeight: CGFloat = 18
+        let width = max(thumbnailWidth, 64)
+        let size = NSSize(width: width,
+                          height: (thumbnailHeight + labelHeight + 4).rounded())
+
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        guard let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int((size.width * scale).rounded()),
+            pixelsHigh: Int((size.height * scale).rounded()),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+        representation.size = size
+
+        let isDark = appearance.theme.colorScheme.map { $0 == .dark }
+            ?? (NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: representation)
+        defer { NSGraphicsContext.restoreGraphicsState() }
+
+        let thumbnailRect = NSRect(x: (width - thumbnailWidth) / 2,
+                                   y: labelHeight + 4,
+                                   width: thumbnailWidth,
+                                   height: thumbnailHeight)
+        if let thumbnail {
+            drawAspectFit(thumbnail, in: thumbnailRect, cornerRadius: 6)
+        }
+
+        let labelRect = NSRect(x: 0, y: 0, width: width, height: labelHeight)
+        (isDark ? NSColor(calibratedWhite: 0.24, alpha: 0.94)
+                : NSColor(calibratedWhite: 0.97, alpha: 0.96)).setFill()
+        NSBezierPath(roundedRect: labelRect, xRadius: 6, yRadius: 6).fill()
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        (item.displayName as NSString).draw(
+            with: labelRect.insetBy(dx: 5, dy: 3),
+            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 7.5, weight: .regular),
+                .foregroundColor: isDark
+                    ? NSColor.white.withAlphaComponent(0.92)
+                    : NSColor.black.withAlphaComponent(0.75),
+                .paragraphStyle: paragraph
+            ]
+        )
+
+        let image = NSImage(size: size)
+        image.addRepresentation(representation)
+        return image
+    }
+
+    private static func thumbnailImage(for item: ShelfItem) -> NSImage? {
+        if let cached = DragImageCache.image(for: item.id) {
+            return NSImage(cgImage: cached,
+                           size: NSSize(width: cached.width, height: cached.height))
+        }
+        if let path = item.path {
+            return NSWorkspace.shared.icon(forFile: path)
+        }
+        let symbolName = switch item.kind {
+        case .text: "doc.text"
+        case .url: "link"
+        default: "doc"
+        }
+        return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+    }
+
+    private static func drawAspectFit(_ image: NSImage, in rect: NSRect, cornerRadius: CGFloat) {
+        guard image.size.width > 0, image.size.height > 0 else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius).addClip()
+        let scale = min(rect.width / image.size.width, rect.height / image.size.height)
+        let drawSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        image.draw(in: NSRect(x: rect.midX - drawSize.width / 2,
+                              y: rect.midY - drawSize.height / 2,
+                              width: drawSize.width, height: drawSize.height))
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Offset from the current pointer to the source card center, in window
+    /// coordinates. Adding it to a dragging location yields the card center.
+    private static func dragAnchorOffset(from sourceView: NSView,
+                                         event: NSEvent) -> CGSize {
+        guard sourceView.window != nil else { return .zero }
+        let center = sourceView.convert(
+            NSPoint(x: sourceView.bounds.midX, y: sourceView.bounds.midY),
+            to: nil
+        )
+        let pointer = event.locationInWindow
+        return CGSize(width: center.x - pointer.x,
+                      height: center.y - pointer.y)
     }
 }
 
@@ -151,7 +276,14 @@ final class DragOutController {
 final class DragSessionController: NSObject, NSDraggingSource {
     private let contents: DragOutContents
     var itemsForFolderCopy: [ShelfItem] { contents.items }
+    var topLevelItemIDs: Set<UUID> { contents.topLevelIDs }
     var acceptedByFolderCopy = false
+    var acceptedByShelfReorder = false
+    var canReorderOnShelf: Bool {
+        !topLevelItemIDs.isEmpty
+            && policyExcludedItemIDs.isDisjoint(with: topLevelItemIDs)
+    }
+    var dragAnchorOffset: CGSize { anchorOffset }
     private let sessionID: UUID
     private let store: ShelfStore
     private let settings: SettingsStore
@@ -161,6 +293,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
     /// 常规拖出策略影响，也绝不能进入「最近项目」。
     private let policyExcludedItemIDs: Set<UUID>
     private let onSuccessfulDrop: (@MainActor () -> Void)?
+    private let anchorOffset: CGSize
     private var fileAccess: BookmarkAccessLease?
 
     init(contents: DragOutContents,
@@ -171,6 +304,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
          delivery: DeliveryCoordinator? = nil,
          policyExcludedItemIDs: Set<UUID> = [],
          onSuccessfulDrop: (@MainActor () -> Void)? = nil,
+         dragAnchorOffset: CGSize = .zero,
          fileAccess: BookmarkAccessLease? = nil) {
         self.contents = contents
         self.sessionID = sessionID
@@ -180,6 +314,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
         self.delivery = delivery
         self.policyExcludedItemIDs = policyExcludedItemIDs
         self.onSuccessfulDrop = onSuccessfulDrop
+        self.anchorOffset = dragAnchorOffset
         self.fileAccess = fileAccess
         super.init()
     }
@@ -212,7 +347,8 @@ final class DragSessionController: NSObject, NSDraggingSource {
 
     func completeDrag(operation: NSDragOperation) {
         defer { fileAccess = nil }
-        if acceptedByFolderCopy {
+        delivery?.noteDragSessionEnded()
+        if acceptedByFolderCopy || acceptedByShelfReorder {
             delivery?.noteSessionEnded(id: sessionID, accepted: false)
             return
         }
@@ -233,6 +369,12 @@ final class DragSessionController: NSObject, NSDraggingSource {
         // failure arrived early, the coordinator can now safely reinsert the
         // failed snapshot instead of having this method remove it afterwards.
         delivery?.noteSessionEnded(id: sessionID, accepted: true)
+    }
+
+    /// Marks this session as an internal Shelf reorder. The source must not
+    /// treat the destination acknowledgement as an external delivery.
+    func acceptShelfReorder() {
+        acceptedByShelfReorder = true
     }
 
     /// F-05: 剔除剪切项后的顶层 id 集合（策略移除/询问只作用于非剪切项）。
@@ -489,6 +631,17 @@ final class DeliveryCoordinator {
                 break
             }
         }
+    }
+
+    /// Brackets an AppKit dragging session so the shelf can hide its transfer
+    /// strip mid-drag. Call `noteDragSessionStarted` only right before
+    /// `beginDraggingSession`; the NSDraggingSource end callback balances it.
+    func noteDragSessionStarted() {
+        transferStore.noteDragSessionStarted()
+    }
+
+    func noteDragSessionEnded() {
+        transferStore.noteDragSessionEnded()
     }
 
     /// Runtime file leases used by Storage settings. A direct drop can remove

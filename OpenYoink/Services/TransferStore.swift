@@ -146,6 +146,22 @@ final class TransferStore {
 
     var hasVisibleActivity: Bool { currentTask != nil }
 
+    /// Drag-out sessions currently in flight.
+    ///
+    /// The shelf hides the transfer strip while a drag is active: inserting it
+    /// re-lays out the grid, which rebuilds the cards and clears the geometry
+    /// the insertion locator needs — a reorder would then fall back to
+    /// "append to the end" mid-drag.
+    private(set) var dragSessionsInFlight = 0
+
+    func noteDragSessionStarted() {
+        dragSessionsInFlight += 1
+    }
+
+    func noteDragSessionEnded() {
+        dragSessionsInFlight = max(0, dragSessionsInFlight - 1)
+    }
+
     /// Card-level status for the newest visible batch. Import failures have no
     /// card to annotate; export status can be mapped through the private
     /// expected-item progress without exposing delivery internals to the UI.
