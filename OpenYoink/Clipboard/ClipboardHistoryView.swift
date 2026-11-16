@@ -199,7 +199,7 @@ private struct ClipboardHistoryRow: View {
             }
             .help(Text("View Clipboard Item")).accessibilityLabel("View Clipboard Item")
             VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: entry.content.searchText.isEmpty ? String(localized: "Image") : String(entry.content.searchText.prefix(500)))
+                Text(verbatim: entry.content.searchText.isEmpty ? String(localized: "Image") : String(entry.content.previewText.prefix(500)))
                     .font(.system(size: 12)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(entry.copiedAt, style: .relative).font(.caption2).foregroundStyle(secondaryForeground)

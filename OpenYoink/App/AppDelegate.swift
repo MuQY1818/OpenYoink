@@ -519,7 +519,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch content {
         case .text(let value): item.setString(value, forType: .string)
         case .url(let value): item.setString(value, forType: .URL)
-        case .image(let data, let type): item.setData(data, forType: .init(type))
+        case .image(let data, let type): item.setClipboardHistoryImage(data, type: type)
         }
         pasteboard.writeObjects([item])
         let result = dropImportCoordinator.importItems(from: pasteboard) { [weak self] item in

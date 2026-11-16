@@ -119,19 +119,58 @@ final class ClipboardHistoryStore {
         lastChangeCount = changeCount
         let types = Set((pasteboard.pasteboardItems ?? []).flatMap { $0.types.map(\.rawValue) })
             .union((pasteboard.types ?? []).map(\.rawValue))
-        guard ClipboardHistoryPolicy.permits(types: types, sourceIsIgnored: sourceIsIgnored()) else { return }
-        var content: ClipboardHistoryEntry.Content?
-        if let data = pasteboard.data(forType: .png), data.count <= ClipboardHistoryPolicy.maximumImageBytes {
-            content = .image(data, type: NSPasteboard.PasteboardType.png.rawValue)
-        } else if let data = pasteboard.data(forType: .tiff), data.count <= ClipboardHistoryPolicy.maximumImageBytes {
-            content = .image(data, type: NSPasteboard.PasteboardType.tiff.rawValue)
-        } else if let value = pasteboard.string(forType: .URL), ClipboardHistoryEntry.Content.url(value).isValid {
-            content = .url(value)
-        } else if let value = pasteboard.string(forType: .string) {
-            content = ClipboardHistoryEntry.Content.url(value).isValid ? .url(value) : .text(value)
+        let isFileCopy = types.contains(NSPasteboard.PasteboardType.fileURL.rawValue)
+        let fileURLs = isFileCopy
+            ? (pasteboard.readObjects(forClasses: [NSURL.self],
+                                      options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+            : []
+        guard ClipboardHistoryPolicy.permits(types: types, fileURLs: fileURLs,
+                                             sourceIsIgnored: sourceIsIgnored()) else { return }
+        let copiedAt = now()
+        // An image file copied in Finder: the pasteboard holds only its link,
+        // so the image comes from the file (read and encoded off the main actor).
+        if isFileCopy, !ClipboardHistoryPolicy.carriesBitmap(types), let fileURL = fileURLs.first {
+            Task.detached(priority: .utility) { [weak self] in
+                guard let image = ClipboardHistoryPolicy.imageFromFile(fileURL) else { return }
+                await self?.record(.image(image.data, type: image.type), copiedAt: copiedAt)
+            }
+            return
         }
-        guard pasteboard.changeCount == changeCount, let content, content.isValid else { return }
-        let next = ClipboardHistoryPolicy.inserting(content, into: entries, now: now(), retentionDays: settings.clipboardHistoryRetentionDays,
+        var content: ClipboardHistoryEntry.Content?
+        var oversizedImage: Data?
+        // Read TIFF only when there is no PNG: asking for it makes AppKit
+        // convert a PNG-only copy into a large uncompressed bitmap.
+        for type in [NSPasteboard.PasteboardType.png, .tiff] where content == nil && oversizedImage == nil {
+            guard let data = pasteboard.data(forType: type) else { continue }
+            if data.count <= ClipboardHistoryPolicy.maximumImageBytes {
+                content = .image(data, type: type.rawValue)
+            } else {
+                oversizedImage = data
+            }
+        }
+        if content == nil, oversizedImage == nil, !isFileCopy {
+            if let value = pasteboard.string(forType: .URL), ClipboardHistoryEntry.Content.url(value).isValid {
+                content = .url(value)
+            } else if let value = pasteboard.string(forType: .string) {
+                content = ClipboardHistoryEntry.Content.url(value).isValid ? .url(value) : .text(value)
+            }
+        }
+        guard pasteboard.changeCount == changeCount else { return }
+        if let oversizedImage {
+            Task.detached(priority: .utility) { [weak self] in
+                guard let image = ClipboardHistoryPolicy.reencodedImage(oversizedImage) else { return }
+                await self?.record(.image(image.data, type: image.type), copiedAt: copiedAt)
+            }
+            return
+        }
+        guard let content else { return }
+        record(content, copiedAt: copiedAt)
+    }
+
+    private func record(_ content: ClipboardHistoryEntry.Content, copiedAt: Date) {
+        // A re-encode can finish after the user paused or turned history off.
+        guard isRecording, content.isValid else { return }
+        let next = ClipboardHistoryPolicy.inserting(content, into: entries, now: copiedAt, retentionDays: settings.clipboardHistoryRetentionDays,
                                                      entryLimit: settings.clipboardHistoryEntryLimit)
         guard next.contains(where: { $0.content == content }) else {
             noticeMessage = String(localized: "History storage is full. Remove a favorite or an image to record more.")
@@ -149,7 +188,7 @@ final class ClipboardHistoryStore {
         case .url(let value):
             item.setString(value, forType: .URL)
             item.setString(value, forType: .string)
-        case .image(let data, let type): item.setData(data, forType: .init(type))
+        case .image(let data, let type): item.setClipboardHistoryImage(data, type: type)
         }
         pasteboard.clearContents()
         let success = pasteboard.writeObjects([item])
@@ -242,6 +281,17 @@ final class ClipboardHistoryStore {
             try await persistence.save(entries, revision: revision)
         } catch {
             errorMessage = String(localized: "Clipboard history could not be saved.")
+        }
+    }
+}
+
+extension NSPasteboardItem {
+    /// Writes a history image back. A JPEG entry (an oversized copy that was
+    /// re-encoded) also offers TIFF, because many apps paste only PNG or TIFF.
+    func setClipboardHistoryImage(_ data: Data, type: String) {
+        setData(data, forType: .init(type))
+        if type == "public.jpeg", let tiff = NSBitmapImageRep(data: data)?.tiffRepresentation {
+            setData(tiff, forType: .tiff)
         }
     }
 }
