@@ -104,6 +104,7 @@ final class ShelfWindowController: NSObject {
     let nowPlayingModuleStore: NowPlayingModuleStore
     let systemStatusModuleStore: SystemStatusModuleStore
     let aiUsageModuleStore: AIUsageModuleStore
+    let translateModuleStore: TranslateModuleStore
     let favoriteFoldersStore: FavoriteFoldersStore
     let favoriteFolderDropCoordinator: FavoriteFolderDropCoordinator
     let islandModuleContainer: IslandModuleContainer
@@ -225,6 +226,7 @@ final class ShelfWindowController: NSObject {
                 .environment(nowPlayingModuleStore)
                 .environment(systemStatusModuleStore)
                 .environment(aiUsageModuleStore)
+                .environment(translateModuleStore)
                 .environment(favoriteFoldersStore)
                 .environment(favoriteFolderDropCoordinator)
                 .environment(clipboardHistoryStore)
@@ -416,6 +418,11 @@ final class ShelfWindowController: NSObject {
             start: { favoriteFoldersStore.start() },
             stop: { favoriteFoldersStore.stop(); favoriteFolderDropCoordinator.cancelCopy() }
         )
+        // Translate keeps its text in memory and has no background work.
+        let translateModuleStore = TranslateModuleStore()
+        let translateModuleRuntime = CallbackIslandModuleRuntime(
+            descriptor: TranslateModuleStore.moduleDescriptor
+        )
         self.islandActivityCoordinator = islandActivityCoordinator
         self.islandModuleRegistry = islandModuleRegistry
         self.islandTimerStore = islandTimerStore
@@ -423,6 +430,7 @@ final class ShelfWindowController: NSObject {
         self.nowPlayingModuleStore = nowPlayingModuleStore
         self.systemStatusModuleStore = systemStatusModuleStore
         self.aiUsageModuleStore = aiUsageModuleStore
+        self.translateModuleStore = translateModuleStore
         self.favoriteFoldersStore = favoriteFoldersStore
         self.favoriteFolderDropCoordinator = favoriteFolderDropCoordinator
         self.transfersModuleRuntime = transfersModuleRuntime
@@ -482,6 +490,11 @@ final class ShelfWindowController: NSObject {
                     descriptor: aiUsageModuleStore.descriptor,
                     runtime: aiUsageModuleStore,
                     makeContentView: { _ in AnyView(IslandModuleScrollView { IslandAIUsageView() }) }
+                ),
+                IslandModuleRegistration(
+                    descriptor: translateModuleRuntime.descriptor,
+                    runtime: translateModuleRuntime,
+                    makeContentView: { _ in AnyView(IslandTranslateView()) }
                 ),
             ],
             coordinator: islandActivityCoordinator
@@ -1177,8 +1190,9 @@ final class ShelfWindowController: NSObject {
             return false
         }
 
+        // Text modules own the keyboard: never run a shelf action from them.
         if sourcePanel === islandPanel,
-           islandActivityCoordinator.selectedModule == .clipboard {
+           [.clipboard, .translate].contains(islandActivityCoordinator.selectedModule) {
             if event.keyCode == 53, modifiers.isEmpty {
                 collapseIsland(animated: true)
                 return true

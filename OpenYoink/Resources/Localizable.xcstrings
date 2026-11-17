@@ -5278,6 +5278,120 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Unpin Island" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消固定灵动岛" } }
       }
+    },
+    "Translate" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Translate" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "翻译" } }
+      }
+    },
+    "Apple Translation · on this Mac" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Apple Translation · on this Mac" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Apple 翻译 · 在本机运行" } }
+      }
+    },
+    "Translate to" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Translate to" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "翻译为" } }
+      }
+    },
+    "Target language" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Target language" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "目标语言" } }
+      }
+    },
+    "Text to translate" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Text to translate" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待翻译文本" } }
+      }
+    },
+    "Paste subtitles or text here" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Paste subtitles or text here" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在这里粘贴字幕或文本" } }
+      }
+    },
+    "Clear" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空" } }
+      }
+    },
+    "Copy Translation" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy Translation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制译文" } }
+      }
+    },
+    "Translation" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Translation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "译文" } }
+      }
+    },
+    "Language Settings" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Language Settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语言设置" } }
+      }
+    },
+    "Translation was cancelled." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Translation was cancelled." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "翻译已取消。" } }
+      }
+    },
+    "This language pair isn't supported. The text may already be in the target language." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This language pair isn't supported. The text may already be in the target language." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不支持这组语言，原文可能已经是目标语言。" } }
+      }
+    },
+    "Couldn't detect the source language." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't detect the source language." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法识别原文语言。" } }
+      }
+    },
+    "Nothing to translate." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Nothing to translate." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有可翻译的内容。" } }
+      }
+    },
+    "The language isn't downloaded yet. Download it in System Settings." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The language isn't downloaded yet. Download it in System Settings." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该语言尚未下载，请到系统设置中下载。" } }
+      }
+    },
+    "Translation failed. You may need to download the language in System Settings." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Translation failed. You may need to download the language in System Settings." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "翻译失败，可能需要先到系统设置中下载语言。" } }
+      }
+    },
+    "Paste text to translate it line by line with Apple Translation. Text stays in memory and is never saved." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Paste text to translate it line by line with Apple Translation. Text stays in memory and is never saved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "粘贴文本后用 Apple 翻译逐行翻译。内容只保存在内存中，不会写入磁盘。" } }
+      }
+    },
+    "Couldn't detect the source language. Try pasting a few more words." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't detect the source language. Try pasting a few more words." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法识别原文语言，请多粘贴几个字。" } }
+      }
+    },
+    "The text is already in the target language." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The text is already in the target language." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "原文已经是目标语言。" } }
+      }
     }
   },
   "version" : "1.0"

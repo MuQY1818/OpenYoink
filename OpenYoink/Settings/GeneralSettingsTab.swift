@@ -198,6 +198,11 @@ struct GeneralSettingsTab: View {
                     islandModuleControl("Quick Access", id: .folders)
                     islandModuleControl("Clipboard History", id: .clipboard)
 
+                    islandModuleControl("Translate", id: .translate)
+                    Text("Paste text to translate it line by line with Apple Translation. Text stays in memory and is never saved.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     islandModuleControl("AI Usage", id: .aiUsage)
                     if settings.isIslandModuleEnabled(.aiUsage) {
                         Picker("Show in compact Island", selection: $settings.aiUsageCompactMetric) {

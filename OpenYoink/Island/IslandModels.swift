@@ -70,6 +70,7 @@ final class IslandModuleRegistry {
         .init(id: .clipboard, title: String(localized: "Clipboard History"),
               systemImage: "doc.on.clipboard", order: 7, isCore: false),
         AIUsageModuleStore.moduleDescriptor,
+        TranslateModuleStore.moduleDescriptor,
     ]
 
     private(set) var enabledIDs: Set<IslandModuleID> = [.shelf, .transfers]
