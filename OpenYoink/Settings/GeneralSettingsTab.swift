@@ -203,6 +203,11 @@ struct GeneralSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    islandModuleControl("Notes", id: .notes)
+                    Text("A scratch note that stays in the Island and is saved on this Mac.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     islandModuleControl("AI Usage", id: .aiUsage)
                     if settings.isIslandModuleEnabled(.aiUsage) {
                         Picker("Show in compact Island", selection: $settings.aiUsageCompactMetric) {

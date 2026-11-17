@@ -5381,6 +5381,36 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "粘贴文本后用 Apple 翻译逐行翻译。内容只保存在内存中，不会写入磁盘。" } }
       }
     },
+    "Notes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Notes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "便笺" } }
+      }
+    },
+    "Saved automatically on this Mac" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved automatically on this Mac" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动保存在本机" } }
+      }
+    },
+    "Note" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Note" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "便笺" } }
+      }
+    },
+    "Clear the note" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear the note" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空便笺" } }
+      }
+    },
+    "A scratch note that stays in the Island and is saved on this Mac." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "A scratch note that stays in the Island and is saved on this Mac." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "留在灵动岛里、保存在本机的随手便笺。" } }
+      }
+    },
     "Couldn't detect the source language. Try pasting a few more words." : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't detect the source language. Try pasting a few more words." } },

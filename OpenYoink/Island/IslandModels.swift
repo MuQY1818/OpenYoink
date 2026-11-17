@@ -71,6 +71,7 @@ final class IslandModuleRegistry {
               systemImage: "doc.on.clipboard", order: 7, isCore: false),
         AIUsageModuleStore.moduleDescriptor,
         TranslateModuleStore.moduleDescriptor,
+        NotesModuleStore.moduleDescriptor,
     ]
 
     private(set) var enabledIDs: Set<IslandModuleID> = [.shelf, .transfers]

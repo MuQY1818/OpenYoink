@@ -105,6 +105,7 @@ final class ShelfWindowController: NSObject {
     let systemStatusModuleStore: SystemStatusModuleStore
     let aiUsageModuleStore: AIUsageModuleStore
     let translateModuleStore: TranslateModuleStore
+    let notesModuleStore: NotesModuleStore
     let favoriteFoldersStore: FavoriteFoldersStore
     let favoriteFolderDropCoordinator: FavoriteFolderDropCoordinator
     let islandModuleContainer: IslandModuleContainer
@@ -227,6 +228,7 @@ final class ShelfWindowController: NSObject {
                 .environment(systemStatusModuleStore)
                 .environment(aiUsageModuleStore)
                 .environment(translateModuleStore)
+                .environment(notesModuleStore)
                 .environment(favoriteFoldersStore)
                 .environment(favoriteFolderDropCoordinator)
                 .environment(clipboardHistoryStore)
@@ -423,6 +425,11 @@ final class ShelfWindowController: NSObject {
         let translateModuleRuntime = CallbackIslandModuleRuntime(
             descriptor: TranslateModuleStore.moduleDescriptor
         )
+        // Notes persists its own text; no background work to start or stop.
+        let notesModuleStore = NotesModuleStore()
+        let notesModuleRuntime = CallbackIslandModuleRuntime(
+            descriptor: NotesModuleStore.moduleDescriptor
+        )
         self.islandActivityCoordinator = islandActivityCoordinator
         self.islandModuleRegistry = islandModuleRegistry
         self.islandTimerStore = islandTimerStore
@@ -431,6 +438,7 @@ final class ShelfWindowController: NSObject {
         self.systemStatusModuleStore = systemStatusModuleStore
         self.aiUsageModuleStore = aiUsageModuleStore
         self.translateModuleStore = translateModuleStore
+        self.notesModuleStore = notesModuleStore
         self.favoriteFoldersStore = favoriteFoldersStore
         self.favoriteFolderDropCoordinator = favoriteFolderDropCoordinator
         self.transfersModuleRuntime = transfersModuleRuntime
@@ -495,6 +503,11 @@ final class ShelfWindowController: NSObject {
                     descriptor: translateModuleRuntime.descriptor,
                     runtime: translateModuleRuntime,
                     makeContentView: { _ in AnyView(IslandTranslateView()) }
+                ),
+                IslandModuleRegistration(
+                    descriptor: notesModuleRuntime.descriptor,
+                    runtime: notesModuleRuntime,
+                    makeContentView: { _ in AnyView(IslandNotesView()) }
                 ),
             ],
             coordinator: islandActivityCoordinator
