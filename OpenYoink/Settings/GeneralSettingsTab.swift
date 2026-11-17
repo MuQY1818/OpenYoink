@@ -233,6 +233,13 @@ struct GeneralSettingsTab: View {
                 }
             }
 
+            Section("Balance Query") {
+                BalanceSettingsSection()
+                Text("Balances refresh at most every 30 seconds and are shown at the bottom of the AI usage module. API keys are stored on this Mac inside the app sandbox and are only sent to the provider itself.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Clipboard History") {
                 Toggle("Record Clipboard", isOn: $settings.clipboardHistoryEnabled)
                     .onChange(of: settings.clipboardHistoryEnabled) { _, _ in history.updateRecording() }

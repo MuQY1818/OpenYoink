@@ -17,6 +17,7 @@ final class SettingsWindowController {
     private let navigation: SettingsNavigationModel
     private let supportController: SupportController
     private let clipboardHistoryStore: ClipboardHistoryStore
+    private let balanceStore: BalanceStore
     private var window: NSWindow?
 
     init(settings: SettingsStore,
@@ -26,7 +27,8 @@ final class SettingsWindowController {
          storageManagementController: StorageManagementController,
          navigation: SettingsNavigationModel,
          supportController: SupportController,
-         clipboardHistoryStore: ClipboardHistoryStore) {
+         clipboardHistoryStore: ClipboardHistoryStore,
+         balanceStore: BalanceStore) {
         self.settings = settings
         self.hotKeyMonitor = hotKeyMonitor
         self.launchAtLoginController = launchAtLoginController
@@ -35,6 +37,7 @@ final class SettingsWindowController {
         self.navigation = navigation
         self.supportController = supportController
         self.clipboardHistoryStore = clipboardHistoryStore
+        self.balanceStore = balanceStore
     }
 
     /// 显示设置窗口并激活应用（LSUIElement：窗口前置与键盘焦点都依赖显式
@@ -56,6 +59,7 @@ final class SettingsWindowController {
                 .environment(navigation)
                 .environment(supportController)
                 .environment(clipboardHistoryStore)
+                .environment(balanceStore)
             let hostingController = NSHostingController(rootView: rootView)
             hostingController.view.setAccessibilityLabel(
                 String(localized: "OpenYoink Settings")

@@ -104,6 +104,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Help, voluntary issue reporting and privacy-safe local diagnostics.
     lazy var supportController = SupportController(settings: settingsStore)
 
+    /// Balance-query sources for the AI usage module (entries + Keychain keys).
+    lazy var balanceStore = BalanceStore()
+
     private lazy var shelfWindowController: ShelfWindowController = ShelfWindowController(appState: appState,
                                                                    store: shelfStore,
                                                                    importCoordinator: dropImportCoordinator,
@@ -113,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                                    deliveryCoordinator: deliveryCoordinator,
                                                                    dragStartMonitor: dragStartMonitor,
                                                                    clipboardHistoryStore: clipboardHistoryStore,
+                                                                   balanceStore: balanceStore,
                                                                    onOpenSettings: { [weak self] in
                                                                        self?.settingsWindowController.show(pane: .general)
                                                                    },
@@ -139,7 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                                          storageManagementController: storageManagementController,
                                                                          navigation: settingsNavigation,
                                                                          supportController: supportController,
-                                                                         clipboardHistoryStore: clipboardHistoryStore)
+                                                                         clipboardHistoryStore: clipboardHistoryStore,
+                                                                         balanceStore: balanceStore)
     private lazy var menuBarController = MenuBarController(
         isShelfExpanded: { [weak self] in
             self?.shelfPresentationCoordinator.isExpanded ?? false

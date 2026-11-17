@@ -3,6 +3,7 @@ import SwiftUI
 
 struct IslandAIUsageView: View {
     @Environment(AIUsageModuleStore.self) private var store
+    @Environment(BalanceStore.self) private var balanceStore
 
     var body: some View {
         VStack(spacing: 9) {
@@ -33,8 +34,19 @@ struct IslandAIUsageView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear { store.refreshIfStale() }
+        .onAppear {
+            store.refreshIfStale()
+            balanceStore.refreshIfStale()
+        }
+        // Keeps balances current while the module stays open: the store only
+        // fetches when its interval has elapsed, so a 1s tick is just a cheap
+        // staleness check. The publisher stops when the view goes away.
+        .onReceive(Self.balanceTick) { _ in
+            balanceStore.refreshIfStale()
+        }
     }
+
+    private static let balanceTick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var subtitle: String {
         guard let fetchedAt = store.snapshot?.fetchedAt, store.status == .ready else {
@@ -60,6 +72,12 @@ struct IslandAIUsageView: View {
             if let limits = snapshot.limits, !limits.windows.isEmpty || !limits.issues.isEmpty {
                 hairline
                 limitsList(limits, now: snapshot.fetchedAt)
+            }
+            if !balanceStore.entries.isEmpty {
+                hairline
+                BalanceStripView(entries: balanceStore.entries,
+                                 balances: balanceStore.balances,
+                                 onRefresh: { balanceStore.refresh(entry: $0) })
             }
         }
         .padding(.horizontal, 6)

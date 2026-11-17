@@ -18,6 +18,7 @@ struct OpenYoinkApp: App {
                 .environment(appDelegate.settingsNavigation)
                 .environment(appDelegate.supportController)
                 .environment(appDelegate.clipboardHistoryStore)
+                .environment(appDelegate.balanceStore)
         }
     }
 }

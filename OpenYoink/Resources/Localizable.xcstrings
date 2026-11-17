@@ -5411,6 +5411,132 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "留在灵动岛里、保存在本机的随手便笺。" } }
       }
     },
+    "Balances" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Balances" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "余额" } }
+      }
+    },
+    "The base URL is invalid." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The base URL is invalid." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "链接地址无效。" } }
+      }
+    },
+    "No API key saved for this entry." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No API key saved for this entry." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该账户还没有保存 API Key。" } }
+      }
+    },
+    "The API key was rejected (401)." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The API key was rejected (401)." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "API Key 被拒绝（401）。" } }
+      }
+    },
+    "This relay doesn't allow balance queries (403)." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This relay doesn't allow balance queries (403)." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该中转站未开放余额查询（403）。" } }
+      }
+    },
+    "Server error %lld." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Server error %lld." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务器错误 %lld。" } }
+      }
+    },
+    "Couldn't read the balance response." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't read the balance response." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法解析余额响应。" } }
+      }
+    },
+    "Network error: %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Network error: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络错误：%@" } }
+      }
+    },
+    "DeepSeek" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "DeepSeek" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "DeepSeek" } }
+      }
+    },
+    "OpenAI-compatible relay · %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OpenAI-compatible relay · %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OpenAI 兼容中转 · %@" } }
+      }
+    },
+    "No balance sources yet. Add DeepSeek or an OpenAI-compatible relay to see remaining balance in the AI usage module." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No balance sources yet. Add DeepSeek or an OpenAI-compatible relay to see remaining balance in the AI usage module." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "还没有余额账户。添加 DeepSeek 或 OpenAI 兼容中转站后，余额会显示在 AI 用量模块底部。" } }
+      }
+    },
+    "Add Balance Source" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Balance Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加余额账户" } }
+      }
+    },
+    "(unnamed)" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "(unnamed)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "（未命名）" } }
+      }
+    },
+    "Edit" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编辑" } }
+      }
+    },
+    "Type" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "类型" } }
+      }
+    },
+    "Base URL" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Base URL" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "站点地址" } }
+      }
+    },
+    "API Key" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "API Key" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "API Key" } }
+      }
+    },
+    "Saved — leave empty to keep" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved — leave empty to keep" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已保存——留空则保留" } }
+      }
+    },
+    "sk-…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "sk-…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "sk-…" } }
+      }
+    },
+    "Balance Query" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Balance Query" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "余额查询" } }
+      }
+    },
+    "Balances refresh at most every 30 seconds and are shown at the bottom of the AI usage module. API keys are stored on this Mac inside the app sandbox and are only sent to the provider itself." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Balances refresh at most every 30 seconds and are shown at the bottom of the AI usage module. API keys are stored on this Mac inside the app sandbox and are only sent to the provider itself." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "余额最长每 30 秒刷新一次，显示在 AI 用量模块底部。API Key 保存在本机沙盒内，只会发送给对应的服务方。" } }
+      }
+    },
     "Couldn't detect the source language. Try pasting a few more words." : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't detect the source language. Try pasting a few more words." } },

@@ -52,6 +52,7 @@ final class ShelfWindowController: NSObject {
     /// `static let shelfWidth` 占位常量已移除，宽度由此供给）。
     private let settings: SettingsStore
     private let clipboardHistoryStore: ClipboardHistoryStore
+    let balanceStore: BalanceStore
     /// Shelf 数据（S3 起注入 ShelfView 的 @Environment）。
     /// S4: DragContainerView（NSDraggingDestination 桥接）同样持有此 store。
     private let store: ShelfStore
@@ -232,6 +233,7 @@ final class ShelfWindowController: NSObject {
                 .environment(favoriteFoldersStore)
                 .environment(favoriteFolderDropCoordinator)
                 .environment(clipboardHistoryStore)
+                .environment(balanceStore)
                 .environment(\.bookmarkService, importCoordinator.bookmarkService)
                 .environment(\.dragOutController, dragOutController)
                 .environment(\.quickLookCoordinator, quickLookCoordinator)
@@ -344,6 +346,7 @@ final class ShelfWindowController: NSObject {
          deliveryCoordinator: DeliveryCoordinator,
          dragStartMonitor: DragStartMonitor,
          clipboardHistoryStore: ClipboardHistoryStore,
+         balanceStore: BalanceStore,
          onOpenSettings: @escaping @MainActor () -> Void = {},
          onOpenStorageRecovery: @escaping @MainActor () -> Void = {},
          tutorialTokenForItem: @escaping @MainActor (UUID) -> String? = { _ in nil }) {
@@ -353,6 +356,7 @@ final class ShelfWindowController: NSObject {
         self.tempFileService = tempFileService
         self.settings = settings
         self.clipboardHistoryStore = clipboardHistoryStore
+        self.balanceStore = balanceStore
         self.dragStartMonitor = dragStartMonitor
         self.onOpenSettings = onOpenSettings
         let islandActivityCoordinator = IslandActivityCoordinator()

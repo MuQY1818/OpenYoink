@@ -145,6 +145,13 @@ struct TokenTrackerSummaryResponse: Decodable, Sendable {
 /// own widget so both apps show the same labels.
 enum AIUsageLimitsParser {
     private static let skippedKeys: Set<String> = ["extra_usage", "provenance"]
+    /// Providers whose quota-fetch failures must not surface in the island's
+    /// "N tools unavailable" note. TokenTracker keeps reporting Ark Agent Plan /
+    /// Coding Plan even when they are hidden in its own UI, because this client
+    /// sends no `hidden=` filter (that requires TokenTracker's local auth
+    /// token). Their only failure is an expired `arkcli` SSO login, and those
+    /// subscriptions are not used here.
+    private static let silencedIssueProviders: Set<String> = ["agentPlan", "codingPlan"]
 
     static func parse(_ data: Data) throws -> AIUsageLimits {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -175,6 +182,7 @@ enum AIUsageLimitsParser {
                 }
             }
             if providerWindows.isEmpty,
+               !silencedIssueProviders.contains(provider),
                let message = body["error"] as? String, !message.isEmpty {
                 issues.append(AIUsageLimitIssue(provider: provider, providerName: name, message: message))
             }
