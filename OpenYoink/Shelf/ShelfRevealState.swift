@@ -45,7 +45,7 @@ final class ShelfRevealState {
 
     static let expandGlassAnimation = Animation.spring(response: 0.40, dampingFraction: 0.9)
     static let expandContentAnimation = Animation.easeOut(duration: 0.24).delay(0.06)
-    static let collapseGlassAnimation = Animation.spring(response: 0.30, dampingFraction: 1)
+    static let collapseGlassAnimation = Animation.easeOut(duration: 0.30)
     static let collapseContentAnimation = Animation.easeIn(duration: 0.12)
     /// 悬停预览：更快、几乎不回弹，指针掠过时不显拖沓。
     static let quickExpandGlassAnimation = Animation.spring(response: 0.30, dampingFraction: 0.95)
