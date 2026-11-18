@@ -8,8 +8,15 @@ import Observation
 @MainActor
 @Observable
 final class AppState {
-    /// Shelf 面板当前是否可见。
-    private(set) var isShelfVisible = false
+    enum ShelfPresentation {
+        case hidden, shown, closing
+    }
+
+    private(set) var shelfPresentation: ShelfPresentation = .hidden
+    /// The requested Shelf state, used by toggles and drag triggers. During
+    /// closing, the window still owns the edge until the final frame is gone.
+    var isShelfVisible: Bool { shelfPresentation == .shown }
+    var canShowEdgeTab: Bool { shelfPresentation == .hidden }
 
     /// EdgeTab: 拉环正被按住拖动（重定位会话进行中），由 EdgeTabController
     /// 维护。拖拽驱动的触发器（DragStartMonitor 唤出 / EdgeTriggerMonitor
@@ -18,16 +25,17 @@ final class AppState {
     /// lazy 属性循环引用（edgeTabController ⇄ dragStartMonitor）。
     private(set) var isEdgeTabBeingDragged = false
 
-    func toggleShelf() {
-        isShelfVisible.toggle()
+    func showShelf() {
+        shelfPresentation = .shown
     }
 
-    func showShelf() {
-        isShelfVisible = true
+    func beginShelfClose() {
+        guard shelfPresentation == .shown else { return }
+        shelfPresentation = .closing
     }
 
     func hideShelf() {
-        isShelfVisible = false
+        shelfPresentation = .hidden
     }
 
     /// EdgeTab 重定位会话开始/结束。

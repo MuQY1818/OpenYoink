@@ -6,7 +6,7 @@ import AppKit
 /// 3. 按住拖动 → 沿边上下移动（持久化 `shelfEdgeOffset`）；光标越过屏幕
 ///    中线逼近对缘（`ShelfLayoutEngine.shouldFlipSide`）→ 实时换边，抬起时
 ///    持久化 `shelfPosition`；
-/// 4. 可见性状态机：`edgeTabEnabled && position != .custom && !isShelfVisible` ——
+/// 4. 可见性状态机：`edgeTabEnabled && position != .custom && canShowEdgeTab` ——
 ///    拉环只在 shelf 隐藏时出现（拉环与 shelf 是同一元素的两种状态，不同
 ///    时可见，用户确认）；shelf 展开后由面板**贴缘侧外缘隐形热区**承担
 ///    「同一点位再点收起」（见 ShelfView 的外缘收起热区）；custom 自由
@@ -142,7 +142,13 @@ final class EdgeTabController: NSObject {
         settings.classicShelfEnabled
             && settings.edgeTabEnabled
             && settings.shelfPosition != .custom
-            && !appState.isShelfVisible
+            && appState.canShowEdgeTab
+    }
+
+    /// At close start, retire any in-flight tab fade from a just-opened Shelf.
+    /// At close end, show the replacement only after the Shelf is ordered out.
+    func synchronizeShelfHandoff() {
+        applyState(animated: false)
     }
 
     /// 统一状态评估：可见性 / 设置 / 屏幕参数 / 拖拽状态变更后调用。
@@ -166,13 +172,12 @@ final class EdgeTabController: NSObject {
             hideTab(animated: animated)
             return
         }
-        let wasHiddenForShelf = visibilityTransition.isVisible == false
         let visibilityChanged = visibilityTransition.request(visible: true) != nil
         let target = currentTargetFrame()
         if panel.isVisible {
             // Reversing a fade-out keeps the window ordered in. Restore alpha
             // as well as its layout; isVisible alone does not imply alpha == 1.
-            if visibilityChanged { restoreTabAlpha(animated: animated) }
+            if visibilityChanged || !animated { restoreTabAlpha(animated: animated) }
             // 拖动拉环期间 frame 由手势直控，此处不抢夺。常态位迁移（设置/
             // 屏幕参数变更）动画过渡。
             if !isTabBeingDragged, panel.frame != target {
@@ -187,16 +192,12 @@ final class EdgeTabController: NSObject {
                 }
             }
         } else {
-            // issue #10: the shelf folds back into the tab first; only then
-            // does the tab itself fade in, so the two never double up.
-            showTab(target, animated: animated,
-                    delay: wasHiddenForShelf ? ShelfRevealState.collapseDuration * 0.7 : 0)
+            showTab(target, animated: animated)
         }
         updateEmphasis(animated: animated)
     }
 
-    private func showTab(_ frame: NSRect, animated: Bool, delay: TimeInterval = 0) {
-        let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    private func showTab(_ frame: NSRect, animated: Bool) {
         panel.setFrame(frame, display: false)
         guard animated else {
             panel.alphaValue = 1
@@ -205,18 +206,7 @@ final class EdgeTabController: NSObject {
         }
         panel.alphaValue = 0
         presentTabPanel()
-        guard delay > 0 else {
-            restoreTabAlpha(animated: animated)
-            return
-        }
-        let generation = visibilityTransition.generation
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.visibilityTransition.isCurrent(generation, visible: true),
-                      self.panel.isVisible else { return }
-                self.restoreTabAlpha(animated: true)
-            }
-        }
+        restoreTabAlpha(animated: true)
     }
 
     /// Same Space handling as the shelf panel: re-assert the collection behavior
@@ -241,12 +231,14 @@ final class EdgeTabController: NSObject {
 
     private func hideTab(animated: Bool) {
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard let generation = visibilityTransition.request(visible: false) else { return }
+        let generation = visibilityTransition.request(visible: false)
         guard panel.isVisible else { return }
         guard animated else {
+            panel.alphaValue = 0
             panel.orderOut(nil)
             return
         }
+        guard let generation else { return }
         NSAnimationContext.runAnimationGroup({ context in
             // The shelf's glass starts exactly on the tab and covers it, so the
             // tab only needs a brief hand-off fade (issue #10).
@@ -371,7 +363,7 @@ final class EdgeTabController: NSObject {
     /// 桥接模式）。applyState 读的是最新值而非增量，多次变更合并安全。
     private func beginObservation() {
         withObservationTracking {
-            _ = appState.isShelfVisible
+            _ = appState.shelfPresentation
             _ = dragStartMonitor.isDragInProgress
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in

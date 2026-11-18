@@ -45,7 +45,7 @@ final class ShelfRevealState {
 
     static let expandGlassAnimation = Animation.spring(response: 0.40, dampingFraction: 0.9)
     static let expandContentAnimation = Animation.easeOut(duration: 0.24).delay(0.06)
-    static let collapseGlassAnimation = Animation.spring(response: 0.30, dampingFraction: 1)
+    static let collapseGlassAnimation = Animation.easeOut(duration: 0.30)
     static let collapseContentAnimation = Animation.easeIn(duration: 0.12)
     /// 悬停预览：更快、几乎不回弹，指针掠过时不显拖沓。
     static let quickExpandGlassAnimation = Animation.spring(response: 0.30, dampingFraction: 0.95)
@@ -53,8 +53,6 @@ final class ShelfRevealState {
     /// 展开在视觉上稳定所需时长（之后恢复窗口阴影）。
     static let expandSettleDuration: TimeInterval = 0.45
     static let quickExpandSettleDuration: TimeInterval = 0.34
-    /// 收起完成时长（之后 orderOut、拉环淡入）。
-    static let collapseDuration: TimeInterval = 0.3
 
     /// 玻璃面实际占用的区域（顶对齐，高度可能小于窗口画布）。
     func surfaceBounds(in canvas: CGRect) -> CGRect {
@@ -119,11 +117,15 @@ final class ShelfRevealState {
         }
     }
 
-    func collapse(to rect: CGRect?) {
+    func collapse(to rect: CGRect, completion: @escaping @MainActor () -> Void) {
         withAnimation(Self.collapseContentAnimation) { isContentVisible = false }
         // 收拢目标在内容淡出时同步更新（拉环可能已因设置变化移动）。
         collapsedRect = rect
-        withAnimation(Self.collapseGlassAnimation) { isGlassExpanded = false }
+        withAnimation(Self.collapseGlassAnimation, completionCriteria: .removed) {
+            isGlassExpanded = false
+        } completion: {
+            MainActor.assumeIsolated { completion() }
+        }
     }
 }
 

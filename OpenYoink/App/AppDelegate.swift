@@ -300,7 +300,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = menuBarController
         if !isUITesting { clipboardHistoryStore.start() }
         // EdgeTab: 拉环随启动就位（shelf 初始隐藏，拉环立即在边缘就位）。
-        _ = edgeTabController
+        let edgeTab = edgeTabController
+        shelfWindowController.onClassicShelfHandoffChanged = { [weak edgeTab] in
+            edgeTab?.synchronizeShelfHandoff()
+        }
         // Sparkle: 启动 updater（应用「自动检查」设置后 start；幂等）。
         if !isUITesting {
             updateController.start()

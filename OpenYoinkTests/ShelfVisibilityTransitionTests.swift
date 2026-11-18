@@ -33,3 +33,43 @@ final class ShelfVisibilityTransitionTests: XCTestCase {
         XCTAssertTrue(transition.isCurrent(hide, visible: false))
     }
 }
+
+@MainActor
+final class ShelfEdgeHandoffTests: XCTestCase {
+    func testClosingReleasesShelfToggleBeforeItReleasesEdge() {
+        let appState = AppState()
+        XCTAssertFalse(appState.isShelfVisible)
+        XCTAssertTrue(appState.canShowEdgeTab)
+
+        appState.showShelf()
+        XCTAssertTrue(appState.isShelfVisible)
+        XCTAssertFalse(appState.canShowEdgeTab)
+
+        appState.beginShelfClose()
+        XCTAssertFalse(appState.isShelfVisible)
+        XCTAssertFalse(appState.canShowEdgeTab, "Keep the tab out while the Shelf is still animating")
+
+        appState.hideShelf()
+        XCTAssertTrue(appState.canShowEdgeTab, "The tab returns once the Shelf has been ordered out")
+    }
+
+    func testRapidReopenKeepsEdgeReservedAndInvalidatesOldClose() throws {
+        let appState = AppState()
+        var transition = ShelfVisibilityTransitionState()
+        _ = transition.request(visible: true)
+        appState.showShelf()
+        let firstClose = try XCTUnwrap(transition.request(visible: false))
+        appState.beginShelfClose()
+
+        _ = transition.request(visible: true)
+        appState.showShelf()
+        XCTAssertFalse(appState.canShowEdgeTab)
+        XCTAssertFalse(transition.isCurrent(firstClose, visible: false))
+
+        let secondClose = try XCTUnwrap(transition.request(visible: false))
+        appState.beginShelfClose()
+        XCTAssertFalse(appState.canShowEdgeTab)
+        XCTAssertFalse(transition.isCurrent(firstClose, visible: false))
+        XCTAssertTrue(transition.isCurrent(secondClose, visible: false))
+    }
+}

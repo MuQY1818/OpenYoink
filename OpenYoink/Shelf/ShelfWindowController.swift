@@ -46,6 +46,7 @@ final class ShelfWindowController: NSObject {
     var onClassicDestinationEntered: ((Int) -> Void)?
     var onClassicDestinationEnded: ((Int, Bool) -> Void)?
     var onClassicPresentationRequested: (() -> Void)?
+    var onClassicShelfHandoffChanged: (() -> Void)?
 
     private let appState: AppState
     /// S8: shelf 位置/宽度/autoHide 等布局与行为设置的来源（原
@@ -887,23 +888,26 @@ final class ShelfWindowController: NSObject {
         }
     }
 
-    /// 内容先淡出，玻璃面收回拉环矩形，结束后 orderOut（拉环随即淡入）。
+    /// 内容先淡出，玻璃面收回拉环矩形，再由关闭流程交还边缘。
     private func foldClassicShelf(into origin: CGRect, generation: UInt) {
         isClassicMorphing = true
         classicPanel.hasShadow = false
         classicReveal.capturesWholeSurface = false
-        classicReveal.collapse(to: origin)
-        DispatchQueue.main.asyncAfter(deadline: .now() + ShelfRevealState.collapseDuration) { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self,
-                      self.classicVisibilityTransition.isCurrent(generation, visible: false),
-                      !self.appState.isShelfVisible else { return }
-                // 已隐藏：推迟的布局下次显示时会按最新目标 frame 重新计算。
-                self.isClassicLayoutDeferred = false
-                self.isClassicMorphing = false
-                self.classicPanel.orderOut(nil)
-            }
+        classicReveal.collapse(to: origin) { [weak self] in
+            self?.finishClassicHide(generation: generation)
         }
+    }
+
+    private func finishClassicHide(generation: UInt) {
+        guard classicVisibilityTransition.isCurrent(generation, visible: false),
+              appState.shelfPresentation == .closing else { return }
+        // Retire the glass before the tab can be shown, with no independent
+        // fade timer and no run-loop gap between the two window operations.
+        classicPanel.orderOut(nil)
+        isClassicLayoutDeferred = false
+        isClassicMorphing = false
+        appState.hideShelf()
+        onClassicShelfHandoffChanged?()
     }
 
     func showIslandShelf(animated: Bool = true, takeKeyboardFocus: Bool = false) {
@@ -962,27 +966,26 @@ final class ShelfWindowController: NSObject {
         onClassicPresentationRequested?()
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         performClassicHoverActions(classicHoverPreviewState.handle(.shelfHidden))
-        guard appState.isShelfVisible else { return }
+        guard appState.isShelfVisible,
+              let generation = classicVisibilityTransition.request(visible: false) else { return }
         stopClassicHoverPreviewMonitoring()
         quickActionLayoutTask?.cancel()
         quickActionLayoutTask = nil
-        let generation = classicVisibilityTransition.request(visible: false)
         classicResizeGeneration &+= 1
         let visibleFrame = classicFrameTransition.targetFrame ?? classicLogicalFrame
-        appState.hideShelf()
+        appState.beginShelfClose()
+        onClassicShelfHandoffChanged?()
         classicFrameTransition.reset()
         // S6: shelf 隐藏时关掉 Quick Look 并释放会话资源（不恢复键盘焦点）。
         quickLookCoordinator.closeForShelfHide()
         let targetFrame = classicHiddenFrame(for: visibleFrame)
         guard animated else {
-            classicPanel.orderOut(nil)
-            isClassicMorphing = false
-            isClassicLayoutDeferred = false
+            finishClassicHide(generation: generation)
             classicReveal.showImmediately()
             classicPanel.hasShadow = classicWantsWindowShadow
             return
         }
-        if let generation, let origin = classicRevealOrigin(for: classicLogicalFrame) {
+        if let origin = classicRevealOrigin(for: classicLogicalFrame) {
             foldClassicShelf(into: origin, generation: generation)
             return
         }
@@ -994,10 +997,7 @@ final class ShelfWindowController: NSObject {
         }, completionHandler: { [weak self] in
             // 隐藏期间若用户重新唤出，则不打断显示状态。
             MainActor.assumeIsolated {
-                guard let self, let generation,
-                      self.classicVisibilityTransition.isCurrent(generation, visible: false),
-                      !self.appState.isShelfVisible else { return }
-                self.classicPanel.orderOut(nil)
+                self?.finishClassicHide(generation: generation)
             }
         })
     }
@@ -1837,10 +1837,12 @@ final class ShelfWindowController: NSObject {
                 }
             }
         } else {
-            appState.hideShelf()
             _ = classicVisibilityTransition.request(visible: false)
             classicFrameTransition.reset()
             classicPanel.orderOut(nil)
+            isClassicLayoutDeferred = false
+            isClassicMorphing = false
+            appState.hideShelf()
         }
 
         if settings.islandEnabled {
