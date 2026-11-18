@@ -204,15 +204,21 @@ enum AIUsageLimitsParser {
 
     private static func number(_ value: Any?) -> Double? {
         switch value {
-        case let number as NSNumber where !(number is Bool): number.doubleValue
-        case let string as String: Double(string)
-        default: nil
+        case let number as NSNumber:
+            // JSONSerialization decodes true/false as CFBoolean, and Swift also
+            // bridges NSNumber 0 and 1 to Bool, so `! (number is Bool)` silently
+            // dropped real 0 % and 1 % readings (a provider at 0 % disappeared
+            // from the island). Test the CF type instead.
+            guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            return number.doubleValue
+        case let string as String: return Double(string)
+        default: return nil
         }
     }
 
     /// ISO 8601 strings (with any number of fractional digits) or Unix seconds.
     static func date(_ value: Any?) -> Date? {
-        if let number = value as? NSNumber, !(number is Bool) {
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
             let seconds = number.doubleValue
             return Date(timeIntervalSince1970: seconds > 10_000_000_000 ? seconds / 1000 : seconds)
         }
@@ -248,7 +254,7 @@ enum AIUsageLimitsParser {
 
     private static let windowRank = [
         "five_hour", "seven_day", "seven_day_opus", "weekly_scoped",
-        "primary_window", "secondary_window", "tertiary_window",
+        "primary_window", "secondary_window", "tertiary_window", "quaternary_window",
         "spark_primary_window", "spark_secondary_window",
     ]
 
@@ -259,6 +265,18 @@ enum AIUsageLimitsParser {
     }
 
     private static func windowLabel(provider: String, key: String, body: [String: Any]) -> String? {
+        // Antigravity reports four fixed windows — Claude and Gemini, weekly and
+        // 5-hour — so label them instead of falling through to the generic
+        // primary/secondary slot names ("2", "3", "quaternary window").
+        if provider == "antigravity" {
+            switch key {
+            case "primary_window": return "Claude \(AIUsageLabels.sevenDay)"
+            case "secondary_window": return "Claude \(AIUsageLabels.fiveHour)"
+            case "tertiary_window": return "Gemini \(AIUsageLabels.sevenDay)"
+            case "quaternary_window": return "Gemini \(AIUsageLabels.fiveHour)"
+            default: break
+            }
+        }
         switch key {
         case "five_hour": return AIUsageLabels.fiveHour
         case "seven_day": return AIUsageLabels.sevenDay
