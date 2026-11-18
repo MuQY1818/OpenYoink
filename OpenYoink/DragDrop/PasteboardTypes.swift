@@ -71,8 +71,9 @@ enum PasteboardTypes {
     static let filePromiseTypes: [NSPasteboard.PasteboardType] =
         NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
 
-    /// 图片数据族，按物化时的优先顺序排列（PNG 免转换，TIFF 需转码）。
-    static let imageTypes: [NSPasteboard.PasteboardType] = [png, tiff, image]
+    /// 图片数据族，按物化时的优先顺序排列（PNG 免转换）。
+    static let imageTypes: [NSPasteboard.PasteboardType] =
+        [png, tiff, NSPasteboard.PasteboardType(UTType.jpeg.identifier), image]
     /// 文本族。主链仅物化 plain text；仅含 HTML/RTF（无 plain text）的拖放由
     /// `DropImportCoordinator` 兜底链物化为 .html/.rtf 文件项（任务一）。
     static let textTypes: [NSPasteboard.PasteboardType] = [plainText, html, rtf]

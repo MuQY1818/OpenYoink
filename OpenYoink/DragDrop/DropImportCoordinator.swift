@@ -173,6 +173,18 @@ final class DropImportCoordinator {
         return result
     }
 
+    /// Explicit pasteboard action: no fallback to files, links, or text.
+    func importClipboardImages(from pasteboard: NSPasteboard,
+                               onItemReady: @escaping @MainActor (ShelfItem) -> Void) -> Int {
+        let pending = scheduleImageMaterialization(
+            from: pasteboard, taskID: UUID(),
+            displayName: String(localized: "Clipboard Image.png"),
+            recoveryAction: .dismiss, onItemReady: onItemReady
+        )
+        if pending > 0 { onImportHandled?() }
+        return pending
+    }
+
     /// `NSDraggingDestination` 用于判定同进程来源是否是当前练习，而不是普通
     /// shelf 卡片回落。令牌不匹配时严格拒绝。
     func acceptsInternalTutorialDrag(_ pasteboard: NSPasteboard) -> Bool {
@@ -240,10 +252,11 @@ final class DropImportCoordinator {
         }
 
         // 3. 图片数据（无文件 URL 的位图）：物化 PNG 到 TempFileService 目录。
-        if let imageType = PasteboardTypes.preferredImageType(in: types) {
+        if PasteboardTypes.preferredImageType(in: types) != nil {
             let pending = scheduleImageMaterialization(from: pasteboard,
                                                        taskID: batchID,
-                                                       preferredType: imageType,
+                                                       displayName: Self.materializedImageDisplayName,
+                                                       recoveryAction: .dragAgainFromSource,
                                                        onItemReady: onAsyncItemReady)
             if pending > 0 {
                 return DropImportResult(items: [], pendingMaterializations: pending)
@@ -612,12 +625,13 @@ final class DropImportCoordinator {
     /// 非 Sendable，Data 必须在本层（MainActor）就地取出，不跨 actor 传递原 item。
     private func scheduleImageMaterialization(from pasteboard: NSPasteboard,
                                               taskID: UUID,
-                                              preferredType: NSPasteboard.PasteboardType,
+                                              displayName: String,
+                                              recoveryAction: RecoveryAction,
                                               onItemReady: @escaping @MainActor (ShelfItem) -> Void) -> Int {
         let payloads: [(type: NSPasteboard.PasteboardType, data: Data)] =
             (pasteboard.pasteboardItems ?? []).compactMap { item in
                 guard let type = PasteboardTypes.preferredImageType(in: item.types),
-                      let data = item.data(forType: type) else {
+                      let data = item.data(forType: type), !data.isEmpty else {
                     return nil
                 }
                 return (type, data)
@@ -630,8 +644,8 @@ final class DropImportCoordinator {
                 taskID: taskID,
                 failure: TransferFailure(
                     reason: .materializationFailed,
-                    itemName: Self.materializedImageDisplayName,
-                    recoveryAction: .dragAgainFromSource
+                    itemName: displayName,
+                    recoveryAction: recoveryAction
                 )
             )
         }
@@ -645,17 +659,17 @@ final class DropImportCoordinator {
                     guard let pngData = Self.pngData(from: payload.data, type: payload.type) else {
                         throw DropImportError.imageConversionFailed
                     }
-                    let destination = try tempFileService.uniqueFileURL(suggestedName: Self.materializedImageDisplayName)
+                    let destination = try tempFileService.uniqueFileURL(suggestedName: displayName)
                     try pngData.write(to: destination, options: .atomic)
                     let item = Self.makeFileBackedItem(for: destination,
-                                                       displayName: Self.materializedImageDisplayName,
+                                                       displayName: displayName,
                                                        forcedKind: .image,
                                                        bookmarkService: bookmarkService,
                                                        logger: logger)
                     await reportSuccess(item)
                 } catch {
                     // 失败不崩溃、不静默：日志记录 + D10 内联提示，拖放本身仍视为已处理。
-                    logger.error("Failed to materialize dropped image data: \(error.localizedDescription, privacy: .public)")
+                    logger.error("Failed to materialize image data: \(error.localizedDescription, privacy: .public)")
                     await reportFailure()
                 }
             }

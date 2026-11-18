@@ -274,6 +274,52 @@ final class DropImportCoordinatorTests: XCTestCase {
         XCTAssertEqual(context.coordinator.transferStore.currentTask?.itemIDs, [item.id])
     }
 
+    func testClipboardImageImportDoesNotFallBackToFileURLOrText() throws {
+        var context = makeContext()
+        defer { context.cleanup() }
+        let file = try makeTempFile(in: &context)
+        let pasteboard = makePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let text = NSPasteboardItem()
+        text.setString("copied text", forType: .string)
+        XCTAssertTrue(pasteboard.writeObjects([file as NSURL, text]))
+        context.coordinator.onImportHandled = { XCTFail("nothing should be imported") }
+
+        let count = context.coordinator.importClipboardImages(
+            from: pasteboard, onItemReady: ignoringAsyncItems()
+        )
+
+        XCTAssertEqual(count, 0)
+        XCTAssertNil(context.coordinator.transferStore.currentTask)
+    }
+
+    func testClipboardImageImportUsesImageEvenWhenOtherTypesArePresent() async throws {
+        let context = makeContext()
+        defer { context.cleanup() }
+        let pasteboard = makePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let pngData = try makePNGData()
+        let mixed = NSPasteboardItem()
+        mixed.setString("https://example.com/image", forType: .URL)
+        mixed.setData(pngData, forType: .png)
+        XCTAssertTrue(pasteboard.writeObjects([mixed]))
+
+        let itemReady = expectation(description: "clipboard image materialized")
+        var received: ShelfItem?
+        let count = context.coordinator.importClipboardImages(from: pasteboard) { item in
+            received = item
+            itemReady.fulfill()
+        }
+        XCTAssertEqual(count, 1)
+        await fulfillment(of: [itemReady], timeout: 5)
+
+        let item = try XCTUnwrap(received)
+        XCTAssertEqual(item.kind, .image)
+        XCTAssertEqual(item.displayName, String(localized: "Clipboard Image.png"))
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: XCTUnwrap(item.path))), pngData)
+        XCTAssertEqual(context.coordinator.transferStore.currentTask?.phase, .delivered)
+    }
+
     // MARK: - URL
 
     func testImport_publicURL_producesURLItem() throws {

@@ -171,6 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         onShowClipboardHistory: { [weak self] in
             self?.clipboardHistoryWindowController.show()
+        },
+        onSaveClipboardImage: { [weak self] in
+            self?.saveClipboardImageToShelf()
         }
     )
 
@@ -508,6 +511,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         shelfStore.add(contentsOf: result.items)
         shelfPresentationCoordinator.show(animated: true)
+    }
+
+    private func saveClipboardImageToShelf() {
+        let scheduled = dropImportCoordinator.importClipboardImages(from: .general) { [weak self] item in
+            self?.shelfStore.add(item)
+        }
+        shelfPresentationCoordinator.show(animated: true)
+        if scheduled == 0 {
+            shelfNotice.show(String(localized: "No supported image on the clipboard."))
+        }
     }
 
     // MARK: - Recent items re-add (S10)

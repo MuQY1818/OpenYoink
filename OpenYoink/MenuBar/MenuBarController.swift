@@ -16,6 +16,7 @@ final class MenuBarController: NSObject {
     /// 打开设置窗口（由 AppDelegate 的 SettingsWindowController 提供）。
     private let onShowSettings: () -> Void
     private let onShowClipboardHistory: () -> Void
+    private let onSaveClipboardImage: () -> Void
     /// 可重播的两步真实拖放练习。
     private let onShowQuickStart: () -> Void
     /// 打开公开使用帮助；不改变应用状态。
@@ -42,13 +43,15 @@ final class MenuBarController: NSObject {
          onReportIssue: @escaping () -> Void,
          onCheckForUpdates: @escaping () -> Void,
          onOpenManualUpdate: @escaping () -> Void,
-         onShowClipboardHistory: @escaping () -> Void = {}) {
+         onShowClipboardHistory: @escaping () -> Void = {},
+         onSaveClipboardImage: @escaping () -> Void = {}) {
         self.isShelfExpanded = isShelfExpanded
         self.recents = recents
         self.onToggleShelf = onToggleShelf
         self.onReaddRecent = onReaddRecent
         self.onShowSettings = onShowSettings
         self.onShowClipboardHistory = onShowClipboardHistory
+        self.onSaveClipboardImage = onSaveClipboardImage
         self.onShowQuickStart = onShowQuickStart
         self.onOpenHelp = onOpenHelp
         self.onReportIssue = onReportIssue
@@ -91,6 +94,11 @@ final class MenuBarController: NSObject {
                                        action: #selector(showClipboardHistory(_:)), keyEquivalent: "")
         clipboardItem.target = self
         menu.addItem(clipboardItem)
+
+        let saveImageItem = NSMenuItem(title: String(localized: "Add Clipboard Image to Shelf"),
+                                       action: #selector(saveClipboardImage(_:)), keyEquivalent: "")
+        saveImageItem.target = self
+        menu.addItem(saveImageItem)
 
         menu.addItem(.separator())
 
@@ -160,6 +168,10 @@ final class MenuBarController: NSObject {
 
     @objc private func showClipboardHistory(_ sender: Any?) {
         onShowClipboardHistory()
+    }
+
+    @objc private func saveClipboardImage(_ sender: Any?) {
+        onSaveClipboardImage()
     }
 
     @objc private func showQuickStart(_ sender: Any?) {

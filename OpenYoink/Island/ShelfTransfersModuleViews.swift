@@ -17,18 +17,22 @@ struct IslandShelfModuleView: View {
 }
 struct IslandTransfersView: View {
     @Environment(TransferStore.self) private var transferStore
+    @State private var showingDownloads = false
     var onPerformRecovery: ((RecoveryAction) -> Void)?
 
     var body: some View {
         VStack(spacing: 8) {
-            IslandModuleHeader(
-                title: "Transfers",
-                subtitle: transferStore.hasVisibleActivity
-                    ? String(localized: "Transferring content…")
-                    : String(localized: "No active transfers"),
-                systemImage: "arrow.up.arrow.down"
-            )
-            if transferStore.hasVisibleActivity {
+            Picker("Transfers View", selection: $showingDownloads) {
+                Text("Transfers").tag(false)
+                Text("Recent Downloads").tag(true)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .accessibilityLabel(Text("Transfers View"))
+
+            if showingDownloads {
+                RecentDownloadsView()
+            } else if transferStore.hasVisibleActivity {
                 ShelfActivityStrip(onPerformRecovery: onPerformRecovery)
                     .frame(maxHeight: .infinity, alignment: .top)
             } else {

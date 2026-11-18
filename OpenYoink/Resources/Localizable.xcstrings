@@ -1,6 +1,198 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Recent Downloads" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recent Downloads" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近下载" } }
+      }
+    },
+    "Transfers View" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Transfers View" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "传输视图" } }
+      }
+    },
+    "Refresh Downloads" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh Downloads" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新下载列表" } }
+      }
+    },
+    "Choose Folder…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose Folder…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选择文件夹…" } }
+      }
+    },
+    "Forget Folder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Forget Folder" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移除目录授权" } }
+      }
+    },
+    "Downloads Folder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Downloads Folder" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下载目录" } }
+      }
+    },
+    "Loading Downloads" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading Downloads" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在读取下载目录" } }
+      }
+    },
+    "No folder selected" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No folder selected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "尚未选择下载目录" } }
+      }
+    },
+    "Downloads folder unavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Downloads folder unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法访问下载目录" } }
+      }
+    },
+    "No completed downloads" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No completed downloads" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有已完成的下载" } }
+      }
+    },
+    "Open Download" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Download" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开下载文件" } }
+      }
+    },
+    "Reveal in Finder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reveal in Finder" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在访达中显示" } }
+      }
+    },
+    "Add Download to Shelf" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Download to Shelf" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "将文件加入暂存架" } }
+      }
+    },
+    "Could Not Open Download" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could Not Open Download" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法打开下载文件" } }
+      }
+    },
+    "Download No Longer Available" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Download No Longer Available" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文件已移走或不可访问" } }
+      }
+    },
+    "Could Not Add Download to Shelf" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could Not Add Download to Shelf" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法将文件加入暂存架" } }
+      }
+    },
+    "Added to Shelf" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Added to Shelf" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已加入暂存架" } }
+      }
+    },
+    "Choose Downloads Folder" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose Downloads Folder" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选择下载目录" } }
+      }
+    },
+    "Could Not Save Folder Access" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could Not Save Folder Access" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法保存目录访问权限" } }
+      }
+    },
+    "Add Clipboard Image to Shelf" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Clipboard Image to Shelf" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "将剪贴板图片加入暂存架" } }
+      }
+    },
+    "Clipboard Image.png" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clipboard Image.png" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "剪贴板图片.png" } }
+      }
+    },
+    "No supported image on the clipboard." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No supported image on the clipboard." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "剪贴板里没有可加入的图片。" } }
+      }
+    },
+    "Productivity" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Productivity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "效率工具" } }
+      }
+    },
+    "Pinned" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pinned" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已固定" } }
+      }
+    },
+    "Enabled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enabled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已启用" } }
+      }
+    },
+    "%lld of %lld positions pinned" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld of %lld positions pinned" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已固定 %lld / %lld 个位置" } }
+      }
+    },
+    "Reorder pinned module" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reorder pinned module" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "调整固定顺序" } }
+      }
+    },
+    "Move Earlier" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Move Earlier" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向前移动" } }
+      }
+    },
+    "Move Later" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Move Later" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向后移动" } }
+      }
+    },
+    "All pin positions are in use" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All pin positions are in use" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "固定位置已满" } }
+      }
+    },
+    "Clipboard recording is off" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clipboard recording is off" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "剪贴板记录未开启" } }
+      }
+    },
+    "Requires TokenTracker" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Requires TokenTracker" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要 TokenTracker" } }
+      }
+    },
     "Without a notch, when idle" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Without a notch, when idle" } },

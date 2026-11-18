@@ -96,13 +96,15 @@ These are real screenshots (Chinese UI). Click one to see it full size.
 > [!TIP]
 > The battery module measures power at the battery, not at the wall. Positive means charging, negative means discharging. Seeing about `0 W` while plugged in with a full battery is normal.
 
-There is also a Transfers module that shows the progress and failures of files being delivered in the background.
+**Transfers** shows file delivery progress and has a **Recent Downloads** tab. Pick a downloads folder once, then add recent files to the shelf from this tab. The originals stay where they are.
+
+For a screenshot or image you just copied, choose **Add Clipboard Image to Shelf** from the menu bar. Clipboard history can stay off.
 
 **AI Usage** (new in 1.8.8, off by default): today's spend and tokens across Claude Code, Codex, Cursor and more, your 7-day, 30-day and all-time totals, and how much of each usage-limit window is used and when it resets. Island nudges you at 80% and 95%, and the collapsed Island can show today's spend. The numbers come from the free, open-source [TokenTracker](https://github.com/xiufengsun/TokenTracker), which needs to be installed and running.
 
 ### Setting it up
 
-Island is on by default for new installs (turn it off in **Settings → General**). Expand it, click the gear in the top-left corner to open the module library, turn on the modules you want, pin them, and drag to reorder. Press `Esc`, click outside, or click the top-center area to collapse it.
+Island is on by default for new installs (turn it off in **Settings → General**). Expand it and click the top-left gear to browse Files & Clipboard, Productivity, and System modules. Pin up to five and use their drag handles to reorder. Press `Esc`, click outside, or click the top-center area to collapse it.
 
 If you'd rather not pick modules one by one, **Settings → General** has three presets: File Shelf, Files & Clipboard, and Full Toolbox. They only change modules and reveal behavior; your files and history stay put, and clipboard recording stays however you left it.
 
