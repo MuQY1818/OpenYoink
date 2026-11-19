@@ -48,6 +48,9 @@ final class DragOutController {
     /// 活动练习卡的运行时令牌。令牌只随该卡本次拖出写入 pasteboard；普通
     /// 项目返回 nil。闭包避免把 tutorial 状态写进 ShelfItem schema。
     private let tutorialTokenForItem: @MainActor (UUID) -> String?
+    /// Balances the shared drag-start monitor when AppKit ends this dragging
+    /// session. The closure is optional for previews and isolated tests.
+    private let onSourceDragEnded: (@MainActor () -> Void)?
 
     /// S8: 拖出成功（`operation` 非空）后的回调，由 ShelfWindowController
     /// 在 init 完成后接线以实现 autoHide（init 期无法捕获未完成的 self）。
@@ -59,12 +62,14 @@ final class DragOutController {
          recents: RecentItemsService,
          bookmarkService: BookmarkService,
          deliveryCoordinator: DeliveryCoordinator,
+         onSourceDragEnded: (@MainActor () -> Void)? = nil,
          tutorialTokenForItem: @escaping @MainActor (UUID) -> String? = { _ in nil }) {
         self.store = store
         self.settings = settings
         self.recents = recents
         self.bookmarkService = bookmarkService
         self.deliveryCoordinator = deliveryCoordinator
+        self.onSourceDragEnded = onSourceDragEnded
         self.tutorialTokenForItem = tutorialTokenForItem
     }
 
@@ -148,7 +153,8 @@ final class DragOutController {
                                            ),
                                            onSuccessfulDrop: onSuccessfulDrop,
                                            dragAnchorOffset: dragAnchorOffset,
-                                           fileAccess: fileAccess)
+                                           fileAccess: fileAccess,
+                                           onSourceDragEnded: onSourceDragEnded)
         // Counted only once a session really starts: the source's
         // `draggingSession(_:endedAt:)` is the matching decrement, and the early
         // return above has no session to end.
@@ -293,6 +299,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
     /// 常规拖出策略影响，也绝不能进入「最近项目」。
     private let policyExcludedItemIDs: Set<UUID>
     private let onSuccessfulDrop: (@MainActor () -> Void)?
+    private let onSourceDragEnded: (@MainActor () -> Void)?
     private let anchorOffset: CGSize
     private var fileAccess: BookmarkAccessLease?
 
@@ -305,7 +312,8 @@ final class DragSessionController: NSObject, NSDraggingSource {
          policyExcludedItemIDs: Set<UUID> = [],
          onSuccessfulDrop: (@MainActor () -> Void)? = nil,
          dragAnchorOffset: CGSize = .zero,
-         fileAccess: BookmarkAccessLease? = nil) {
+         fileAccess: BookmarkAccessLease? = nil,
+         onSourceDragEnded: (@MainActor () -> Void)? = nil) {
         self.contents = contents
         self.sessionID = sessionID
         self.store = store
@@ -314,6 +322,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
         self.delivery = delivery
         self.policyExcludedItemIDs = policyExcludedItemIDs
         self.onSuccessfulDrop = onSuccessfulDrop
+        self.onSourceDragEnded = onSourceDragEnded
         self.anchorOffset = dragAnchorOffset
         self.fileAccess = fileAccess
         super.init()
@@ -343,6 +352,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
                          endedAt screenPoint: NSPoint,
                          operation: NSDragOperation) {
         completeDrag(operation: operation)
+        onSourceDragEnded?()
     }
 
     func completeDrag(operation: NSDragOperation) {

@@ -144,12 +144,12 @@ struct DragAutoShowSession: Sendable, Equatable {
 ///
 /// 回调语义：
 /// - `onDragStart`：位移阈值首次跨越（忽略列表前台时经 `shouldSuppress` 抑制）；
-/// - `onDragEnd`：已确认拖拽的左键抬起（不被抑制 —— 抑制即无会话，
-///   配合 `DragAutoShowSession` 空转安全）。
+/// - `onDragEnd`：已确认拖拽的左键抬起或拖拽源会话结束（不被抑制 ——
+///   抑制即无会话，配合 `DragAutoShowSession` 空转安全）。
 ///
 /// EdgeTab: `isDragInProgress` 是可观察的「拖拽进行中」状态（阈值确认即置位，
 /// 不受 `shouldSuppress` 影响 —— 抑制只挡唤出，不改变「正在拖拽」的事实），
-/// 供边缘拉环做投放暗示高亮；抬起或 `stop()` 复位。
+/// 供边缘拉环做投放暗示高亮；抬起、拖拽源结束或 `stop()` 复位。
 @MainActor
 @Observable
 final class DragStartMonitor {
@@ -163,6 +163,9 @@ final class DragStartMonitor {
     private var fileDragTracker = EdgeFileDragTracker()
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    /// Events queued before a drag source reports completion must not re-arm
+    /// the trackers when their MainActor task runs afterwards.
+    private var eventCutoff: TimeInterval = 0
 
     /// Ignore-list gate, evaluated only at the moment a drag is confirmed.
     private let shouldSuppress: @MainActor () -> Bool
@@ -190,18 +193,26 @@ final class DragStartMonitor {
             guard let self else { return }
             let location = NSEvent.mouseLocation
             let type = event.type
+            let timestamp = event.timestamp
             let snapshot = DragPasteboardSnapshot.current()
             Task { @MainActor in
-                self.handle(eventType: type, at: location, snapshot: snapshot)
+                self.handle(eventType: type,
+                            at: location,
+                            timestamp: timestamp,
+                            snapshot: snapshot)
             }
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             guard let self else { return event }
             let location = NSEvent.mouseLocation
             let type = event.type
+            let timestamp = event.timestamp
             let snapshot = DragPasteboardSnapshot.current()
             Task { @MainActor in
-                self.handle(eventType: type, at: location, snapshot: snapshot)
+                self.handle(eventType: type,
+                            at: location,
+                            timestamp: timestamp,
+                            snapshot: snapshot)
             }
             return event
         }
@@ -224,10 +235,27 @@ final class DragStartMonitor {
         isDragInProgress = false
     }
 
-    private func handle(eventType: NSEvent.EventType,
-                        at point: CGPoint,
-                        snapshot: DragPasteboardSnapshot) {
-        guard isMonitoring else { return }
+    /// Closes the current monitor session regardless of tracker phase. Source
+    /// callbacks and mouse-up can both report the same end; only the first one
+    /// while active publishes `onDragEnd`.
+    func finishDrag(at timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        eventCutoff = max(eventCutoff, timestamp)
+        let wasDragging = isDragInProgress
+        tracker?.reset()
+        fileDragTracker.reset()
+        isDragInProgress = false
+        guard wasDragging else { return }
+        onDragEnd()
+    }
+
+    /// Internal so tests can drive exact event order without synthesizing
+    /// system events. Production callers use the event monitors registered by
+    /// `start()`.
+    func handle(eventType: NSEvent.EventType,
+                at point: CGPoint,
+                timestamp: TimeInterval,
+                snapshot: DragPasteboardSnapshot) {
+        guard isMonitoring, timestamp > eventCutoff else { return }
         switch eventType {
         case .leftMouseDown:
             tracker?.mouseDown(at: point)
@@ -248,10 +276,7 @@ final class DragStartMonitor {
             if didBegin { onDragStart() }
             onDragUpdate(point)
         case .leftMouseUp:
-            fileDragTracker.mouseUp()
-            guard tracker?.mouseUp() == true else { return }
-            isDragInProgress = false
-            onDragEnd()
+            finishDrag(at: timestamp)
         default:
             break
         }

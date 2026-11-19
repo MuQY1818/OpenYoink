@@ -497,6 +497,9 @@ final class ShelfWindowController: NSObject {
             recents: recents,
             bookmarkService: importCoordinator.bookmarkService,
             deliveryCoordinator: deliveryCoordinator,
+            onSourceDragEnded: {
+                dragStartMonitor.finishDrag()
+            },
             tutorialTokenForItem: tutorialTokenForItem
         )
         self.islandDragOutController = DragOutController(
@@ -505,6 +508,9 @@ final class ShelfWindowController: NSObject {
             recents: recents,
             bookmarkService: importCoordinator.bookmarkService,
             deliveryCoordinator: deliveryCoordinator,
+            onSourceDragEnded: {
+                dragStartMonitor.finishDrag()
+            },
             tutorialTokenForItem: tutorialTokenForItem
         )
         self.quickLookCoordinator = QuickLookCoordinator(

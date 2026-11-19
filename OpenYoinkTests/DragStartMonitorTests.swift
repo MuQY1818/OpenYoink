@@ -4,6 +4,7 @@ import XCTest
 
 /// UX1 拖拽开始状态机（DragGestureTracker）与自动唤出会话裁决
 /// （DragAutoShowSession）的纯逻辑单测。
+@MainActor
 final class DragStartMonitorTests: XCTestCase {
     // MARK: - DragGestureTracker
 
@@ -64,6 +65,143 @@ final class DragStartMonitorTests: XCTestCase {
         var tracker = DragGestureTracker(threshold: 8)
         XCTAssertFalse(tracker.mouseUp())
         XCTAssertEqual(tracker.phase, .idle)
+    }
+
+    // MARK: - DragStartMonitor session completion
+
+    func testSourceEndThenMouseUp_finishesOnceAndClearsStateBeforeCallback() {
+        var startCount = 0
+        var endCount = 0
+        var activeWhenEnded: Bool?
+        var monitor: DragStartMonitor!
+        monitor = DragStartMonitor(
+            shouldSuppress: { false },
+            onDragStart: { startCount += 1 },
+            onDragEnd: {
+                activeWhenEnded = monitor.isDragInProgress
+                endCount += 1
+            }
+        )
+        monitor.start()
+        defer { monitor.stop() }
+
+        monitor.handle(eventType: .leftMouseDown,
+                       at: CGPoint(x: 100, y: 100),
+                       timestamp: 1,
+                       snapshot: snapshot(changeCount: 10))
+        monitor.handle(eventType: .leftMouseDragged,
+                       at: CGPoint(x: 120, y: 100),
+                       timestamp: 2,
+                       snapshot: snapshot(changeCount: 11, hasFile: true))
+        XCTAssertEqual(startCount, 1)
+        XCTAssertTrue(monitor.isDragInProgress)
+
+        monitor.finishDrag(at: 3)
+        XCTAssertEqual(endCount, 1)
+        XCTAssertEqual(activeWhenEnded, false)
+        XCTAssertFalse(monitor.isDragInProgress)
+
+        monitor.handle(eventType: .leftMouseUp,
+                       at: CGPoint(x: 120, y: 100),
+                       timestamp: 2.5,
+                       snapshot: snapshot(changeCount: 11, hasFile: true))
+        monitor.finishDrag(at: 3.5)
+        XCTAssertEqual(endCount, 1)
+    }
+
+    func testMouseUpThenSourceEnd_finishesOnce() {
+        var startCount = 0
+        var endCount = 0
+        let monitor = DragStartMonitor(
+            shouldSuppress: { false },
+            onDragStart: { startCount += 1 },
+            onDragEnd: { endCount += 1 }
+        )
+        monitor.start()
+        defer { monitor.stop() }
+
+        beginDrag(on: monitor)
+        monitor.handle(eventType: .leftMouseUp,
+                       at: CGPoint(x: 120, y: 100),
+                       timestamp: 3,
+                       snapshot: snapshot(changeCount: 11, hasFile: true))
+        XCTAssertEqual(startCount, 1)
+        XCTAssertEqual(endCount, 1)
+        XCTAssertFalse(monitor.isDragInProgress)
+
+        monitor.finishDrag(at: 3.1)
+        XCTAssertEqual(endCount, 1)
+    }
+
+    func testFinishWithoutMouseUp_allowsNewDrag() {
+        var startCount = 0
+        var endCount = 0
+        let monitor = DragStartMonitor(
+            shouldSuppress: { false },
+            onDragStart: { startCount += 1 },
+            onDragEnd: { endCount += 1 }
+        )
+        monitor.start()
+        defer { monitor.stop() }
+
+        beginDrag(on: monitor)
+        monitor.finishDrag(at: 3)
+        monitor.finishDrag(at: 3.1)
+        XCTAssertEqual(startCount, 1)
+        XCTAssertEqual(endCount, 1)
+        XCTAssertFalse(monitor.isDragInProgress)
+
+        monitor.handle(eventType: .leftMouseDown,
+                       at: CGPoint(x: 200, y: 200),
+                       timestamp: 4,
+                       snapshot: snapshot(changeCount: 20))
+        monitor.handle(eventType: .leftMouseDragged,
+                       at: CGPoint(x: 220, y: 200),
+                       timestamp: 5,
+                       snapshot: snapshot(changeCount: 21, hasFile: true))
+        XCTAssertEqual(startCount, 2)
+        XCTAssertTrue(monitor.isDragInProgress)
+    }
+
+    func testStaleQueuedEventsAfterSourceEnd_doNotResurrectDrag() {
+        var startCount = 0
+        var endCount = 0
+        let monitor = DragStartMonitor(
+            shouldSuppress: { false },
+            onDragStart: { startCount += 1 },
+            onDragEnd: { endCount += 1 }
+        )
+        monitor.start()
+        defer { monitor.stop() }
+
+        beginDrag(on: monitor)
+        monitor.finishDrag(at: 3)
+        XCTAssertEqual(endCount, 1)
+
+        // These represent monitor Tasks queued before the source-end callback
+        // but scheduled to run after it.
+        monitor.handle(eventType: .leftMouseDown,
+                       at: CGPoint(x: 100, y: 100),
+                       timestamp: 1.5,
+                       snapshot: snapshot(changeCount: 10))
+        monitor.handle(eventType: .leftMouseDragged,
+                       at: CGPoint(x: 120, y: 100),
+                       timestamp: 2.5,
+                       snapshot: snapshot(changeCount: 11, hasFile: true))
+        XCTAssertEqual(startCount, 1)
+        XCTAssertEqual(endCount, 1)
+        XCTAssertFalse(monitor.isDragInProgress)
+
+        monitor.handle(eventType: .leftMouseDown,
+                       at: CGPoint(x: 200, y: 200),
+                       timestamp: 4,
+                       snapshot: snapshot(changeCount: 20))
+        monitor.handle(eventType: .leftMouseDragged,
+                       at: CGPoint(x: 220, y: 200),
+                       timestamp: 5,
+                       snapshot: snapshot(changeCount: 21, hasFile: true))
+        XCTAssertEqual(startCount, 2)
+        XCTAssertTrue(monitor.isDragInProgress)
     }
 
     // MARK: - DragAutoShowSession
@@ -239,5 +377,23 @@ final class DragStartMonitorTests: XCTestCase {
         session.dragBegan()
         session.markShownAutomatically()
         XCTAssertTrue(session.dragEnded())
+    }
+
+    private func beginDrag(on monitor: DragStartMonitor) {
+        monitor.handle(eventType: .leftMouseDown,
+                       at: CGPoint(x: 100, y: 100),
+                       timestamp: 1,
+                       snapshot: snapshot(changeCount: 10))
+        monitor.handle(eventType: .leftMouseDragged,
+                       at: CGPoint(x: 120, y: 100),
+                       timestamp: 2,
+                       snapshot: snapshot(changeCount: 11, hasFile: true))
+    }
+
+    private func snapshot(changeCount: Int, hasFile: Bool = false) -> DragPasteboardSnapshot {
+        DragPasteboardSnapshot(
+            changeCount: changeCount,
+            typeIdentifiers: hasFile ? [PasteboardTypes.fileURL.rawValue] : []
+        )
     }
 }
