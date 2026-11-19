@@ -63,6 +63,16 @@ final class AIUsageParsingTests: XCTestCase {
         XCTAssertEqual(limits.tightestWindow?.id, "codex.primary_window")
     }
 
+    func testLimitsKeepZeroAndOnePercentButRejectJSONBooleans() throws {
+        let json = """
+        {"claude":{"configured":true,"five_hour":{"utilization":0},"seven_day":{"utilization":false}},
+         "codex":{"configured":true,"primary_window":{"used_percent":1},"secondary_window":{"used_percent":true}}}
+        """
+        let limits = try AIUsageLimitsParser.parse(Data(json.utf8))
+        XCTAssertEqual(limits.windows.map(\.id), ["claude.five_hour", "codex.primary_window"])
+        XCTAssertEqual(limits.windows.map(\.fraction), [0, 0.01])
+    }
+
     func testDateParsingAcceptsMicrosecondsZuluAndEpochMilliseconds() {
         let micro = AIUsageLimitsParser.date("2026-11-06T12:10:00.071314+00:00")
         let zulu = AIUsageLimitsParser.date("2026-11-06T12:10:00Z")

@@ -1,5 +1,6 @@
 import AppKit
 import CFNetwork
+import CoreFoundation
 import Foundation
 import Observation
 
@@ -196,7 +197,9 @@ enum AIUsageLimitsParser {
 
     private static func number(_ value: Any?) -> Double? {
         switch value {
-        case let number as NSNumber where !(number is Bool): number.doubleValue
+        // Swift also bridges numeric NSNumber values 0 and 1 to Bool.
+        case let number as NSNumber where CFGetTypeID(number) != CFBooleanGetTypeID():
+            number.doubleValue
         case let string as String: Double(string)
         default: nil
         }
