@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <!-- OpenYoink Sparkle 更新 feed（stable channel）。由 Scripts/make-release.sh
-         维护：每次发布新增/替换 <item>（EdDSA 签名，私钥在本机登录钥匙串），
+         维护：每次发布新增 <item>（EdDSA 签名，私钥在本机登录钥匙串），
          勿手工编辑 item。 -->
     <channel>
         <title>OpenYoink Updates</title>

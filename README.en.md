@@ -237,6 +237,8 @@ Written in Swift 6 with SwiftUI and AppKit. Local builds don't need a `DEVELOPME
 
 Releases are built with [`Scripts/make-release.sh`](Scripts/make-release.sh), either with Developer ID signing and notarization or as an explicit `--adhoc` community build. If signing fails, the script stops instead of quietly falling back.
 
+Fixes take a patch release, compatible features a minor release, and breaking changes a major release. See the [versioning policy (Chinese)](docs/VERSIONING.md) for build numbers and local test builds.
+
 ## Contributing
 
 Something feels off, broke, or could be better? Open an [issue](https://github.com/MuQY1818/OpenYoink/issues). For bugs, your macOS version, OpenYoink version and steps to reproduce help a lot — and please keep private files and clipboard contents out of screenshots.

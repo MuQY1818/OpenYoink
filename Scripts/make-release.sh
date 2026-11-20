@@ -103,40 +103,8 @@ echo "==> sign_update: $SIGN_UPDATE"
 # ---- build number（评审 P2）：sparkle:version 必须严格递增，否则老用户
 # 不会把新包视为更新。不传 BUILD 时自动取 appcast 最大 sparkle:version + 1；
 # 传入时校验必须大于该最大值，防止误发「看似新版实则同 build」的更新。
-MAX_BUILD="$(grep -o '<sparkle:version>[0-9]*' "$APPCAST" 2>/dev/null | grep -o '[0-9]*' | sort -n | tail -1 || true)"
-MAX_BUILD="${MAX_BUILD:-0}"
-EXISTING_VERSION_BUILD="$(python3 - "$APPCAST" "$VERSION" <<'PYEOF'
-import sys
-import xml.etree.ElementTree as ET
-
-appcast_path, requested_version = sys.argv[1:3]
-ns = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
-try:
-    root = ET.parse(appcast_path).getroot()
-except (FileNotFoundError, ET.ParseError):
-    raise SystemExit(0)
-for item in root.findall("./channel/item"):
-    short_version = item.find("sparkle:shortVersionString", ns)
-    build = item.find("sparkle:version", ns)
-    if short_version is not None and short_version.text == requested_version and build is not None:
-        print(build.text or "")
-        break
-PYEOF
-)"
-if [ -z "${BUILD_NUMBER}" ]; then
-    if [ -n "$EXISTING_VERSION_BUILD" ]; then
-        BUILD_NUMBER="$EXISTING_VERSION_BUILD"
-        echo "==> 重建现有 ${VERSION} item：沿用 build ${BUILD_NUMBER}"
-    else
-        BUILD_NUMBER=$((MAX_BUILD + 1))
-        echo "==> 自动 build number：${BUILD_NUMBER}（appcast 最大 ${MAX_BUILD} + 1）"
-    fi
-elif [ "${BUILD_NUMBER}" -le "${MAX_BUILD}" ] && [ "$BUILD_NUMBER" != "$EXISTING_VERSION_BUILD" ]; then
-    echo "error: BUILD=${BUILD_NUMBER} 不大于 appcast 最大 sparkle:version ${MAX_BUILD} —— 老用户将收不到更新。请传更大值，或省略第二个参数自动递增。" >&2
-    exit 1
-elif [ "$BUILD_NUMBER" = "$EXISTING_VERSION_BUILD" ]; then
-    echo "==> 重建现有 ${VERSION} item：沿用 build ${BUILD_NUMBER}"
-fi
+BUILD_NUMBER="$(python3 Scripts/next-release-build.py "$APPCAST" "$VERSION" "$BUILD_NUMBER")"
+echo "==> 正式版本：$VERSION ($BUILD_NUMBER)"
 
 # ---- 1. Archive ----
 # build number 在上文已保证存在且严格递增，总是显式写入。
@@ -245,7 +213,7 @@ fi
 
 PUB_DATE="$(LC_TIME=C date '+%a, %d %b %Y %H:%M:%S %z')"
 
-# ---- 6. 更新 docs/appcast.xml（同 shortVersionString 替换而非追加）----
+# ---- 6. 更新 docs/appcast.xml（保留已发布条目）----
 # 注意：item 不写 <sparkle:channel> —— 应用的 Info.plist 未声明 SUChannel，
 # 带 channel 的 item 会被 Sparkle 过滤（「无频道订阅只看默认频道」），
 # 导致明明有新版却判为最新（1.0.1 发布时实测踩坑）。
@@ -262,13 +230,6 @@ ET.register_namespace("sparkle", SPARKLE)
 
 tree = ET.parse(appcast_path, parser=ET.XMLParser(target=ET.TreeBuilder(insert_comments=True)))
 channel = tree.getroot().find("channel")
-
-# 幂等：移除同 shortVersionString 的旧 item。
-for item in list(channel.findall("item")):
-    svs = item.find(f"{{{SPARKLE}}}shortVersionString")
-    if svs is not None and svs.text == short_version:
-        channel.remove(item)
-        print(f"    替换已存在的 {short_version} item")
 
 item = ET.Element("item")
 ET.SubElement(item, "title").text = f"Version {short_version}"

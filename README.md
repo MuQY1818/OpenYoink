@@ -237,6 +237,8 @@ xcodebuild \
 
 发版用 [`Scripts/make-release.sh`](Scripts/make-release.sh)，可以走 Developer ID 签名加公证，也可以显式传 `--adhoc` 出社区版。签名失败时脚本会直接停下，不会悄悄降级。
 
+什么时候升主版本、次版本或补丁号，以及如何区分本机测试包和正式包，见[版本号约定](docs/VERSIONING.md)。
+
 ## 参与进来
 
 用着不顺手、遇到 bug 或者有想法，欢迎开 [Issue](https://github.com/MuQY1818/OpenYoink/issues)。报 bug 时附上 macOS 版本、OpenYoink 版本和复现步骤会很有帮助；截图前留意别带上私人文件或剪贴板内容。
