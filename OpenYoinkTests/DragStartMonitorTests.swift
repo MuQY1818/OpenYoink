@@ -69,6 +69,36 @@ final class DragStartMonitorTests: XCTestCase {
 
     // MARK: - DragStartMonitor session completion
 
+    func testSuccessfulDropSeesFinishedDragEvenWithoutMouseUp() throws {
+        let monitor = DragStartMonitor(shouldSuppress: { false }, onDragStart: {}, onDragEnd: {})
+        monitor.start()
+        defer { monitor.stop() }
+        beginDrag(on: monitor)
+        XCTAssertTrue(monitor.isDragInProgress)
+
+        let suite = "OpenYoinkDragEnd-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let settings = SettingsStore(defaults: defaults)
+        settings.dragOutRemovalPolicy = .keep
+        let item = ShelfItem(kind: .file, displayName: "fixture")
+        var activeAtDrop: Bool?
+        let source = DragSessionController(
+            contents: .init(items: [item], topLevelIDs: [item.id]),
+            store: ShelfStore(items: [item]), settings: settings,
+            recents: RecentItemsService(directoryURL: directory),
+            onSuccessfulDrop: { activeAtDrop = monitor.isDragInProgress },
+            onSourceDragEnded: { monitor.finishDrag(at: 3) }
+        )
+
+        source.completeDrag(operation: .copy)
+        XCTAssertEqual(activeAtDrop, false)
+    }
+
     func testSourceEndThenMouseUp_finishesOnceAndClearsStateBeforeCallback() {
         var startCount = 0
         var endCount = 0

@@ -352,10 +352,11 @@ final class DragSessionController: NSObject, NSDraggingSource {
                          endedAt screenPoint: NSPoint,
                          operation: NSDragOperation) {
         completeDrag(operation: operation)
-        onSourceDragEnded?()
     }
 
     func completeDrag(operation: NSDragOperation) {
+        // End the gesture before auto-hide or the removal prompt can run a nested event loop.
+        onSourceDragEnded?()
         defer { fileAccess = nil }
         delivery?.noteDragSessionEnded()
         if acceptedByFolderCopy || acceptedByShelfReorder {
