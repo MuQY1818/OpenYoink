@@ -45,104 +45,19 @@ private struct FavoriteFoldersSnapshot: Codable, Sendable {
     var items: [FavoriteFolder]
 }
 
+/// Debounced JSON persistence for `folder-favorites.json`.
 @MainActor
 final class FavoriteFoldersPersistenceController {
+    typealias LoadResult = OpenYoink.LoadResult<[FavoriteFolder]>
     static let currentSchemaVersion = 1
 
-    enum LoadResult: Equatable, Sendable {
-        case loaded([FavoriteFolder])
-        case missing
-        case failed
-
-        var items: [FavoriteFolder] {
-            guard case .loaded(let items) = self else { return [] }
-            return items
-        }
-    }
-
     let directoryURL: URL
-    let debounceInterval: Duration
 
-    private var fileURL: URL {
-        directoryURL.appendingPathComponent("folder-favorites.json")
-    }
-    private var backupURL: URL {
-        directoryURL.appendingPathComponent("folder-favorites.json.backup")
-    }
-    private var pendingItems: [FavoriteFolder]?
-    private var saveTask: Task<Void, Never>?
-    private let logger = Logger(
-        subsystem: "com.weijue.OpenYoink",
-        category: "FavoriteFoldersPersistence"
-    )
-
-    private let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }()
-
-    private let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .secondsSince1970
-        return decoder
-    }()
-
-    init(
-        directoryURL: URL? = nil,
-        debounceInterval: Duration = .milliseconds(500)
-    ) {
-        self.directoryURL = directoryURL ?? AppDirectories.applicationSupport()
-        self.debounceInterval = debounceInterval
-    }
-
-    func loadResult() -> LoadResult {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            return .missing
-        }
-        do {
-            let data = try Data(contentsOf: fileURL)
-            let snapshot = try decoder.decode(FavoriteFoldersSnapshot.self, from: data)
-            if snapshot.schemaVersion > Self.currentSchemaVersion {
-                logger.warning("folder-favorites.json uses a newer schema; decoding best-effort")
-            }
-            return .loaded(snapshot.items)
-        } catch {
-            logger.error("Failed to load folder favorites: \(error.localizedDescription, privacy: .public)")
-            quarantineCorruptFile()
-            return .failed
-        }
-    }
-
-    func scheduleSave(_ items: [FavoriteFolder]) {
-        pendingItems = items
-        saveTask?.cancel()
-        saveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(for: debounceInterval)
-            guard !Task.isCancelled, let pendingItems else { return }
-            self.pendingItems = nil
-            writeOrLog(pendingItems)
-        }
-    }
-
-    func saveNow(_ items: [FavoriteFolder]) throws {
-        saveTask?.cancel()
-        saveTask = nil
-        pendingItems = nil
-        try write(items)
-    }
-
-    func flushPendingSave() {
-        saveTask?.cancel()
-        saveTask = nil
-        guard let pendingItems else { return }
-        self.pendingItems = nil
-        writeOrLog(pendingItems)
-    }
-
-    private func writeOrLog(_ items: [FavoriteFolder]) {
+    private let file: JSONFileStore<FavoriteFoldersSnapshot>
+    private let logger = Log.make(category: "FavoriteFoldersPersistence")
+    private let debounceInterval: Duration
+    private lazy var writer = DebouncedWriter<[FavoriteFolder]>(interval: debounceInterval) { [weak self] items in
+        guard let self else { return }
         do {
             try write(items)
         } catch {
@@ -150,40 +65,46 @@ final class FavoriteFoldersPersistenceController {
         }
     }
 
-    private func write(_ items: [FavoriteFolder]) throws {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true
-        )
-        let snapshot = FavoriteFoldersSnapshot(
-            schemaVersion: Self.currentSchemaVersion,
-            items: items
-        )
-        let data = try encoder.encode(snapshot)
-
-        if fileManager.fileExists(atPath: fileURL.path) {
-            do {
-                let previousData = try Data(contentsOf: fileURL)
-                _ = try decoder.decode(FavoriteFoldersSnapshot.self, from: previousData)
-                try previousData.write(to: backupURL, options: .atomic)
-            } catch {
-                logger.warning("Could not refresh the folder-favorites backup")
-            }
-        }
-        try data.write(to: fileURL, options: .atomic)
+    init(directoryURL: URL? = nil, debounceInterval: Duration = .milliseconds(500)) {
+        self.directoryURL = directoryURL ?? AppPaths.applicationSupport()
+        self.debounceInterval = debounceInterval
+        self.file = JSONFileStore(self.directoryURL.appendingPathComponent("folder-favorites.json"),
+                             dateStyle: .secondsSince1970)
     }
 
-    private func quarantineCorruptFile() {
-        let suffix = "\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString)"
-        let quarantineURL = directoryURL.appendingPathComponent(
-            "folder-favorites.json.corrupt-\(suffix)"
-        )
-        do {
-            try FileManager.default.moveItem(at: fileURL, to: quarantineURL)
-        } catch {
-            logger.error("Could not quarantine damaged folder favorites")
+    func loadResult() -> LoadResult {
+        switch file.load(logger: logger) {
+        case .loaded(let snapshot):
+            if snapshot.schemaVersion > Self.currentSchemaVersion {
+                logger.warning("folder-favorites.json uses a newer schema; decoding best-effort")
+            }
+            return .loaded(snapshot.items)
+        case .missing:
+            return .missing
+        case .failed:
+            let suffix = "\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString)"
+            file.quarantine(logger: logger, suffix: suffix)
+            return .failed
         }
+    }
+
+    func scheduleSave(_ items: [FavoriteFolder]) {
+        writer.schedule(items)
+    }
+
+    func saveNow(_ items: [FavoriteFolder]) throws {
+        writer.cancel()
+        try write(items)
+    }
+
+    func flushPendingSave() {
+        writer.flush()
+    }
+
+    private func write(_ items: [FavoriteFolder]) throws {
+        try file.write(FavoriteFoldersSnapshot(schemaVersion: Self.currentSchemaVersion, items: items),
+                       keepingBackup: true,
+                       logger: logger)
     }
 }
 
@@ -485,13 +406,13 @@ final class FavoriteFoldersStore {
     }
 
     func canImportFolders(from pasteboard: NSPasteboard) -> Bool {
-        let urls = fileURLs(from: pasteboard)
+        let urls = pasteboard.fileURLs()
         return !urls.isEmpty && urls.allSatisfy { (try? validateFolder($0)) != nil }
     }
 
     @discardableResult
     func importFolders(from pasteboard: NSPasteboard) -> Bool {
-        let urls = fileURLs(from: pasteboard)
+        let urls = pasteboard.fileURLs()
         guard !urls.isEmpty else { return false }
         _ = addFolders(urls)
         return true
@@ -549,19 +470,6 @@ final class FavoriteFoldersStore {
 
     private func normalizedPath(_ url: URL) -> String {
         url.standardizedFileURL.path
-    }
-
-    private func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [
-            .urlReadingFileURLsOnly: true,
-        ]
-        let objects = pasteboard.readObjects(
-            forClasses: [NSURL.self],
-            options: options
-        ) ?? []
-        return objects.compactMap { object in
-            (object as? NSURL).map { $0 as URL }
-        }
     }
 
     private func persist() {

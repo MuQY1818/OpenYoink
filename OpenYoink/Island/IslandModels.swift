@@ -39,7 +39,7 @@ enum IslandMotion {
     static let collapseWindowDuration: TimeInterval = 0.30
 }
 
-/// Internal-only module contract. v1.4.x deliberately does not load external
+/// Lifecycle contract for built-in modules. The app does not load external
 /// bundles; the protocol keeps first-party lifecycles consistent and gives a
 /// future SDK a stable conceptual boundary.
 @MainActor
@@ -52,25 +52,7 @@ protocol IslandModule: AnyObject {
 @MainActor
 @Observable
 final class IslandModuleRegistry {
-    private(set) var descriptors: [IslandModuleDescriptor] = [
-        .init(id: .shelf, title: String(localized: "Shelf"),
-              systemImage: "tray.full", order: 0, isCore: true),
-        .init(id: .transfers, title: String(localized: "Transfers"),
-              systemImage: "arrow.up.arrow.down", order: 1, isCore: true),
-        .init(id: .timer, title: String(localized: "Timer"),
-              systemImage: "timer", order: 2, isCore: false),
-        .init(id: .battery, title: String(localized: "Battery"),
-              systemImage: "battery.75percent", order: 3, isCore: false),
-        .init(id: .system, title: String(localized: "System Status"),
-              systemImage: "gauge.with.dots.needle.67percent", order: 4, isCore: false),
-        .init(id: .media, title: String(localized: "Now Playing"),
-              systemImage: "music.note", order: 5, isCore: false),
-        .init(id: .folders, title: String(localized: "Quick Access"),
-              systemImage: "folder", order: 6, isCore: false),
-        .init(id: .clipboard, title: String(localized: "Clipboard History"),
-              systemImage: "doc.on.clipboard", order: 7, isCore: false),
-        AIUsageModuleStore.moduleDescriptor,
-    ]
+    let descriptors = IslandModuleCatalog.descriptors
 
     private(set) var enabledIDs: Set<IslandModuleID> = [.shelf, .transfers]
 

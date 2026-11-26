@@ -48,8 +48,7 @@ enum BookmarkError: LocalizedError {
 ///
 /// Access is reference-counted per URL: a resource is only stopped once its
 /// last accessor stops, and `stopAccessingAll()` releases everything (call on
-/// termination). Thread-safe; callable from any queue (file-promise work in
-/// S4/S5 happens off the main actor).
+/// termination). File-promise delegates can call this service on a background queue.
 final class BookmarkService: Sendable {
     /// Open access counts keyed by URL, guarding balanced start/stop calls.
     private let accessCounts = Mutex<[URL: Int]>([:])

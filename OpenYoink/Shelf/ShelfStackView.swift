@@ -1,27 +1,21 @@
 import SwiftUI
 
-/// Stack 卡片（实施计划 §3：右上角数量角标）。
-///
-/// 外观复用 `ShelfItemCard`（12pt 圆角、选中态），缩略图取第一个文件类子项的
-/// 真实缩略图，无则显示 stack 占位符号；右上角叠加数量角标。
-///
-/// 点击语义：普通点击 = 单选该 Stack 并展开/收起浮层；⌘点击 = 仅切换选中
-/// （多选语义与普通卡片一致，不展开）。展开浮层由 ShelfView 以 overlay 呈现。
 struct ShelfStackView: View {
     @Environment(\.shelfSelectionMode) private var selectionMode
     let item: ShelfItem
     let isSelected: Bool
     var isKeyboardFocused: Bool = false
-    /// 浮层展开中：卡片保持 accent 高亮，提示「再次点击收起」。
+    /// While open the card stays highlighted ("click again to close").
     let isExpanded: Bool
-    /// additive 为 true 表示 ⌘点击（切换选中），否则单选。
+    /// `additive` is true for ⌘-click (toggle), false for a plain click.
     let onSelect: (_ additive: Bool) -> Void
     let onToggleExpanded: () -> Void
     var onRemove: (() -> Void)?
     var onRecover: (() -> Void)? = nil
     var onCopy: (() -> Void)? = nil
+    var onUnstack: (() -> Void)? = nil
     var transferStatus: TransferItemAccessibilityStatus? = nil
-    /// S5 拖出内容计算（多选整批/stack 语义由 ShelfView 决定）。
+    /// What a drag carries (ShelfView decides for selections and stacks).
     var dragContentsProvider: ((ShelfItem) -> DragOutContents)?
 
     var body: some View {
@@ -40,6 +34,7 @@ struct ShelfStackView: View {
             onRemove: onRemove,
             onRecover: onRecover,
             onCopy: onCopy,
+            onUnstack: onUnstack,
             transferStatus: transferStatus,
             thumbnailItem: item.children?.first(where: { $0.fileURL != nil }),
             dragContentsProvider: dragContentsProvider
@@ -47,7 +42,7 @@ struct ShelfStackView: View {
         .overlay(alignment: selectionMode ? .topLeading : .topTrailing) { countBadge }
     }
 
-    /// 数量角标（accent 胶囊，右上角）。
+    /// The accent count capsule, top right.
     private var countBadge: some View {
         Text("\(item.children?.count ?? 0)")
             .font(.caption2.weight(.semibold))
@@ -61,16 +56,6 @@ struct ShelfStackView: View {
     }
 }
 
-/// Stack 展开浮层（§3：.ultraThinMaterial 背景 + 等宽网格排列子项）。
-///
-/// 由 ShelfView 以全区域 overlay 承载（点击外部遮罩收起）。子项支持多选
-/// （⌘点击切换、普通点击单选），选择存于共享的 `ShelfInteractionState` —— 子项
-/// 不属于顶层 `ShelfStore.items`，故不走 store.selection。
-/// S5：子项卡片可拖出（命中 childSelection 多选时整批拖出）；子项拖出
-/// 不从 stack 移除（移除语义随 S6 的 stack 批量操作一起设计）。
-/// UX4：子项卡片悬停 ✕ 经 `onRemoveChild` 回调从 stack 中移除该子项
-/// （`ShelfStore.removeChild(_:fromStack:)`：剩 1 项自动解散为普通项，
-/// 剩 0 项移除 stack；stack 消失后本浮层由 ShelfView 自动收起）。
 struct ShelfStackExpandedView: View {
     @Environment(TransferStore.self) private var transferStore
     @Environment(DropTargetState.self) private var dropTargetState
@@ -79,9 +64,9 @@ struct ShelfStackExpandedView: View {
     let stack: ShelfItem
     let onDismiss: () -> Void
     let interaction: ShelfInteractionState
-    /// UX4: 子项移除回调（参数为子项 id）。nil 时子项卡片不渲染 ✕。
+    /// nil renders no ✕ on children.
     var onRemoveChild: ((UUID) -> Void)?
-    /// v1.2: child-specific availability recovery.
+    /// child-specific availability recovery.
     var onRecoverChild: ((ShelfItem) -> Void)? = nil
     var onCopyChild: ((ShelfItem) -> Void)? = nil
 
@@ -144,8 +129,8 @@ struct ShelfStackExpandedView: View {
         }
     }
 
-    /// S5：子项拖出内容 —— 命中多选时整批，否则单子项；topLevelIDs 为空
-    /// （子项不从 stack 移除）。
+    /// The child selection when it includes this child, else just the child;
+    /// no top-level IDs (children aren't removed from the stack).
     private func dragContents(for anchor: ShelfItem) -> DragOutContents {
         let children = stack.children ?? []
         let dragged = interaction.childSelection.contains(anchor.id) && interaction.childSelection.count > 1

@@ -78,12 +78,10 @@ final class SupportController {
             URLQueryItem(name: "body", value: """
             ## What happened?
 
-
             ## Steps to reproduce
             1.
 
             ## What did you expect?
-
 
             <details>
             <summary>Diagnostic summary (no file names, paths, clipboard or shelf contents)</summary>

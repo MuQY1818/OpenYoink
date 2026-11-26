@@ -5,7 +5,7 @@ actor ClipboardHistoryPersistence {
         let version: Int
         let entries: [ClipboardHistoryEntry]
     }
-    private let fileURL: URL
+    private let file: JSONFileStore<Index>
     private let imageDirectory: URL
     private struct StoredEntry: Codable {
         let id: UUID
@@ -23,15 +23,13 @@ actor ClipboardHistoryPersistence {
     private var latestRevision = 0
 
     init(directoryURL: URL) {
-        fileURL = directoryURL.appendingPathComponent("clipboard-history.json")
+        file = JSONFileStore(directoryURL.appendingPathComponent("clipboard-history.json"))
         imageDirectory = directoryURL.appendingPathComponent("ClipboardImages", isDirectory: true)
     }
 
     func load() throws -> [ClipboardHistoryEntry] {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
-        let size = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= ClipboardHistoryPolicy.maximumEncodedBytes else { throw CocoaError(.fileReadCorruptFile) }
-        let data = try Data(contentsOf: fileURL)
+        guard FileManager.default.fileExists(atPath: file.url.path) else { return [] }
+        let data = try file.readData(maximumBytes: ClipboardHistoryPolicy.maximumEncodedBytes)
         struct Header: Decodable { let version: Int }
         let version = try JSONDecoder().decode(Header.self, from: data).version
         if version == 1 {
@@ -76,11 +74,11 @@ actor ClipboardHistoryPersistence {
         latestRevision = revision
         let manager = FileManager.default
         if entries.isEmpty {
-            if manager.fileExists(atPath: fileURL.path) { try manager.removeItem(at: fileURL) }
+            if manager.fileExists(atPath: file.url.path) { try manager.removeItem(at: file.url) }
             try removeUnusedImages(keeping: [])
             return
         }
-        try manager.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true,
+        try manager.createDirectory(at: file.url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                     attributes: [.posixPermissions: 0o700])
         try manager.createDirectory(at: imageDirectory, withIntermediateDirectories: true,
                                     attributes: [.posixPermissions: 0o700])
@@ -105,9 +103,8 @@ actor ClipboardHistoryPersistence {
             stored.append(StoredEntry(id: entry.id, copiedAt: entry.copiedAt, isFavorite: entry.isFavorite,
                                       text: text, isURL: isURL, imageType: imageType, imageName: imageName))
         }
-        let data = try JSONEncoder().encode(Index(version: 2, entries: stored))
-        try data.write(to: fileURL, options: .atomic)
-        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        try file.writeAtomically(Index(version: 2, entries: stored), formatting: [])
+        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.url.path)
         // Clean attachments only after the new index is durably committed.
         try removeUnusedImages(keeping: Set(stored.compactMap(\.imageName)))
     }

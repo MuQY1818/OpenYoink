@@ -129,9 +129,6 @@ struct IslandEmptyState: View {
     }
 }
 
-
-
-
 /// A focus-independent toggle for the dark, non-activating Island panel.
 /// AppKit's native switch dims its tint when the panel loses key-window focus,
 /// which makes an enabled control look disabled. Keeping the visual state in

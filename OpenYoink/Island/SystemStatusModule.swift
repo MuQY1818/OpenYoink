@@ -466,13 +466,7 @@ struct SystemApplicationAlertEvaluator: Sendable {
 @MainActor
 @Observable
 final class SystemStatusModuleStore: IslandModuleRuntime {
-    let descriptor = IslandModuleDescriptor(
-        id: .system,
-        title: String(localized: "System Status"),
-        systemImage: "gauge.with.dots.needle.67percent",
-        order: 4,
-        isCore: false
-    )
+    let descriptor = IslandModuleCatalog.descriptor(for: .system)
     let events: AsyncStream<IslandModuleEvent>
 
     private let provider: any SystemStatusProviding
@@ -502,9 +496,9 @@ final class SystemStatusModuleStore: IslandModuleRuntime {
         self.provider = provider
         self.isSelectedAndExpanded = isSelectedAndExpanded
         self.now = now
-        var capturedContinuation: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { continuation in capturedContinuation = continuation }
-        continuation = capturedContinuation!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     deinit {

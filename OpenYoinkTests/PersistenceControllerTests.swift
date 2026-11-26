@@ -36,7 +36,7 @@ final class PersistenceControllerTests: XCTestCase {
 
         try controller.saveNow(items)
 
-        XCTAssertEqual(controller.load(), items)
+        XCTAssertEqual(controller.loadResult().contents, items)
         XCTAssertEqual(controller.saveCount, 1)
     }
 
@@ -44,7 +44,7 @@ final class PersistenceControllerTests: XCTestCase {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let controller = PersistenceController(directoryURL: directory)
-        XCTAssertEqual(controller.load(), [])
+        XCTAssertEqual(controller.loadResult().contents, [])
     }
 
     func testSave_createsSchemaVersionEnvelope() throws {
@@ -79,7 +79,7 @@ final class PersistenceControllerTests: XCTestCase {
         )
 
         let controller = PersistenceController(directoryURL: directory)
-        XCTAssertEqual(controller.load(), [])
+        XCTAssertEqual(controller.loadResult().contents, [])
     }
 
     // MARK: - Corrupted data
@@ -94,14 +94,12 @@ final class PersistenceControllerTests: XCTestCase {
         )
 
         let controller = PersistenceController(directoryURL: directory)
-        XCTAssertEqual(controller.load(), [])
+        XCTAssertEqual(controller.loadResult().contents, [])
 
         // The controller stays usable after a corrupted read.
         try controller.saveNow([makeItem("recovered")])
-        XCTAssertEqual(controller.load().map(\.displayName), ["recovered"])
+        XCTAssertEqual(controller.loadResult().contents.map(\.displayName), ["recovered"])
     }
-
-    // MARK: - 评审 P1：失败感知的加载语义
 
     func testLoadResult_missingFile_returnsMissing() throws {
         let directory = try makeTempDirectory()
@@ -121,9 +119,9 @@ final class PersistenceControllerTests: XCTestCase {
         XCTAssertEqual(items.map(\.displayName), ["a", "b"])
     }
 
-    /// 评审 P1 核心回归：损坏文件必须被判为 .failed 并隔离保留（而不是
-    /// 静默视为空架）——这样启动链路才能据此跳过孤儿清理，避免连锁
-    /// 删除 Materialized 保管文件。
+    /// A corrupt file must load as .failed and be kept in quarantine, not
+    /// silently read as an empty shelf, so launch skips orphan cleanup instead
+    /// of deleting managed files in Materialized.
     func testLoadResult_corruptedJSON_returnsFailed_andQuarantinesFile() throws {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -133,15 +131,15 @@ final class PersistenceControllerTests: XCTestCase {
         let controller = PersistenceController(directoryURL: directory)
         XCTAssertEqual(controller.loadResult(), .failed)
         XCTAssertFalse(FileManager.default.fileExists(atPath: shelfURL.path),
-                       "损坏文件应被移出原位")
+                       "Move the corrupt file out of its original location.")
         let quarantined = try FileManager.default.contentsOfDirectory(atPath: directory.path)
             .filter { $0.hasPrefix("shelf.json.corrupt-") }
-        XCTAssertEqual(quarantined.count, 1, "损坏文件应被隔离保留供人工恢复")
+        XCTAssertEqual(quarantined.count, 1, "the corrupt file should be quarantined for manual recovery")
     }
 
-    /// 启动链路必须复用第一次读取的结果：损坏文件在首次读取时会被隔离，
-    /// 第二次读取已经变成 missing；若用第二次结果判断清理，就会误删全部
-    /// Materialized 文件。
+    /// Launch must reuse the first read: the first read quarantines a corrupt
+    /// file and a second one reports missing; deciding cleanup from the second
+    /// would delete every file in Materialized.
     func testLoadResult_failedSnapshotNeverPermitsOrphanCleanup_afterQuarantine() throws {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -155,22 +153,22 @@ final class PersistenceControllerTests: XCTestCase {
         let initialResult = controller.loadResult()
 
         XCTAssertEqual(initialResult, .failed)
-        XCTAssertEqual(initialResult.items, [])
-        XCTAssertFalse(initialResult.permitsMaterializedOrphanCleanup)
+        XCTAssertEqual(initialResult.contents, [])
+        XCTAssertFalse(initialResult.isTrusted)
         XCTAssertFalse(controller.canSafelyCleanupMaterializedOrphans(after: initialResult))
         XCTAssertEqual(controller.loadResult(), .missing,
-                       "隔离后的再次读取会变成 missing，启动代码不能依赖它")
-        XCTAssertFalse(initialResult.permitsMaterializedOrphanCleanup,
-                       "首次失败结果必须持续阻止本轮孤儿清理")
+                       "A read after quarantine reports missing. Startup must retain the first result.")
+        XCTAssertFalse(initialResult.isTrusted,
+                       "The initial load failure must block orphan cleanup for this launch.")
         XCTAssertFalse(
             controller.canSafelyCleanupMaterializedOrphans(after: .missing),
-            "隔离快照存在时，后续启动即使读到 missing 也必须保留恢复材料"
+            "while a quarantined snapshot exists, later launches must keep recovery material even when reading missing"
         )
     }
 
     func testLoadResult_trustedSnapshotsPermitOrphanCleanup() throws {
-        XCTAssertTrue(PersistenceController.LoadResult.missing.permitsMaterializedOrphanCleanup)
-        XCTAssertTrue(PersistenceController.LoadResult.loaded([]).permitsMaterializedOrphanCleanup)
+        XCTAssertTrue(PersistenceController.LoadResult.missing.isTrusted)
+        XCTAssertTrue(PersistenceController.LoadResult.loaded([]).isTrusted)
 
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -194,18 +192,16 @@ final class PersistenceControllerTests: XCTestCase {
 
         guard case .loaded = result else { return XCTFail("expected valid current snapshot") }
         XCTAssertFalse(controller.canSafelyCleanupMaterializedOrphans(after: result),
-                       "新快照不能隐式表示用户已放弃旧快照的数据恢复")
+                       "A new snapshot must preserve the user's existing recovery data.")
     }
 
-    /// 原子替换：已有文件时保存不得经「先删后移」（旧实现在移动失败时
-    /// 新旧俱损）；正常路径下新内容完整落盘、无临时文件残留。
     func testWrite_existingFile_atomicallyReplaced() throws {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let controller = PersistenceController(directoryURL: directory)
         try controller.saveNow([makeItem("old")])
         try controller.saveNow([makeItem("new-1"), makeItem("new-2")])
-        XCTAssertEqual(controller.load().map(\.displayName), ["new-1", "new-2"])
+        XCTAssertEqual(controller.loadResult().contents.map(\.displayName), ["new-1", "new-2"])
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: directory.appendingPathComponent("shelf.json.tmp").path))
     }
@@ -225,7 +221,7 @@ final class PersistenceControllerTests: XCTestCase {
         )
         XCTAssertTrue(backup.isRecoverable)
         XCTAssertEqual(try controller.loadRecoverySnapshot(backup).map(\.displayName), ["old"])
-        XCTAssertEqual(controller.load().map(\.displayName), ["new"])
+        XCTAssertEqual(controller.loadResult().contents.map(\.displayName), ["new"])
     }
 
     func testRecoverySnapshots_marksDamagedQuarantineAsUnreadable() throws {
@@ -280,7 +276,7 @@ final class PersistenceControllerTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(300))
 
         XCTAssertEqual(controller.saveCount, 1)
-        XCTAssertEqual(controller.load().map(\.displayName), ["a", "b", "c"])
+        XCTAssertEqual(controller.loadResult().contents.map(\.displayName), ["a", "b", "c"])
     }
 
     func testFlushPendingSave_writesImmediatelyAndCancelsDebounce() async throws {
@@ -295,7 +291,7 @@ final class PersistenceControllerTests: XCTestCase {
         controller.flushPendingSave()
 
         XCTAssertEqual(controller.saveCount, 1)
-        XCTAssertEqual(controller.load().map(\.displayName), ["a"])
+        XCTAssertEqual(controller.loadResult().contents.map(\.displayName), ["a"])
 
         // The cancelled debounce task must not write again.
         try await Task.sleep(for: .milliseconds(200))

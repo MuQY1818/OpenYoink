@@ -2,155 +2,70 @@ import AppKit
 import OSLog
 import SwiftUI
 
-/// Hides on a non-empty → empty transition when enabled. Explicit shelf
-/// management removals and in-progress drags keep the shelf open, while still
-/// advancing the baseline so a suppressed hide is never replayed later.
-struct EmptyShelfAutoHideRule: Sendable, Equatable {
-    private var previousCount: Int?
-
-    /// 每次 items 变更时评估。返回 true = 应立即自动隐藏。
-    /// 无论结果如何都记录本次数量作为下次基线。
-    mutating func evaluate(itemCount: Int, isVisible: Bool, isEnabled: Bool) -> Bool {
-        evaluate(itemCount: itemCount, isVisible: isVisible, isEnabled: isEnabled,
-                 isDragInProgress: false)
-    }
-
-    /// Suppressed transitions still update the baseline. Future delivery-driven
-    /// removals continue to follow the user's empty-shelf setting.
-    mutating func evaluate(itemCount: Int, isVisible: Bool, isEnabled: Bool,
-                           isDragInProgress: Bool, isUserRemoval: Bool = false) -> Bool {
-        defer { previousCount = itemCount }
-        guard let previousCount else { return false }
-        guard !isDragInProgress, !isUserRemoval else { return false }
-        return isEnabled && isVisible && previousCount > 0 && itemCount == 0
-    }
-
-    /// 清空基线（下一次评估只记录不触发）。
-    mutating func reset() {
-        previousCount = nil
-    }
-}
-
-/// 负责 shelf 面板的显示/隐藏（滑入滑出 + 透明度组合动画）、
-/// 基于鼠标所在屏幕的 frame 计算，以及屏幕参数变化时的重新布局。
-/// S6 起同时承担：Quick Look 会话持有（`QuickLookCoordinator`）与卡片键盘
-/// 事件分派（空格/Delete/Esc，经 `ShelfPanel.onKeyDown` 回调）。
 ///
-/// 公开 API 约定（S7 触发器、S8 设置均通过这里驱动面板）：
 /// - `toggleShelf(animated:)` / `showShelf(animated:)` / `hideShelf(animated:)`
-/// - `isShelfVisible: Bool`（只读，实际状态存于 `AppState`）
 @MainActor
 final class ShelfWindowController: NSObject {
     private static let animationDuration: TimeInterval = 0.2
-    private let islandLogger = Logger(subsystem: "com.weijue.OpenYoink", category: "IslandPresentation")
     var onClassicDestinationEntered: ((Int) -> Void)?
     var onClassicDestinationEnded: ((Int, Bool) -> Void)?
     var onClassicPresentationRequested: (() -> Void)?
     var onClassicShelfHandoffChanged: (() -> Void)?
 
     private let appState: AppState
-    /// S8: shelf 位置/宽度/autoHide 等布局与行为设置的来源（原
-    /// `static let shelfWidth` 占位常量已移除，宽度由此供给）。
-    private let settings: SettingsStore
-    private let clipboardHistoryStore: ClipboardHistoryStore
-    private let recentDownloadsStore: RecentDownloadsStore
-    /// Shelf 数据（S3 起注入 ShelfView 的 @Environment）。
-    /// S4: DragContainerView（NSDraggingDestination 桥接）同样持有此 store。
-    private let store: ShelfStore
-    /// UX6: 空架自动隐藏裁决状态（跨 items 变更保持上一轮数量基线）。
+
+    let settings: SettingsStore
+    let clipboardHistoryStore: ClipboardHistoryStore
+
+    let store: ShelfStore
     private var emptyAutoHideRule = EmptyShelfAutoHideRule()
     private var isUserRemovalInProgress = false
-    /// S4: 拖入分派（pasteboard → ShelfItem），供 DragContainerView 调用。
-    private let importCoordinator: DropImportCoordinator
-    /// S4: 拖入悬停高亮/插入位置状态，DragContainerView 驱动、ShelfView 渲染。
+    let dropHandler: ShelfDropHandler
+    let bookmarkService: BookmarkService
+    let notices: ShelfNoticeModel
+    let transferStore: TransferStore
     private let classicDropTargetState = DropTargetState()
     private let islandDropTargetState = DropTargetState()
-    /// C5/C6: 卡片网格几何（ShelfView 上报 frame；DragContainerView 拖入定位、
-    /// ShelfView 框选命中共用）。
+
     private let classicGridGeometry = ShelfGridGeometry()
     private let islandGridGeometry = ShelfGridGeometry()
     /// Runtime focus/expanded-stack state shared with SwiftUI card rendering.
-    private let interaction = ShelfInteractionState()
-    /// S5: 拖出总控（卡片 mouseDragged → NSDraggingSession；结束后按设置策略
-    /// 移除/保留/询问（S8 .ask NSAlert）并记入最近历史；S8 起经
-    /// onSuccessfulDrop 回调接 autoHide）。
+    let interaction = ShelfInteractionState()
+
     private let classicDragOutController: DragOutController
     private let islandDragOutController: DragOutController
-    /// S6: 物化临时文件目录（注入 SwiftUI 环境，供卡片菜单的 text 项操作使用）。
-    private let tempFileService: TempFileService
-    /// S6: Quick Look 会话（QLPreviewPanel 数据源/代理；空格/双击/右键入口
-    /// 汇聚于此，随窗口控制器长期存活）。
-    private let quickLookCoordinator: QuickLookCoordinator
-    /// v1.2: distinguishes external references from managed-copy loss and owns
+    let tempFileService: TempFileService
+
+    let quickLookCoordinator: QuickLookCoordinator
+    /// distinguishes external references from managed-copy loss and owns
     /// the safe user-driven recovery actions.
-    private let itemRecoveryController: ItemRecoveryController
-    /// v1.3: shared non-destructive selection actions and the retained AppKit
+    let itemRecoveryController: ItemRecoveryController
+    /// shared non-destructive selection actions and the retained AppKit
     /// share-session lifecycle.
-    private let shelfActionRunner: ShelfActionRunner
+    let shelfActionRunner: ShelfActionRunner
     /// Batch-level VoiceOver announcements live for the controller lifetime so
     /// SwiftUI redraws cannot repeat already spoken events.
-    private let accessibilityAnnouncementCenter = AccessibilityAnnouncementCenter()
-    /// 任务二：拖拽进行中状态（`DragStartMonitor.isDragInProgress`），供给
-    /// 空架自动隐藏的门控 —— 拖拽期间任何自动显隐不得收起已可见的 shelf。
+    let accessibilityAnnouncementCenter: AccessibilityAnnouncementCenter
+
     private let dragStartMonitor: DragStartMonitor
     /// Expanded Island's visible Settings control uses the app's retained,
     /// LSUIElement-safe settings window rather than SwiftUI's response-chain
     /// action, which can silently fail for a non-activating panel.
-    private let onOpenSettings: @MainActor () -> Void
-    /// v1.4: the classic shelf and Island share one dependency graph and one
+    let onOpenSettings: @MainActor () -> Void
+    /// the classic shelf and Island share one dependency graph and one
     /// ShelfStore, but each owns an independent panel and visibility state.
-    let islandActivityCoordinator: IslandActivityCoordinator
-    let islandModuleRegistry: IslandModuleRegistry
-    let islandTimerStore: IslandTimerStore
-    let powerSourceMonitor: PowerSourceMonitor
-    let nowPlayingModuleStore: NowPlayingModuleStore
-    let systemStatusModuleStore: SystemStatusModuleStore
-    let aiUsageModuleStore: AIUsageModuleStore
-    let favoriteFoldersStore: FavoriteFoldersStore
-    let favoriteFolderDropCoordinator: FavoriteFolderDropCoordinator
-    let islandModuleContainer: IslandModuleContainer
-    private let transfersModuleRuntime: TransfersModuleRuntime
-    private let timerModuleRuntime: CallbackIslandModuleRuntime
-    private let batteryModuleRuntime: CallbackIslandModuleRuntime
-    private let mediaModuleRuntime: CallbackIslandModuleRuntime
-    private let favoriteFoldersModuleRuntime: CallbackIslandModuleRuntime
-    private var islandGlobalMonitor: Any?
-    private var islandLocalMonitor: Any?
-    private var islandHoverTask: Task<Void, Never>?
-    private var islandLayoutTask: Task<Void, Never>?
-    /// Floating Island idle dot / hidden mode (issue #11).
-    private var isFloatingIslandRevealed = false
-    private var floatingConcealTask: Task<Void, Never>?
-    private var floatingShrinkTask: Task<Void, Never>?
-    /// Keeps the panel at pill size while SwiftUI shrinks the pill into the
-    /// dot; shrinking the window first would clip that animation.
-    private var isFloatingShrinkPending = false
-    private var islandFrameTransition = ShelfFrameTransitionState()
-    private var classicHoverPreviewState = ClassicShelfHoverPreviewStateMachine()
-    private var classicHoverExitTask: Task<Void, Never>?
-    private var classicHoverGlobalMonitor: Any?
-    private var classicHoverLocalMonitor: Any?
-    private var isOpeningClassicHoverPreview = false
-    /// 快速上手期间只暂停自动隐藏，不改写用户的 autoHide 设置。
+    /// Onboarding pauses every automatic hide without touching `autoHide`.
     private var onboardingPresentationCount = 0
     private var quickActionLayoutTask: Task<Void, Never>?
     private var classicFrameTransition = ShelfFrameTransitionState()
     private var classicVisibilityTransition = ShelfVisibilityTransitionState()
-    /// issue #10：侧边 shelf 从拉环长出 / 收回拉环的形变状态。
-    private let classicReveal = ShelfRevealState()
-    /// 拉环 ↔ 面板形变进行中：期间不改窗口阴影与 frame（任意偏好写入都会
-    /// 触发 applyPresentationSettings），结束后统一恢复。
+    let classicReveal = ShelfRevealState()
+
     private var isClassicMorphing = false
-    /// 形变期间被推迟的布局请求（数量/设置变化），形变结束后补做。
     private var isClassicLayoutDeferred = false
-    /// 可见期间高度变化动画的代次；新请求或隐藏会让旧动画的收尾失效。
     private var classicResizeGeneration: UInt = 0
-    /// 面板窗口与玻璃面之间的透明边距（ShelfView classic 分支的 `.padding(8)`）。
     private static let classicSurfaceInset: CGFloat = 8
 
-    /// shelf 逻辑上占用的 frame。可见期间变矮时窗口不缩（见
-    /// `resizeClassicSurface`），只有顶部玻璃面是 shelf，底部多出的部分
-    /// 透明、不接收点击；悬停、命中与形变都以这里为准，而不是窗口 frame。
     private var classicLogicalFrame: NSRect {
         let frame = classicPanel.frame
         guard let surfaceHeight = classicReveal.surfaceHeight else { return frame }
@@ -158,7 +73,6 @@ final class ShelfWindowController: NSObject {
         return NSRect(x: frame.minX, y: frame.maxY - height, width: frame.width, height: height)
     }
 
-    /// 窗口 frame 即将被直接改写：作废进行中的高度动画，玻璃面重新撑满窗口。
     private func resetClassicSurfaceHeight() {
         classicResizeGeneration &+= 1
         classicReveal.pinSurfaceHeight(nil)
@@ -169,11 +83,38 @@ final class ShelfWindowController: NSObject {
         fileprivate let wasVisible: Bool
     }
 
+    lazy var keyboardRouter = ShelfKeyboardRouter(
+        settings: settings, store: store, interaction: interaction,
+        favoriteFoldersStore: islandModules.favoriteFoldersStore,
+        bookmarkService: bookmarkService, notices: notices, shelfActionRunner: shelfActionRunner,
+        itemRecoveryController: itemRecoveryController, quickLookCoordinator: quickLookCoordinator,
+        tempFileService: tempFileService,
+        hideShelf: { [weak self] in self?.hideShelf(animated: $0) },
+        collapseIsland: { [weak self] in self?.collapseIsland(animated: $0) },
+        withUserRemoval: { [weak self] action in self?.withUserRemoval(action) ?? action() }
+    )
+
+    func withUserRemoval<Result>(_ action: () -> Result) -> Result {
+        let previous = isUserRemovalInProgress
+        isUserRemovalInProgress = true
+        defer { isUserRemovalInProgress = previous }
+        return action()
+    }
+
     private lazy var classicPanel: ShelfPanel = makePanel(
         presentationStyle: .classic,
         dropTargetState: classicDropTargetState,
         gridGeometry: classicGridGeometry,
         dragOutController: classicDragOutController
+    )
+
+    let islandModules: IslandModules
+    var islandActivityCoordinator: IslandActivityCoordinator { islandModules.islandActivityCoordinator }
+    var favoriteFolderDropCoordinator: FavoriteFolderDropCoordinator { islandModules.favoriteFolderDropCoordinator }
+
+    private lazy var islandSurface = IslandSurfaceController(
+        panel: islandPanel, settings: settings, modules: islandModules,
+        quickLookCoordinator: quickLookCoordinator
     )
 
     private lazy var islandPanel: ShelfPanel = makePanel(
@@ -182,149 +123,6 @@ final class ShelfWindowController: NSObject {
         gridGeometry: islandGridGeometry,
         dragOutController: islandDragOutController
     )
-
-    private func makePanel(
-        presentationStyle: ShelfPresentationStyle,
-        dropTargetState: DropTargetState,
-        gridGeometry: ShelfGridGeometry,
-        dragOutController: DragOutController
-    ) -> ShelfPanel {
-        let panel = ShelfPanel(
-            contentRect: NSRect(origin: .zero,
-                                size: NSSize(width: settings.shelfWidth, height: 600)),
-            styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        // SwiftUI presentation preferences alone don't set AppKit controls'
-        // appearance inside this custom, non-activating Island panel.
-        if presentationStyle == .island {
-            panel.appearance = NSAppearance(named: .darkAqua)
-        }
-        // S4: DragContainerView（NSDraggingDestination）包裹 hosting 视图。
-        let hostingController = NSHostingController(
-            rootView: ShelfPresentationRootView(
-                presentationStyle: presentationStyle,
-                onPerformRecovery: { [weak self] action in
-                    self?.itemRecoveryController.perform(action)
-                },
-                onOpenSettings: { [weak self] in
-                    self?.onOpenSettings()
-                }
-            )
-                .environment(store)
-                .environment(dropTargetState)
-                .environment(settings)
-                .environment(gridGeometry)
-                .environment(interaction)
-                .environment(importCoordinator.noticeCenter)
-                .environment(importCoordinator.transferStore)
-                .environment(islandActivityCoordinator)
-                .environment(islandModuleRegistry)
-                .environment(islandModuleContainer)
-                .environment(islandTimerStore)
-                .environment(powerSourceMonitor)
-                .environment(nowPlayingModuleStore)
-                .environment(systemStatusModuleStore)
-                .environment(aiUsageModuleStore)
-                .environment(favoriteFoldersStore)
-                .environment(favoriteFolderDropCoordinator)
-                .environment(clipboardHistoryStore)
-                .environment(recentDownloadsStore)
-                .environment(\.bookmarkService, importCoordinator.bookmarkService)
-                .environment(\.dragOutController, dragOutController)
-                .environment(\.quickLookCoordinator, quickLookCoordinator)
-                .environment(\.tempFileService, tempFileService)
-                .environment(\.itemRecoveryController, itemRecoveryController)
-                .environment(\.shelfActionRunner, shelfActionRunner)
-                .environment(\.accessibilityAnnouncementCenter,
-                              accessibilityAnnouncementCenter)
-                // 任务三：内缘收起把手点击 → 走标准 hideShelf 滑出动画。
-                .environment(\.shelfRevealState,
-                             presentationStyle == .classic ? classicReveal : nil)
-                .environment(\.shelfHideAction, { [weak self] in
-                    if presentationStyle == .island {
-                        self?.collapseIsland(animated: true)
-                    } else {
-                        self?.hideShelf(animated: true)
-                    }
-                })
-                .environment(\.shelfFocusAction, { [weak panel] in
-                    guard let panel else { return }
-                    panel.makeKey()
-                    if let editor = panel.firstResponder as? NSTextView, editor.isFieldEditor {
-                        panel.makeFirstResponder(nil)
-                    }
-                })
-                .environment(\.shelfUserRemovalAction, { [weak self] action in
-                    guard let self else { action(); return }
-                    let previous = self.isUserRemovalInProgress
-                    self.isUserRemovalInProgress = true
-                    defer { self.isUserRemovalInProgress = previous }
-                    action()
-                })
-        )
-        let dropOverride: DragContainerDropOverride? = presentationStyle == .island
-            ? DragContainerDropOverride(
-                isActive: { [weak self] in
-                    guard let self else { return false }
-                    return self.islandActivityCoordinator.surfaceState.isExpanded
-                        && [.folders, .clipboard].contains(self.islandActivityCoordinator.selectedModule)
-                },
-                canHandle: { [weak self] context in
-                    guard let self, self.islandActivityCoordinator.selectedModule == .folders else { return false }
-                    return self.favoriteFolderDropCoordinator.update(context)
-                },
-                perform: { [weak self] context in
-                    guard let self, self.islandActivityCoordinator.selectedModule == .folders else { return false }
-                    return self.favoriteFolderDropCoordinator.perform(context)
-                },
-                reset: { [weak self] in self?.favoriteFolderDropCoordinator.resetTarget() }
-            )
-            : nil
-        panel.contentView = DragContainerView(
-            store: store,
-            coordinator: importCoordinator,
-            dropTargetState: dropTargetState,
-            gridGeometry: gridGeometry,
-            dropOverride: dropOverride,
-            onDestinationEntered: { [weak self] sequenceNumber in
-                guard presentationStyle == .classic else { return }
-                self?.onClassicDestinationEntered?(sequenceNumber)
-            },
-            onDestinationEnded: { [weak self] sequenceNumber, accepted in
-                guard presentationStyle == .classic else { return }
-                self?.onClassicDestinationEnded?(sequenceNumber, accepted)
-            },
-            contentViewController: hostingController
-        )
-        panel.contentView?.wantsLayer = true
-        panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
-        // S6: 键盘链路入口 —— 卡片单击已让面板成为 key，未被内容消费的
-        // keyDown 到达这里（空格/Delete/Esc，见 handleItemKeyDown）。
-        panel.onKeyDown = { [weak self] event in
-            self?.handleItemKeyDown(event, in: panel) ?? false
-        }
-        if presentationStyle == .island {
-            for name in [NSWindow.didChangeOcclusionStateNotification,
-                         NSWindow.didBecomeKeyNotification,
-                         NSWindow.didResignKeyNotification] {
-                NotificationCenter.default.addObserver(
-                    self, selector: #selector(islandWindowStateDidChange(_:)),
-                    name: name, object: panel
-                )
-            }
-        }
-        return panel
-    }
-
-    var isShelfVisible: Bool {
-        appState.isShelfVisible
-    }
-
-    var isIslandExpanded: Bool {
-        islandActivityCoordinator.surfaceState.isExpanded
-    }
 
     var isPreferredShelfExpanded: Bool {
         switch effectivePreferredShelfSurface {
@@ -336,229 +134,41 @@ final class ShelfWindowController: NSObject {
 
     init(appState: AppState,
          store: ShelfStore,
-         importCoordinator: DropImportCoordinator,
+         dropHandler: ShelfDropHandler,
+         bookmarkService: BookmarkService,
+         notices: ShelfNoticeModel,
+         transferStore: TransferStore,
+         islandModules: IslandModules,
          tempFileService: TempFileService,
          settings: SettingsStore,
-         recents: RecentItemsService,
-         deliveryCoordinator: DeliveryCoordinator,
+         classicDragOutController: DragOutController,
+         islandDragOutController: DragOutController,
+         quickLookCoordinator: QuickLookCoordinator,
+         itemRecoveryController: ItemRecoveryController,
+         shelfActionRunner: ShelfActionRunner,
+         accessibilityAnnouncementCenter: AccessibilityAnnouncementCenter,
          dragStartMonitor: DragStartMonitor,
          clipboardHistoryStore: ClipboardHistoryStore,
-         onOpenSettings: @escaping @MainActor () -> Void = {},
-         onOpenStorageRecovery: @escaping @MainActor () -> Void = {},
-         tutorialTokenForItem: @escaping @MainActor (UUID) -> String? = { _ in nil }) {
+         onOpenSettings: @escaping @MainActor () -> Void) {
         self.appState = appState
         self.store = store
-        self.importCoordinator = importCoordinator
+        self.dropHandler = dropHandler
+        self.bookmarkService = bookmarkService
+        self.notices = notices
+        self.transferStore = transferStore
+        self.islandModules = islandModules
         self.tempFileService = tempFileService
         self.settings = settings
         self.clipboardHistoryStore = clipboardHistoryStore
-        self.recentDownloadsStore = RecentDownloadsStore(defaults: settings.defaultsStore,
-                                                         bookmarks: importCoordinator.bookmarkService)
         self.dragStartMonitor = dragStartMonitor
         self.onOpenSettings = onOpenSettings
-        let islandActivityCoordinator = IslandActivityCoordinator()
-        let islandModuleRegistry = IslandModuleRegistry()
-        let islandTimerStore = IslandTimerStore(defaults: settings.defaultsStore)
-        let powerSourceMonitor = PowerSourceMonitor(
-            isSelectedAndExpanded: {
-                islandActivityCoordinator.surfaceState.isExpanded && islandActivityCoordinator.selectedModule == .battery
-            },
-            fullChargeAlertEnabled: { settings.islandFullChargeAlertEnabled }
-        )
-        let nowPlayingModuleStore = NowPlayingModuleStore(
-            sourceFactory: { NowPlayingSourceFactory.bundled(isSelectedAndExpanded: {
-                islandActivityCoordinator.surfaceState.isExpanded && islandActivityCoordinator.selectedModule == .media
-            }) }
-        )
-        let systemStatusModuleStore = SystemStatusModuleStore(
-            isSelectedAndExpanded: {
-                islandActivityCoordinator.surfaceState.isExpanded
-                    && islandActivityCoordinator.selectedModule == .system
-            }
-        )
-        let aiUsageModuleStore = AIUsageModuleStore(
-            makeProvider: { TokenTrackerClient(port: settings.aiUsageServerPort) },
-            isSelectedAndExpanded: {
-                islandActivityCoordinator.surfaceState.isExpanded
-                    && islandActivityCoordinator.selectedModule == .aiUsage
-            },
-            compactMetric: { settings.aiUsageCompactMetric },
-            alertsEnabled: { settings.aiUsageLimitAlertsEnabled }
-        )
-        let favoriteFoldersStore = FavoriteFoldersStore(
-            persistence: FavoriteFoldersPersistenceController(),
-            bookmarkService: importCoordinator.bookmarkService
-        )
-        let favoriteFolderDropCoordinator = FavoriteFolderDropCoordinator(folders: favoriteFoldersStore,
-                                                                          bookmarks: importCoordinator.bookmarkService)
-        let shelfRuntime = CallbackIslandModuleRuntime(
-            descriptor: islandModuleRegistry.descriptor(for: .shelf)!
-        )
-        let transfersModuleRuntime = TransfersModuleRuntime(
-            transferStore: importCoordinator.transferStore
-        )
-        // Recording belongs to the app lifecycle, independently of Island.
-        let clipboardRuntime = CallbackIslandModuleRuntime(
-            descriptor: islandModuleRegistry.descriptor(for: .clipboard)!
-        )
-        let timerModuleRuntime = CallbackIslandModuleRuntime(
-            descriptor: islandTimerStore.descriptor,
-            start: { islandTimerStore.start() },
-            stop: { islandTimerStore.stop() }
-        )
-        let batteryModuleRuntime = CallbackIslandModuleRuntime(
-            descriptor: powerSourceMonitor.descriptor,
-            start: { powerSourceMonitor.start() },
-            stop: { powerSourceMonitor.stop() }
-        )
-        let mediaModuleRuntime = CallbackIslandModuleRuntime(
-            descriptor: nowPlayingModuleStore.descriptor,
-            start: { nowPlayingModuleStore.start() },
-            stop: { nowPlayingModuleStore.stop() }
-        )
-        let favoriteFoldersModuleRuntime = CallbackIslandModuleRuntime(
-            descriptor: islandModuleRegistry.descriptor(for: .folders)!,
-            start: { favoriteFoldersStore.start() },
-            stop: { favoriteFoldersStore.stop(); favoriteFolderDropCoordinator.cancelCopy() }
-        )
-        self.islandActivityCoordinator = islandActivityCoordinator
-        self.islandModuleRegistry = islandModuleRegistry
-        self.islandTimerStore = islandTimerStore
-        self.powerSourceMonitor = powerSourceMonitor
-        self.nowPlayingModuleStore = nowPlayingModuleStore
-        self.systemStatusModuleStore = systemStatusModuleStore
-        self.aiUsageModuleStore = aiUsageModuleStore
-        self.favoriteFoldersStore = favoriteFoldersStore
-        self.favoriteFolderDropCoordinator = favoriteFolderDropCoordinator
-        self.transfersModuleRuntime = transfersModuleRuntime
-        self.timerModuleRuntime = timerModuleRuntime
-        self.batteryModuleRuntime = batteryModuleRuntime
-        self.mediaModuleRuntime = mediaModuleRuntime
-        self.favoriteFoldersModuleRuntime = favoriteFoldersModuleRuntime
-        self.islandModuleContainer = IslandModuleContainer(
-            registrations: [
-                IslandModuleRegistration(
-                    descriptor: clipboardRuntime.descriptor,
-                    runtime: clipboardRuntime,
-                    makeContentView: { _ in AnyView(ClipboardHistoryView(isIsland: true)) }
-                ),
-                IslandModuleRegistration(
-                    descriptor: shelfRuntime.descriptor,
-                    runtime: shelfRuntime,
-                    makeContentView: { _ in AnyView(IslandShelfModuleView()) }
-                ),
-                IslandModuleRegistration(
-                    descriptor: transfersModuleRuntime.descriptor,
-                    runtime: transfersModuleRuntime,
-                    makeContentView: { context in
-                        AnyView(IslandTransfersView(
-                            onPerformRecovery: context.onPerformRecovery
-                        ))
-                    }
-                ),
-                IslandModuleRegistration(
-                    descriptor: timerModuleRuntime.descriptor,
-                    runtime: timerModuleRuntime,
-                    makeContentView: { _ in AnyView(IslandModuleScrollView { IslandTimerView() }) }
-                ),
-                IslandModuleRegistration(
-                    descriptor: batteryModuleRuntime.descriptor,
-                    runtime: batteryModuleRuntime,
-                    makeContentView: { _ in AnyView(IslandModuleScrollView { IslandBatteryView() }) }
-                ),
-                IslandModuleRegistration(
-                    descriptor: systemStatusModuleStore.descriptor,
-                    runtime: systemStatusModuleStore,
-                    makeContentView: { _ in AnyView(IslandSystemStatusView()) }
-                ),
-                IslandModuleRegistration(
-                    descriptor: mediaModuleRuntime.descriptor,
-                    runtime: mediaModuleRuntime,
-                    makeContentView: { _ in
-                        AnyView(IslandModuleScrollView(fillsViewport: true) { IslandNowPlayingView() })
-                    }
-                ),
-                IslandModuleRegistration(
-                    descriptor: favoriteFoldersModuleRuntime.descriptor,
-                    runtime: favoriteFoldersModuleRuntime,
-                    makeContentView: { _ in AnyView(FavoriteFoldersModuleView()) }
-                ),
-                IslandModuleRegistration(
-                    descriptor: aiUsageModuleStore.descriptor,
-                    runtime: aiUsageModuleStore,
-                    makeContentView: { _ in AnyView(IslandModuleScrollView { IslandAIUsageView() }) }
-                ),
-            ],
-            coordinator: islandActivityCoordinator
-        )
-        self.classicDragOutController = DragOutController(
-            store: store,
-            settings: settings,
-            recents: recents,
-            bookmarkService: importCoordinator.bookmarkService,
-            deliveryCoordinator: deliveryCoordinator,
-            onSourceDragEnded: {
-                dragStartMonitor.finishDrag()
-            },
-            tutorialTokenForItem: tutorialTokenForItem
-        )
-        self.islandDragOutController = DragOutController(
-            store: store,
-            settings: settings,
-            recents: recents,
-            bookmarkService: importCoordinator.bookmarkService,
-            deliveryCoordinator: deliveryCoordinator,
-            onSourceDragEnded: {
-                dragStartMonitor.finishDrag()
-            },
-            tutorialTokenForItem: tutorialTokenForItem
-        )
-        self.quickLookCoordinator = QuickLookCoordinator(
-            store: store,
-            bookmarkService: importCoordinator.bookmarkService,
-            tempFileService: tempFileService
-        )
-        self.itemRecoveryController = ItemRecoveryController(
-            store: store,
-            bookmarkService: importCoordinator.bookmarkService,
-            notices: importCoordinator.noticeCenter,
-            openStorageRecovery: onOpenStorageRecovery
-        )
-        self.shelfActionRunner = ShelfActionRunner(
-            bookmarkService: importCoordinator.bookmarkService,
-            notices: importCoordinator.noticeCenter
-        )
+        self.classicDragOutController = classicDragOutController
+        self.islandDragOutController = islandDragOutController
+        self.quickLookCoordinator = quickLookCoordinator
+        self.itemRecoveryController = itemRecoveryController
+        self.shelfActionRunner = shelfActionRunner
+        self.accessibilityAnnouncementCenter = accessibilityAnnouncementCenter
         super.init()
-        islandActivityCoordinator.onSurfaceStateWillChange = { [weak self] oldState, newState in
-            self?.prepareIslandPanelTransition(from: oldState, to: newState)
-        }
-        islandActivityCoordinator.onStateDidChange = { [weak self] in
-            self?.scheduleIslandLayoutUpdate()
-        }
-        islandActivityCoordinator.onSurfaceAnimationCompleted = { [weak self] in
-            guard let self else { return }
-            self.logIslandPresentation("surface-animation-completed")
-            self.scheduleIslandLayoutUpdate()
-        }
-        islandTimerStore.onActivity = { [weak self] activity in
-            self?.timerModuleRuntime.replaceActivity(activity)
-            if activity?.priority == .timerFinished,
-               let self,
-               self.settings.islandEnabled,
-               self.islandActivityCoordinator.surfaceState != .pinned {
-                self.islandActivityCoordinator.show(module: .timer)
-            }
-        }
-        powerSourceMonitor.onActivity = { [weak self] activity in
-            self?.batteryModuleRuntime.replaceActivity(activity)
-        }
-        favoriteFolderDropCoordinator.onActivity = { [weak self] activity in
-            self?.favoriteFoldersModuleRuntime.replaceActivity(activity)
-        }
-        nowPlayingModuleStore.onActivity = { [weak self] activity in
-            self?.mediaModuleRuntime.replaceActivity(activity)
-        }
-        // UX5/UX6: 项目增删 → 紧凑高度动画过渡 + 空架自动隐藏裁决。
         store.onItemsDidChange = { [weak self] in
             self?.handleItemsDidChange()
         }
@@ -568,12 +178,10 @@ final class ShelfWindowController: NSObject {
         interaction.onActionSelectionDidChange = { [weak self] in
             self?.handleQuickActionVisibilityDidChange()
         }
-        importCoordinator.transferStore.onVisibilityDidChange = { [weak self] in
+        transferStore.onVisibilityDidChange = { [weak self] in
             self?.handleActivityVisibilityDidChange()
         }
-        // S8: autoHide —— 拖出成功（operation 非空）且设置开启时隐藏 shelf。
-        // 回调在 DragSessionController.draggingSession(endedAt:) 里按
-        // 「实际发生 drop」判定后触发；隐藏与否在此处按最新设置裁决。
+
         classicDragOutController.onSuccessfulDrop = { [weak self] in
             guard let self,
                   self.onboardingPresentationCount == 0,
@@ -586,9 +194,7 @@ final class ShelfWindowController: NSObject {
                   self.settings.autoHide else { return }
             self.collapseIsland(animated: true)
         }
-        // S6: QL 面板关闭后让 ShelfPanel 重新成为 key（nonactivating：只接
-        // 键盘焦点、不激活应用），空格/Delete/Esc 保持可用。闭包内访问 panel
-        // 发生在 QL 关闭时，面板早已创建，不影响 lazy 语义。
+
         quickLookCoordinator.onPanelClosed = { [weak self] in
             guard let self,
                   self.appState.isShelfVisible
@@ -605,29 +211,16 @@ final class ShelfWindowController: NSObject {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
-        // S9: Space 切换后的在位校正（见 revalidateFrameAfterSpaceChange）。
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(activeSpaceDidChange(_:)),
             name: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil
         )
-        // S8: 位置/宽度设置变更时动画过渡到新 frame（见 applyLayoutSettings）。
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(userDefaultsDidChange(_:)),
-            name: UserDefaults.didChangeNotification,
-            object: nil
-        )
     }
 
     deinit {
         quickActionLayoutTask?.cancel()
-        islandHoverTask?.cancel()
-        islandLayoutTask?.cancel()
-        floatingConcealTask?.cancel()
-        floatingShrinkTask?.cancel()
-        classicHoverExitTask?.cancel()
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
@@ -635,27 +228,15 @@ final class ShelfWindowController: NSObject {
     // MARK: - Public API
 
     func shutdown() {
-        favoriteFolderDropCoordinator.cancelCopy()
         quickActionLayoutTask?.cancel()
-        islandHoverTask?.cancel()
-        islandLayoutTask?.cancel()
-        floatingConcealTask?.cancel()
-        floatingShrinkTask?.cancel()
-        classicHoverExitTask?.cancel()
-        stopClassicHoverPreviewMonitoring()
-        stopIslandModules()
-        stopIslandEventMonitoring()
+        islandSurface.shutdown()
     }
 
     func toggleShelf(animated: Bool = true) {
         switch effectivePreferredShelfSurface {
         case .classic:
             if appState.isShelfVisible {
-                if classicHoverPreviewState.isPreview {
-                    promoteClassicHoverPreview()
-                } else {
-                    hideShelf(animated: animated)
-                }
+                hideShelf(animated: animated)
             } else {
                 showShelf(animated: animated)
             }
@@ -672,12 +253,7 @@ final class ShelfWindowController: NSObject {
         switch effectivePreferredShelfSurface {
         case .classic:
             if appState.isShelfVisible {
-                if classicHoverPreviewState.isPreview {
-                    promoteClassicHoverPreview()
-                    classicPanel.makeKey()
-                } else {
-                    hideShelf(animated: animated)
-                }
+                hideShelf(animated: animated)
             } else {
                 showShelf(animated: animated, takeKeyboardFocus: true)
             }
@@ -711,15 +287,9 @@ final class ShelfWindowController: NSObject {
         }
     }
 
-    /// 从贴附缘滑入并淡入（贴左缘时自左侧滑入，贴右缘时自右侧滑入）。
     func showShelf(animated: Bool = true, takeKeyboardFocus: Bool = false) {
         onClassicPresentationRequested?()
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if !isOpeningClassicHoverPreview {
-            performClassicHoverActions(
-                classicHoverPreviewState.handle(.persistentInteraction)
-            )
-        }
         guard settings.classicShelfEnabled else { return }
         // Repeated show requests may promote a preview or request focus, but
         // must not put an already visible/sliding panel back offscreen.
@@ -767,27 +337,18 @@ final class ShelfWindowController: NSObject {
         }
         presentClassicPanel()
         if takeKeyboardFocus { classicPanel.makeKey() }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            classicPanel.animator().alphaValue = 1
-            classicPanel.animator().setFrame(targetFrame, display: true)
-        }
+        PanelFrameAnimation.animate(classicPanel, to: targetFrame, duration: Self.animationDuration,
+                                    timing: CAMediaTimingFunction(name: .easeOut), alpha: 1)
     }
 
-    // MARK: - Edge tab ↔ shelf morph (issue #10)
+    // MARK: - Edge tab ↔ shelf morph
 
-    /// 原生液态玻璃自带边缘光学；再叠窗口阴影会在面板外多出一圈深色描边，
-    /// 且只能在形变结束后整块出现（issue #10）。其余材质没有玻璃边缘，
-    /// 仍靠窗口阴影体现层次。
     private var classicWantsWindowShadow: Bool {
         !settings.appearance.usesNativeGlass(
             reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
         )
     }
 
-    /// 拉环在玻璃面局部坐标中的矩形；custom 位置（无贴附缘）返回 nil，
-    /// 显隐退回原有的滑入/淡入。
     private func classicRevealOrigin(for panelFrame: NSRect) -> CGRect? {
         let surface = panelFrame.insetBy(dx: Self.classicSurfaceInset, dy: Self.classicSurfaceInset)
         let visibleFrame = Self.screen(containing: CGPoint(x: panelFrame.midX, y: panelFrame.midY))
@@ -819,12 +380,9 @@ final class ShelfWindowController: NSObject {
         }
     }
 
-    /// 窗口直接就位到目标 frame，只让 SwiftUI 玻璃面从拉环矩形弹性长出
-    /// （窗口 frame 不参与动画 → 网格不在动画中重排）。
     private func growClassicShelf(from origin: CGRect, to targetFrame: NSRect, wasOnscreen: Bool,
                                   generation: UInt, takeKeyboardFocus: Bool) {
-        // 形变期间窗口形状每帧都在变；AppKit 的窗口阴影只按某一帧计算，会残留
-        // 成错位的轮廓。动画结束后再恢复并重算。
+
         isClassicMorphing = true
         classicPanel.hasShadow = false
         if !wasOnscreen {
@@ -832,8 +390,6 @@ final class ShelfWindowController: NSObject {
             classicReveal.prepareCollapsed(at: origin)
         }
         classicReveal.capturesWholeSurface = dragStartMonitor.isDragInProgress
-        // 悬停预览要跟手：用更快、不回弹的版本。
-        let quick = isOpeningClassicHoverPreview
         classicPanel.alphaValue = 1
         if classicPanel.frame != targetFrame {
             resetClassicSurfaceHeight()
@@ -841,16 +397,14 @@ final class ShelfWindowController: NSObject {
         }
         presentClassicPanel()
         if takeKeyboardFocus { classicPanel.makeKey() }
-        // 先让收拢态真正提交一帧，再在下一拍开始生长，避免两次状态合并成跳变。
         classicPanel.contentView?.layoutSubtreeIfNeeded()
         classicPanel.displayIfNeeded()
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
                 guard let self,
                       self.classicVisibilityTransition.isCurrent(generation, visible: true) else { return }
-                self.classicReveal.expand(quick: quick)
-                let settle = quick ? ShelfRevealState.quickExpandSettleDuration
-                                   : ShelfRevealState.expandSettleDuration
+                self.classicReveal.expand()
+                let settle = ShelfRevealState.expandSettleDuration
                 DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in
                     MainActor.assumeIsolated {
                         guard let self,
@@ -864,8 +418,7 @@ final class ShelfWindowController: NSObject {
     }
 
     private func finishClassicGrow(generation: UInt) {
-        // 先撤掉拖放兜底覆盖层，等 SwiftUI 重绘后再按最终圆角形状计算阴影，
-        // 否则阴影会按整块矩形算出来。
+
         let hadWholeSurfaceCapture = classicReveal.capturesWholeSurface
         classicReveal.capturesWholeSurface = false
         let restore = { [weak self] in
@@ -884,7 +437,6 @@ final class ShelfWindowController: NSObject {
         }
     }
 
-    /// 结束形变：补做形变期间被推迟的布局。
     private func endClassicMorph() {
         guard isClassicMorphing else { return }
         isClassicMorphing = false
@@ -894,7 +446,6 @@ final class ShelfWindowController: NSObject {
         }
     }
 
-    /// 内容先淡出，玻璃面收回拉环矩形，再由关闭流程交还边缘。
     private func foldClassicShelf(into origin: CGRect, generation: UInt) {
         isClassicMorphing = true
         classicPanel.hasShadow = false
@@ -923,13 +474,9 @@ final class ShelfWindowController: NSObject {
         if takeKeyboardFocus, interaction.focusedItemID == nil {
             interaction.focusedItemID = store.selectedItems.first?.id ?? store.items.first?.id
         }
-        islandActivityCoordinator.show(module: .shelf)
-        islandPanel.orderFront(nil)
-        if takeKeyboardFocus { islandPanel.makeKey() }
+        islandSurface.expand(takeKeyboardFocus: takeKeyboardFocus)
     }
 
-    /// 快速上手获得一个显示租约：记录进入前可见性、暂停所有自动隐藏并显示
-    /// shelf。租约结束时恢复原可见性，不写任何用户设置。
     func beginOnboardingPresentation() -> OnboardingPresentationSnapshot {
         let surface = effectivePreferredShelfSurface ?? .classic
         let wasVisible = surface == .classic
@@ -957,24 +504,20 @@ final class ShelfWindowController: NSObject {
         }
     }
 
-    /// 引导面板布局使用。隐藏时返回当前设置对应的目标 frame，不要求先创建
-    /// 或展示 NSPanel。
     var visibleOrTargetFrame: CGRect {
         if effectivePreferredShelfSurface == .island {
             return islandActivityCoordinator.surfaceState.isExpanded
-                ? islandPanel.frame : islandTargetFrame()
+                ? islandPanel.frame : islandSurface.islandTargetFrame()
         }
         return appState.isShelfVisible ? classicLogicalFrame : classicTargetFrame()
     }
 
-    /// 向贴附缘滑出并淡出，结束后 orderOut。
+    /// Slides out towards the attached edge while fading out.
     func hideShelf(animated: Bool = true) {
         onClassicPresentationRequested?()
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        performClassicHoverActions(classicHoverPreviewState.handle(.shelfHidden))
         guard appState.isShelfVisible,
               let generation = classicVisibilityTransition.request(visible: false) else { return }
-        stopClassicHoverPreviewMonitoring()
         quickActionLayoutTask?.cancel()
         quickActionLayoutTask = nil
         classicResizeGeneration &+= 1
@@ -982,7 +525,6 @@ final class ShelfWindowController: NSObject {
         appState.beginShelfClose()
         onClassicShelfHandoffChanged?()
         classicFrameTransition.reset()
-        // S6: shelf 隐藏时关掉 Quick Look 并释放会话资源（不恢复键盘焦点）。
         quickLookCoordinator.closeForShelfHide()
         let targetFrame = classicHiddenFrame(for: visibleFrame)
         guard animated else {
@@ -995,472 +537,30 @@ final class ShelfWindowController: NSObject {
             foldClassicShelf(into: origin, generation: generation)
             return
         }
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = Self.animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            classicPanel.animator().alphaValue = 0
-            classicPanel.animator().setFrame(targetFrame, display: true)
-        }, completionHandler: { [weak self] in
-            // 隐藏期间若用户重新唤出，则不打断显示状态。
+        PanelFrameAnimation.animate(classicPanel, to: targetFrame, duration: Self.animationDuration,
+                                    timing: CAMediaTimingFunction(name: .easeIn), alpha: 0) { [weak self] in
             MainActor.assumeIsolated {
                 self?.finishClassicHide(generation: generation)
             }
-        })
+        }
     }
 
     func collapseIsland(animated: Bool = true) {
-        guard settings.islandEnabled else { return }
-        quickLookCoordinator.closeForShelfHide()
-        logIslandPresentation("collapse-request")
-        islandActivityCoordinator.collapse()
-        if !animated || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            islandLayoutTask?.cancel()
-            islandLayoutTask = nil
-            let target = islandTargetFrame()
-            _ = islandFrameTransition.request(target, currentFrame: islandPanel.frame)
-            if islandPanel.frame != target {
-                islandPanel.setFrame(target, display: true)
-            }
-        }
-    }
-
-    // MARK: - Classic shelf hover preview
-
-    /// EdgeTabController forwards pointer changes here so the preview state is
-    /// shared with the actual shelf window and all persistent interactions.
-    func classicEdgeTabHoverChanged(_ hovering: Bool) {
-        guard settings.classicShelfHoverRevealEnabled,
-              settings.classicShelfEnabled,
-              settings.edgeTabEnabled,
-              settings.shelfPosition != .custom,
-              !dragStartMonitor.isDragInProgress,
-              !IgnoreListService.frontmostAppIsIgnored(
-                in: settings.ignoredAppBundleIDs
-              ) else {
-            suppressClassicHoverPreview()
-            return
-        }
-        let event: ClassicShelfHoverPreviewStateMachine.Event = hovering
-            ? .tabEntered : .tabExited
-        performClassicHoverActions(classicHoverPreviewState.handle(event))
-    }
-
-    func suppressClassicHoverPreview() {
-        performClassicHoverActions(classicHoverPreviewState.handle(.suppress))
-    }
-
-    func promoteClassicHoverPreviewIfNeeded() {
-        guard classicHoverPreviewState.isPreview else { return }
-        promoteClassicHoverPreview()
-    }
-
-    private func promoteClassicHoverPreview() {
-        performClassicHoverActions(
-            classicHoverPreviewState.handle(.persistentInteraction)
-        )
-    }
-
-    private func performClassicHoverActions(
-        _ actions: [ClassicShelfHoverPreviewStateMachine.Action]
-    ) {
-        for action in actions {
-            switch action {
-            case .scheduleDwell:
-                // `mouseEntered` already expresses the user's proximity
-                // intent. Reveal in the same event turn; only mouse exit keeps
-                // a grace period so crossing from the tab into the shelf does
-                // not make the panel flicker.
-                performClassicHoverActions(
-                    classicHoverPreviewState.handle(.dwellElapsed)
-                )
-            case .cancelDwell:
-                continue
-            case .showPreview:
-                guard !appState.isShelfVisible else { continue }
-                isOpeningClassicHoverPreview = true
-                showShelf(animated: true, takeKeyboardFocus: false)
-                isOpeningClassicHoverPreview = false
-                startClassicHoverPreviewMonitoring()
-                updateClassicHoverPreviewPointer(at: NSEvent.mouseLocation)
-            case .scheduleExit:
-                guard classicHoverExitTask == nil else { continue }
-                classicHoverExitTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .milliseconds(500))
-                    guard let self, !Task.isCancelled else { return }
-                    self.classicHoverExitTask = nil
-                    self.performClassicHoverActions(
-                        self.classicHoverPreviewState.handle(.exitElapsed)
-                    )
-                }
-            case .cancelExit:
-                classicHoverExitTask?.cancel()
-                classicHoverExitTask = nil
-            case .hidePreview:
-                stopClassicHoverPreviewMonitoring()
-                if appState.isShelfVisible { hideShelf(animated: true) }
-            case .promoteToPersistent:
-                classicHoverExitTask?.cancel()
-                classicHoverExitTask = nil
-                stopClassicHoverPreviewMonitoring()
-            }
-        }
-    }
-
-    private func startClassicHoverPreviewMonitoring() {
-        guard classicHoverGlobalMonitor == nil, classicHoverLocalMonitor == nil else { return }
-        let mask: NSEvent.EventTypeMask = [
-            .mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown,
-            .leftMouseDragged,
-        ]
-        classicHoverGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) {
-            [weak self] event in
-            let point = NSEvent.mouseLocation
-            Task { @MainActor in self?.handleClassicHoverPreviewEvent(event, at: point) }
-        }
-        classicHoverLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) {
-            [weak self] event in
-            let point = NSEvent.mouseLocation
-            Task { @MainActor in self?.handleClassicHoverPreviewEvent(event, at: point) }
-            return event
-        }
-    }
-
-    private func stopClassicHoverPreviewMonitoring() {
-        if let classicHoverGlobalMonitor {
-            NSEvent.removeMonitor(classicHoverGlobalMonitor)
-            self.classicHoverGlobalMonitor = nil
-        }
-        if let classicHoverLocalMonitor {
-            NSEvent.removeMonitor(classicHoverLocalMonitor)
-            self.classicHoverLocalMonitor = nil
-        }
-    }
-
-    private func handleClassicHoverPreviewEvent(_ event: NSEvent, at point: CGPoint) {
-        guard classicHoverPreviewState.isPreview else { return }
-        guard !IgnoreListService.frontmostAppIsIgnored(
-            in: settings.ignoredAppBundleIDs
-        ) else {
-            suppressClassicHoverPreview()
-            return
-        }
-        switch event.type {
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged:
-            if classicLogicalFrame.contains(point) { promoteClassicHoverPreview() }
-        case .mouseMoved:
-            updateClassicHoverPreviewPointer(at: point)
-        default:
-            break
-        }
-    }
-
-    private func updateClassicHoverPreviewPointer(at point: CGPoint) {
-        let event: ClassicShelfHoverPreviewStateMachine.Event = classicLogicalFrame
-            .insetBy(dx: -2, dy: -2).contains(point) ? .shelfEntered : .shelfExited
-        performClassicHoverActions(classicHoverPreviewState.handle(event))
+        islandSurface.collapseIsland(animated: animated)
     }
 
     private var effectivePreferredShelfSurface: SettingsStore.PreferredShelfSurface? {
         settings.effectivePreferredShelfSurface
     }
 
-    // MARK: - Item keyboard handling (S6)
-
-    /// Complete keyboard path for the visible shelf. Focus remains independent
-    /// from multi-selection; only Shift+Arrow extends selection.
-    ///
-    /// 事件到达前提：卡片单击让面板成为 key（CardDragSourceAnchorView.mouseUp）。
-    /// 带修饰键的组合一律放行（⌘⇧Space 等由 AppDelegate 的快捷键监听处理）；
-    /// QL 面板为 key 时键盘事件由 QL 自己接管（空格/Esc 关闭、方向键翻页），
-    /// 不会到达这里。
-    private func handleItemKeyDown(_ event: NSEvent, in sourcePanel: ShelfPanel) -> Bool {
-        if let editor = sourcePanel.firstResponder as? NSTextView, editor.isFieldEditor { return false }
-        var modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        modifiers.subtract([.capsLock, .function, .numericPad])
-
-        // The global summon shortcut is user-configurable and may equal one
-        // of the fixed quick-action combinations below. In that case it keeps
-        // priority; never execute a shelf action from the same key press.
-        if settings.hotKeyEnabled,
-           let globalShortcut = settings.hotKeyShortcut,
-           HotKeyMonitor.matches(event, shortcut: globalShortcut) {
-            return false
-        }
-
-        if sourcePanel === islandPanel,
-           islandActivityCoordinator.selectedModule == .clipboard {
-            if event.keyCode == 53, modifiers.isEmpty {
-                collapseIsland(animated: true)
-                return true
-            }
-            return false
-        }
-
-        if sourcePanel === islandPanel,
-           islandActivityCoordinator.selectedModule == .folders {
-            return handleFavoriteFoldersKeyDown(event, modifiers: modifiers)
-        }
-
-        if modifiers == [.command, .option],
-           event.charactersIgnoringModifiers?.lowercased() == "c" {
-            return performKeyboardAction(.copyPath)
-        }
-        if modifiers == [.command, .shift],
-           event.charactersIgnoringModifiers?.lowercased() == "j" {
-            return performKeyboardAction(.revealInFinder)
-        }
-        if modifiers == [.command, .shift],
-           event.charactersIgnoringModifiers?.lowercased() == "s" {
-            return performKeyboardAction(.share, relativeTo: sourcePanel.contentView)
-        }
-
-        if modifiers == .command {
-            switch event.charactersIgnoringModifiers?.lowercased() {
-            case "z":
-                return store.undoLastRemoval()
-            case "a":
-                selectAllVisibleItems()
-                return true
-            case "c":
-                return copyKeyboardItems()
-            default:
-                return false
-            }
-        }
-
-        if modifiers.isEmpty || modifiers == .shift {
-            let extending = modifiers == .shift
-            let direction: ShelfArrowDirection?
-            switch event.keyCode {
-            case 123: direction = .left
-            case 124: direction = .right
-            case 125: direction = .down
-            case 126: direction = .up
-            default: direction = nil
-            }
-            if let direction {
-                return moveKeyboardFocus(
-                    direction,
-                    extendingSelection: extending,
-                    panelWidth: sourcePanel.frame.width
-                )
-            }
-        }
-
-        guard modifiers.isEmpty else { return false }
-        switch event.keyCode {
-        case 49: // Space
-            return quickLookCoordinator.toggle(contextItem: focusedItem())
-        case 36, 76: // Return / keypad Enter
-            return openFocusedItem()
-        case 51, 117: // Delete / Forward Delete
-            return removeKeyboardItems()
-        case 53: // Escape
-            if quickLookCoordinator.isPreviewing {
-                quickLookCoordinator.dismiss()
-                return true
-            }
-            if interaction.isSelecting {
-                interaction.isSelecting = false
-                store.clearSelection()
-                return true
-            }
-            if sourcePanel === islandPanel {
-                collapseIsland(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-                return true
-            }
-            if interaction.expandedStackID != nil {
-                interaction.exitStack()
-                return true
-            }
-            if !store.selection.isEmpty {
-                store.clearSelection()
-                return true
-            }
-            hideShelf(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-            return true
-        default:
-            return false
-        }
-    }
-
-    private func handleFavoriteFoldersKeyDown(
-        _ event: NSEvent,
-        modifiers: NSEvent.ModifierFlags
-    ) -> Bool {
-        guard modifiers.isEmpty else { return false }
-        switch event.keyCode {
-        case 123: return favoriteFoldersStore.selectRelative(delta: -1)
-        case 124: return favoriteFoldersStore.selectRelative(delta: 1)
-        case 125: return favoriteFoldersStore.selectRelative(delta: 2)
-        case 126: return favoriteFoldersStore.selectRelative(delta: -2)
-        case 36, 76: return favoriteFoldersStore.openSelected()
-        case 51, 117: return favoriteFoldersStore.removeSelected()
-        case 53:
-            collapseIsland(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-            return true
-        default:
-            return false
-        }
-    }
-
-    private func visibleKeyboardItems() -> [ShelfItem] {
-        interaction.visibleItems(in: store.visibleItems)
-    }
-
-    private func focusedItem() -> ShelfItem? {
-        let visible = visibleKeyboardItems()
-        if let focusedItemID = interaction.focusedItemID,
-           let item = visible.first(where: { $0.id == focusedItemID }) {
-            return item
-        }
-        return nil
-    }
-
-    private func moveKeyboardFocus(_ direction: ShelfArrowDirection,
-                                   extendingSelection: Bool,
-                                   panelWidth: CGFloat) -> Bool {
-        let visible = visibleKeyboardItems()
-        guard !visible.isEmpty else { return false }
-        let currentIndex: Int
-        if let focusedItemID = interaction.focusedItemID,
-           let index = visible.firstIndex(where: { $0.id == focusedItemID }) {
-            currentIndex = index
-        } else if interaction.expandedStackID == nil,
-                  let selected = visible.firstIndex(where: { store.selection.contains($0.id) }) {
-            currentIndex = selected
-        } else {
-            currentIndex = 0
-        }
-        let destination = ShelfKeyboardNavigator.destinationIndex(
-            currentIndex: currentIndex,
-            itemCount: visible.count,
-            columnCount: ShelfLayoutEngine.columnCount(forPanelWidth: panelWidth),
-            direction: direction
-        )
-        interaction.focusedItemID = visible[destination].id
-        if extendingSelection {
-            let extendingIDs: Set<UUID> = [visible[currentIndex].id, visible[destination].id]
-            if interaction.expandedStackID != nil {
-                interaction.childSelection.formUnion(extendingIDs)
-            } else {
-                store.setSelection(store.selection.union(extendingIDs))
-            }
-        }
-        return true
-    }
-
-    private func selectAllVisibleItems() {
-        let visible = visibleKeyboardItems()
-        guard !visible.isEmpty else { return }
-        if interaction.expandedStackID != nil {
-            interaction.childSelection = Set(visible.map(\.id))
-        } else {
-            store.selectAllVisible()
-        }
-        if interaction.focusedItemID == nil {
-            interaction.focusedItemID = visible[0].id
-        }
-    }
-
-    private func keyboardActionItems() -> [ShelfItem] {
-        let visible = visibleKeyboardItems()
-        if interaction.expandedStackID != nil {
-            let selected = visible.filter { interaction.childSelection.contains($0.id) }
-            if !selected.isEmpty { return selected }
-        } else {
-            let selected = visible.filter { store.selection.contains($0.id) }
-            if !selected.isEmpty { return selected }
-        }
-        if interaction.isSelecting { return [] }
-        guard let focusedItemID = interaction.focusedItemID,
-              let focused = visible.first(where: { $0.id == focusedItemID }) else { return [] }
-        return [focused]
-    }
-
-    private func copyKeyboardItems() -> Bool {
-        let items = keyboardActionItems()
-        guard !items.isEmpty else { return false }
-        let result = ClipboardController.copy(
-            items,
-            bookmarkService: importCoordinator.bookmarkService
-        )
-        importCoordinator.noticeCenter.show(ClipboardController.statusMessage(for: result))
-        return true
-    }
-
-    private func performKeyboardAction(_ action: ShelfAction,
-                                       relativeTo anchorView: NSView? = nil) -> Bool {
-        let items = keyboardActionItems()
-        guard !items.isEmpty, ShelfActionCatalog.canPerform(action, on: items) else {
-            return false
-        }
-        shelfActionRunner.perform(action, on: items, relativeTo: anchorView)
-        return true
-    }
-
-    private func openFocusedItem() -> Bool {
-        guard let item = focusedItem() else { return false }
-        if interaction.isSelecting, interaction.expandedStackID == nil {
-            store.toggleSelection(item.id)
-            return true
-        }
-        if item.availability != .available {
-            itemRecoveryController.recover(item)
-            return true
-        }
-        if item.kind == .stack {
-            if interaction.expandedStackID == item.id {
-                interaction.exitStack()
-            } else {
-                interaction.enterStack(item)
-            }
-            return true
-        }
-        guard ItemActions.canOpen(item) else { return false }
-        ItemActions.open(item,
-                         bookmarkService: importCoordinator.bookmarkService,
-                         tempFileService: tempFileService)
-        return true
-    }
-
-    private func removeKeyboardItems() -> Bool {
-        let previous = isUserRemovalInProgress
-        isUserRemovalInProgress = true
-        defer { isUserRemovalInProgress = previous }
-        let items = keyboardActionItems()
-        guard !items.isEmpty else { return false }
-        let ids = Set(items.map(\.id))
-        if let stackID = interaction.expandedStackID {
-            guard store.removeChildrenForUser(ids: ids, fromStack: stackID) else { return false }
-            interaction.childSelection.subtract(ids)
-        } else {
-            do {
-                try store.removeBatchForUser(ids: ids)
-            } catch {
-                importCoordinator.noticeCenter.show(String(localized: "Could not save a recovery copy. Nothing was removed."))
-                return true
-            }
-        }
-        interaction.normalize(for: store.items)
-        quickLookCoordinator.refreshPreview(contextItem: focusedItem())
-        return true
-    }
-
     // MARK: - Layout
 
-    /// 位置与宽度由 SettingsStore 供给；纯计算收敛在 `ShelfLayoutEngine`（S9）。
-    /// 左/右跟随鼠标所在屏幕（鼠标屏被拔掉回退主屏），贴设定缘；UX5 起高度
-    /// 贴合内容（按 `store.items.count` 推算行数，上限可见高度 80%）；EdgeTab
-    /// 起垂直位置按 `shelfEdgeOffset`（0 = 底缘、1 = 顶缘，默认 0.5 居中）；
-    /// custom 用校验后的持久化 frame（首次/所在屏被拔掉时从目标屏
-    /// 右缘默认 frame 起步）。
     private func classicTargetFrame() -> NSRect {
         ShelfLayoutEngine.targetFrame(
             position: settings.shelfPosition,
             width: settings.shelfWidth,
             itemCount: store.items.count,
-            hasActivity: importCoordinator.transferStore.hasVisibleActivity,
+            hasActivity: transferStore.hasVisibleActivity,
             hasQuickActions: hasVisibleQuickActions,
             hasSearchControls: true,
             mouseLocation: NSEvent.mouseLocation,
@@ -1468,135 +568,6 @@ final class ShelfWindowController: NSObject {
             persistedCustomFrame: settings.customShelfFrame,
             edgeOffset: CGFloat(settings.shelfEdgeOffset)
         )
-    }
-
-    private func islandTargetFrame() -> NSRect {
-        let layout = islandLayout()
-        islandActivityCoordinator.currentLayout = layout
-        refreshFloatingPresentation(layout: layout)
-        if islandActivityCoordinator.surfaceState.isExpanded { return layout.expandedFrame }
-        return compactWindowFrame(for: layout)
-    }
-
-    /// The collapsed panel: the pill, or just the dot's hit area when the
-    /// floating Island is idle. Hidden mode keeps the dot-sized panel but
-    /// draws nothing and lets clicks through.
-    private func compactWindowFrame(for layout: IslandGeometryResolver.Layout) -> NSRect {
-        switch islandActivityCoordinator.floatingPresentation {
-        case .capsule:
-            return layout.compactFrame
-        case .dot, .hidden:
-            return isFloatingShrinkPending ? layout.compactFrame : layout.floatingDotFrame
-        }
-    }
-
-    /// Where a click or hover counts as touching the collapsed Island.
-    private func interactiveCompactFrame(for layout: IslandGeometryResolver.Layout) -> NSRect {
-        switch islandActivityCoordinator.floatingPresentation {
-        case .capsule: return layout.compactFrame
-        case .dot: return layout.floatingDotFrame
-        case .hidden: return .null
-        }
-    }
-
-    private func refreshFloatingPresentation(layout: IslandGeometryResolver.Layout) {
-        let coordinator = islandActivityCoordinator
-        let urgent = (coordinator.primaryActivity()?.priority ?? .shelfSummary) >= .powerChange
-        if layout.hasPhysicalNotch || settings.islandFloatingIdleStyle == .capsule {
-            isFloatingIslandRevealed = false
-            floatingConcealTask?.cancel()
-            floatingConcealTask = nil
-        }
-        let next = IslandFloatingPresentation.resolve(
-            style: settings.islandFloatingIdleStyle,
-            hasPhysicalNotch: layout.hasPhysicalNotch,
-            isExpanded: coordinator.surfaceState != .compact,
-            hasUrgentActivity: urgent,
-            isRevealed: isFloatingIslandRevealed
-        )
-        let current = coordinator.floatingPresentation
-        guard next != current else { return }
-        coordinator.floatingPresentation = next
-        islandPanel.ignoresMouseEvents = next == .hidden
-        if next == .capsule {
-            floatingShrinkTask?.cancel()
-            floatingShrinkTask = nil
-            isFloatingShrinkPending = false
-            // Grow the panel before SwiftUI draws the pill into it.
-            if coordinator.surfaceState == .compact, islandPanel.frame != layout.compactFrame {
-                islandLayoutTask?.cancel()
-                islandLayoutTask = nil
-                islandFrameTransition.reset()
-                _ = islandFrameTransition.request(layout.compactFrame, currentFrame: islandPanel.frame)
-                islandPanel.setFrame(layout.compactFrame, display: true)
-            }
-        } else if current == .capsule,
-                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            isFloatingShrinkPending = true
-            floatingShrinkTask?.cancel()
-            floatingShrinkTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(260))
-                guard let self, !Task.isCancelled else { return }
-                self.floatingShrinkTask = nil
-                self.isFloatingShrinkPending = false
-                self.scheduleIslandLayoutUpdate()
-            }
-        }
-    }
-
-    /// Dot / hidden mode: the pill comes back when the pointer reaches the
-    /// dot or the top edge of the screen above it, and leaves again shortly
-    /// after the pointer moves away.
-    private func updateFloatingReveal(at point: CGPoint, layout: IslandGeometryResolver.Layout) {
-        guard !layout.hasPhysicalNotch,
-              settings.islandFloatingIdleStyle != .capsule,
-              islandActivityCoordinator.surfaceState == .compact else { return }
-        if !isFloatingIslandRevealed {
-            let touchesDot = islandActivityCoordinator.floatingPresentation == .dot
-                && layout.floatingDotFrame.insetBy(dx: -4, dy: -4).contains(point)
-            guard touchesDot || layout.floatingEdgeRevealFrame.contains(point) else { return }
-            isFloatingIslandRevealed = true
-            refreshFloatingPresentation(layout: layout)
-        } else if layout.floatingKeepRevealedFrame.contains(point) {
-            floatingConcealTask?.cancel()
-            floatingConcealTask = nil
-        } else if floatingConcealTask == nil {
-            floatingConcealTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(450))
-                guard let self, !Task.isCancelled else { return }
-                self.floatingConcealTask = nil
-                self.isFloatingIslandRevealed = false
-                self.scheduleIslandLayoutUpdate()
-            }
-        }
-    }
-
-    private func prepareIslandPanelTransition(
-        from oldState: IslandSurfaceState,
-        to newState: IslandSurfaceState
-    ) {
-        islandLogger.notice("surface-transition \(String(describing: oldState), privacy: .public) -> \(String(describing: newState), privacy: .public) id=\(self.islandActivityCoordinator.surfaceTransitionID)")
-        guard settings.islandEnabled,
-              !oldState.isExpanded,
-              newState.isExpanded else { return }
-        // A selected-module change can already have queued a compact layout
-        // pass. Cancel it so no stale frame is applied between preparation and
-        // the actual surface-state mutation.
-        islandLayoutTask?.cancel()
-        islandLayoutTask = nil
-
-        let layout = islandLayout()
-        islandActivityCoordinator.currentLayout = layout
-        // Give SwiftUI a fixed, top-centred canvas before the visible morph
-        // starts. The compact surface remains centred inside this transparent
-        // canvas, while its mask grows to the expanded size. Animating the
-        // AppKit window and SwiftUI hierarchy at the same time made hosting-view
-        // relayout appear as a lateral jump from the right.
-        _ = islandFrameTransition.request(layout.expandedFrame, currentFrame: islandPanel.frame)
-        if islandPanel.frame != layout.expandedFrame {
-            islandPanel.setFrame(layout.expandedFrame, display: true)
-        }
-        if !islandPanel.isVisible { islandPanel.orderFront(nil) }
     }
 
     private var hasVisibleQuickActions: Bool {
@@ -1610,44 +581,18 @@ final class ShelfWindowController: NSObject {
         return ShelfActionCatalog.hasAnyAction(for: items)
     }
 
-    /// 隐藏态 frame：左/右向贴附缘方向平移一个面板宽度；custom 原位（淡出）。
     private func classicHiddenFrame(for frame: NSRect) -> NSRect {
         ShelfLayoutEngine.hiddenFrame(for: frame, position: settings.shelfPosition)
     }
 
-    private func islandLayout(at point: CGPoint = NSEvent.mouseLocation)
-        -> IslandGeometryResolver.Layout {
-        if let screen = IslandScreenCatalog.selectedScreen(
-            for: settings.islandDisplayTarget,
-            pointerPoint: point
-        ) {
-            return IslandGeometryResolver.resolve(
-                screen: IslandScreenCatalog.geometry(for: screen)
-            )
-        }
-        return IslandGeometryResolver.resolve(screen: .init(
-            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
-            visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 875),
-            safeAreaTop: 0,
-            auxiliaryTopLeftArea: .zero,
-            auxiliaryTopRightArea: .zero
-        ))
-    }
-
-    /// 当前屏幕几何快照（NSScreen → 纯值，供 ShelfLayoutEngine）。
     private static func screenGeometries() -> [ShelfLayoutEngine.ScreenGeometry] {
         NSScreen.screens.map { .init(frame: $0.frame, visibleFrame: $0.visibleFrame) }
     }
 
-    /// 包含指定点的屏幕（回退主屏）。S7 的 EdgeTriggerMonitor 与本类布局
-    /// 共用「鼠标所在屏幕」判定，保证边缘触发的一侧与 shelf 出现的一侧一致。
     static func screen(containing point: CGPoint) -> NSScreen {
         NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.screens[0]
     }
 
-    /// S9: 插拔屏/改分辨率 → 可见即按新几何重算 frame（鼠标所在屏被拔掉时
-    /// ShelfLayoutEngine 回退主屏；custom frame 落出所有屏幕则回退右缘默认）。
-    /// 隐藏态无持久目标，show 时自会按最新几何计算，这里无需动作。
     @objc private func screenParametersDidChange(_ notification: Notification) {
         if appState.isShelfVisible {
             let target = classicTargetFrame()
@@ -1656,19 +601,13 @@ final class ShelfWindowController: NSObject {
             classicPanel.setFrame(target, display: true)
         }
         if settings.islandEnabled {
-            scheduleIslandLayoutUpdate()
+            islandSurface.scheduleIslandLayoutUpdate()
         }
     }
 
-    /// S9: Space 切换后的在位校正。canJoinAllSpaces + stationary 让面板留在原
-    /// 全局坐标、跟随出现在每个 Space，屏幕几何并未变化 —— 因此只校验当前
-    /// frame（落出可见区域时瞬时夹回，无动画），不按鼠标重新跟随，避免切
-    /// Space 时 shelf 漂到鼠标所在屏。
-    ///
-    /// 必须 nonisolated：通知按投递线程同步回调（同 userDefaultsDidChange）。
     @objc private nonisolated func activeSpaceDidChange(_ notification: Notification) {
         Task { @MainActor in
-            self.logIslandPresentation("active-space-changed")
+            self.islandSurface.logIslandPresentation("active-space-changed")
             self.revalidateFrameAfterSpaceChange()
         }
     }
@@ -1677,7 +616,7 @@ final class ShelfWindowController: NSObject {
         if settings.islandEnabled {
             // A desktop/Space transition must not re-order an already visible
             // Island or truncate a pending collapse with an immediate resize.
-            scheduleIslandLayoutUpdate()
+            islandSurface.scheduleIslandLayoutUpdate()
         }
         guard appState.isShelfVisible else { return }
         // Validate the destination during a slide, not its offscreen start.
@@ -1691,33 +630,15 @@ final class ShelfWindowController: NSObject {
         classicPanel.setFrame(corrected, display: true)
     }
 
-    /// S8: 设置变更 → 可见时动画过渡到新 frame。任何 UserDefaults 写入都会
-    /// 投递该通知，frame 未实际变化时直接返回，无关设置项不会触发布局动画。
-    ///
-    /// 必须 nonisolated：通知按投递线程同步回调，投递方可能是任意线程；
-    /// 选择器方法若保留 MainActor 隔离会在投递线程上触发隔离断言
-    /// （同 AppDelegate.userDefaultsDidChange 的说明）。
-    @objc private nonisolated func userDefaultsDidChange(_ notification: Notification) {
-        Task { @MainActor in
-            self.applyLayoutSettings()
-        }
-    }
-
-    private func applyLayoutSettings() {
-        applyPresentationSettings(animated: true)
-    }
-
     private func applyClassicLayout(animated: Bool = true) {
         guard appState.isShelfVisible else { return }
-        // 形变以当前窗口 frame 为画布；中途改 frame 会让拉环起点错位。
         guard !isClassicMorphing else {
             isClassicLayoutDeferred = true
             return
         }
         let current = classicLogicalFrame
         var target = classicTargetFrame()
-        // 只是内容高度变了（选中出现操作栏、增删卡片）：顶边保持不动，否则
-        // 标题和搜索框会随高度变化上下跳。
+
         let isHeightOnly = settings.shelfPosition != .custom
             && classicPanel.isVisible
             && target.width == current.width && target.minX == current.minX
@@ -1738,20 +659,10 @@ final class ShelfWindowController: NSObject {
             return
         }
         resetClassicSurfaceHeight()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            classicPanel.animator().setFrame(target, display: true)
-        }
+        PanelFrameAnimation.animate(classicPanel, to: target, duration: Self.animationDuration,
+                                    timing: CAMediaTimingFunction(name: .easeInEaseOut))
     }
 
-    /// 顶边不动的高度变化：玻璃与内容的高度交给 SwiftUI 逐帧动画，窗口
-    /// 只在需要变高时瞬间扩高（多出的部分先透明），变矮时**不缩**。
-    ///
-    /// 不缩窗口是因为 WindowServer 对「顶边固定」的缩小（高度减小 + 原点
-    /// 上移）并不保证原子：点过 Share 菜单之后尤其明显，新尺寸先生效、
-    /// 原点晚几帧才跟上，整块 shelf 会往下掉一截再弹回。多出的透明区域
-    /// 不接收点击，隐藏或下次改 frame 时自然收回。
     private func resizeClassicSurface(to target: NSRect) {
         classicResizeGeneration &+= 1
         let generation = classicResizeGeneration
@@ -1769,15 +680,11 @@ final class ShelfWindowController: NSObject {
         let fillsWindow = needsTallerWindow || target.height == window.height
         classicReveal.animateSurfaceHeight(to: targetHeight) { [weak self] in
             guard let self, self.classicResizeGeneration == generation else { return }
-            // 玻璃面恰好撑满窗口时解除锁定；否则保持锁定，底部维持透明。
             if fillsWindow { self.classicReveal.pinSurfaceHeight(nil) }
             if self.classicPanel.hasShadow { self.classicPanel.invalidateShadow() }
         }
     }
 
-    /// UX5/UX6: items 变更（store.onItemsDidChange 钩子）统一处理：
-    /// 1. UX5 紧凑高度 —— 可见时数量变化动画过渡到新目标 frame（custom
-    ///    位置的目标 frame 不含内容高度，天然 no-op）；
     /// 2. Apply empty-shelf auto-hide unless a management removal or drag
     ///    currently owns the transition.
     private func handleItemsDidChange() {
@@ -1792,7 +699,6 @@ final class ShelfWindowController: NSObject {
         if appState.isShelfVisible {
             applyClassicLayout()
         }
-        // 空架隐藏放在高度动画之后裁决：两者同帧时隐藏优先（隐藏动画覆盖）。
         if shouldAutoHide {
             hideShelf(animated: true)
         }
@@ -1801,7 +707,7 @@ final class ShelfWindowController: NSObject {
     /// ActivityStrip changes compact height but must not participate in the
     /// non-empty → empty auto-hide state machine.
     private func handleActivityVisibilityDidChange() {
-        transfersModuleRuntime.refresh()
+        islandModules.transfersModuleRuntime.refresh()
         applyClassicLayout()
     }
 
@@ -1829,10 +735,8 @@ final class ShelfWindowController: NSObject {
     /// Enabling or disabling one surface never changes the other's visibility
     /// or deletes shelf content.
     func applyPresentationSettings(animated: Bool = false) {
-        islandModuleRegistry.apply(settings: settings)
         classicPanel.allowsTopEdgeOverlap = false
         classicPanel.level = .floating
-        // 形变中途按半成品形状算出的阴影会残留成错位轮廓；形变结束时会恢复。
         if !isClassicMorphing { classicPanel.hasShadow = classicWantsWindowShadow }
         if settings.classicShelfEnabled {
             if appState.isShelfVisible {
@@ -1851,271 +755,14 @@ final class ShelfWindowController: NSObject {
             appState.hideShelf()
         }
 
-        if settings.islandEnabled {
-            // A regular floating panel is constrained below the menu bar by AppKit.
-            // Island chrome must occupy the camera-housing band itself, matching
-            // status-item z-order while staying below screen-saver windows so drag
-            // sessions keep reaching it.
-            islandPanel.allowsTopEdgeOverlap = true
-            let level = NSWindow.Level(
-                rawValue: NSWindow.Level.statusBar.rawValue + 8
-            )
-            if islandPanel.level != level { islandPanel.level = level }
-            islandPanel.hasShadow = false
-            startEnabledIslandModules()
-            startIslandEventMonitoring()
-            if islandActivityCoordinator.surfaceState == .hidden {
-                islandActivityCoordinator.setSurfaceState(.compact)
-            }
-            if !islandModuleRegistry.isEnabled(islandActivityCoordinator.selectedModule),
-               let fallback = islandModuleRegistry.enabledDescriptors.first?.id {
-                islandActivityCoordinator.selectedModule = fallback
-            }
-            if islandPanel.isVisible {
-                scheduleIslandLayoutUpdate()
-            } else {
-                islandLayoutTask?.cancel()
-                islandLayoutTask = nil
-                islandFrameTransition.reset()
-                let target = islandTargetFrame()
-                _ = islandFrameTransition.request(target, currentFrame: islandPanel.frame)
-                islandPanel.alphaValue = 1
-                islandPanel.setFrame(target, display: true)
-                islandPanel.orderFront(nil)
-            }
-        } else {
-            islandLayoutTask?.cancel()
-            islandLayoutTask = nil
-            islandFrameTransition.reset()
-            stopIslandModules()
-            stopIslandEventMonitoring()
-            islandActivityCoordinator.hide()
-            islandPanel.orderOut(nil)
-        }
+        islandSurface.applySettings()
     }
 
     func islandDragApproachedTop(at point: CGPoint) -> Bool {
-        guard settings.islandEnabled,
-              settings.islandShelfEnabled,
-              settings.islandDragApproachEnabled else { return false }
-        let layout = islandLayout(at: point)
-        guard layout.activationFrame.contains(point) else { return false }
-        islandActivityCoordinator.currentLayout = layout
-        if !islandActivityCoordinator.surfaceState.isExpanded {
-            islandActivityCoordinator.beginDrag()
-            return true
-        }
-        return false
+        islandSurface.islandDragApproachedTop(at: point)
     }
 
     func islandDragEnded(imported: Bool) {
-        guard settings.islandEnabled, settings.islandShelfEnabled else { return }
-        islandActivityCoordinator.endDrag(imported: imported)
-    }
-
-    private func startEnabledIslandModules() {
-        if !islandModuleRegistry.isEnabled(islandActivityCoordinator.selectedModule) {
-            islandActivityCoordinator.selectedModule =
-                islandModuleRegistry.enabledDescriptors.first?.id ?? .transfers
-        }
-        islandModuleContainer.apply(
-            configuration: settings.islandModuleConfiguration,
-            isActive: true
-        )
-    }
-
-    private func stopIslandModules() {
-        islandModuleContainer.stopAll()
-    }
-
-    private func scheduleIslandLayoutUpdate() {
-        guard settings.islandEnabled else { return }
-        let target = islandTargetFrame()
-        // SwiftUI owns the visible fold. A wall-clock sleep can expire before
-        // that animation has even started during Show Desktop. Keep the host
-        // canvas intact until its actual completion, including interrupted folds.
-        if !islandActivityCoordinator.surfaceState.isExpanded,
-           islandActivityCoordinator.isSurfaceTransitionPending,
-           !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            return
-        }
-        // Activity samples, defaults notifications and desktop/Space changes
-        // can all arrive during the same collapse. Compare destinations before
-        // cancelling: identical requests must not restart its deadline.
-        if islandLayoutTask == nil { islandFrameTransition.reset() }
-        guard islandFrameTransition.request(target, currentFrame: islandPanel.frame) else { return }
-        islandLayoutTask?.cancel()
-        islandLayoutTask = Task { @MainActor [weak self] in
-            await Task.yield()
-            guard let self, !Task.isCancelled else { return }
-            defer {
-                // A cancelled task may have been replaced by a newer request.
-                if !Task.isCancelled {
-                    self.islandLayoutTask = nil
-                    self.islandFrameTransition.reset()
-                }
-            }
-
-            guard target != self.islandPanel.frame else { return }
-
-            if !self.islandActivityCoordinator.surfaceState.isExpanded {
-                guard !self.islandActivityCoordinator.isSurfaceTransitionPending
-                        || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-                self.islandPanel.setFrame(target, display: true)
-                self.logIslandPresentation("compact-frame-applied")
-                return
-            }
-            await self.animateIsland(to: target)
-        }
-    }
-
-    private func animateIsland(to target: NSRect) async {
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            islandPanel.setFrame(target, display: true)
-            return
-        }
-        let isExpanding = target.height > islandPanel.frame.height
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = isExpanding
-                    ? IslandMotion.expandWindowDuration
-                    : IslandMotion.collapseWindowDuration
-                context.timingFunction = isExpanding
-                    ? CAMediaTimingFunction(controlPoints: 0.22, 0.78, 0.18, 1.0)
-                    : CAMediaTimingFunction(controlPoints: 0.40, 0.00, 0.20, 1.0)
-                islandPanel.animator().setFrame(target, display: true)
-            }, completionHandler: {
-                continuation.resume()
-            })
-        }
-    }
-
-    private func startIslandEventMonitoring() {
-        guard islandGlobalMonitor == nil, islandLocalMonitor == nil else { return }
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .mouseMoved]
-        islandGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) {
-            [weak self] event in
-            let point = NSEvent.mouseLocation
-            Task { @MainActor in self?.handleIslandEvent(event, at: point) }
-        }
-        islandLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) {
-            [weak self] event in
-            let point = NSEvent.mouseLocation
-            Task { @MainActor in self?.handleIslandEvent(event, at: point) }
-            return event
-        }
-    }
-
-    private func stopIslandEventMonitoring() {
-        if let islandGlobalMonitor {
-            NSEvent.removeMonitor(islandGlobalMonitor)
-            self.islandGlobalMonitor = nil
-        }
-        if let islandLocalMonitor {
-            NSEvent.removeMonitor(islandLocalMonitor)
-            self.islandLocalMonitor = nil
-        }
-        islandHoverTask?.cancel()
-        islandHoverTask = nil
-        islandActivityCoordinator.setPointerHovering(false)
-    }
-
-    private func handleIslandEvent(_ event: NSEvent, at point: CGPoint) {
-        guard settings.islandEnabled else { return }
-        switch event.type {
-        case .leftMouseDown:
-            if !islandActivityCoordinator.surfaceState.isExpanded {
-                let layout = islandLayout(at: point)
-                guard interactiveCompactFrame(for: layout).contains(point) else { return }
-                // The right music wing owns a direct play/pause action. Let
-                // its SwiftUI button consume the click instead of expanding.
-                guard !isCompactMediaTransportHit(point, layout: layout) else { return }
-                islandActivityCoordinator.currentLayout = layout
-                islandActivityCoordinator.show(module: effectiveIslandOpenModule)
-                return
-            }
-            guard islandActivityCoordinator.surfaceState == .expanded,
-                  !islandPanel.frame.contains(point) else { return }
-            islandLogger.notice("outside-click event=\(event.eventNumber) window=\(event.windowNumber)")
-            collapseIsland(animated: true)
-        case .mouseMoved:
-            let layout = islandLayout(at: point)
-            if !islandActivityCoordinator.surfaceState.isExpanded {
-                if islandActivityCoordinator.currentLayout?.compactFrame != layout.compactFrame {
-                    scheduleIslandLayoutUpdate()
-                }
-                updateFloatingReveal(at: point, layout: layout)
-            }
-            let interactiveFrame = interactiveCompactFrame(for: layout)
-            islandActivityCoordinator.setPointerHovering(
-                !islandActivityCoordinator.surfaceState.isExpanded
-                    && interactiveFrame.contains(point)
-            )
-            guard settings.islandHoverRevealEnabled,
-                  islandActivityCoordinator.canRevealOnHover,
-                  !islandActivityCoordinator.surfaceState.isExpanded else {
-                islandHoverTask?.cancel()
-                islandHoverTask = nil
-                return
-            }
-            guard islandActivityCoordinator.floatingPresentation == .capsule,
-                  interactiveFrame.insetBy(dx: -4, dy: -4).contains(point) else {
-                islandHoverTask?.cancel()
-                islandHoverTask = nil
-                return
-            }
-            guard islandHoverTask == nil else { return }
-            islandHoverTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(300))
-                guard let self, !Task.isCancelled else { return }
-                self.islandHoverTask = nil
-                self.islandActivityCoordinator.show(module: self.effectiveIslandOpenModule)
-            }
-        default:
-            break
-        }
-    }
-
-    /// Low-frequency lifecycle diagnostics only; never includes clipboard data,
-    /// file names, screen contents or a continuous pointer trace.
-    private func logIslandPresentation(_ reason: String) {
-        let state = String(describing: islandActivityCoordinator.surfaceState)
-        let frame = NSStringFromRect(islandPanel.frame)
-        islandLogger.notice("\(reason, privacy: .public) state=\(state, privacy: .public) id=\(self.islandActivityCoordinator.surfaceTransitionID) pending=\(self.islandActivityCoordinator.isSurfaceTransitionPending) frame=\(frame, privacy: .public) visible=\(self.islandPanel.isVisible) occluded=\(!self.islandPanel.occlusionState.contains(.visible)) key=\(self.islandPanel.isKeyWindow)")
-    }
-
-    @objc private nonisolated func islandWindowStateDidChange(_ notification: Notification) {
-        let reason = notification.name.rawValue
-        Task { @MainActor [weak self] in
-            self?.logIslandPresentation(reason)
-        }
-    }
-
-    private var effectiveIslandOpenModule: IslandModuleID {
-        if let activity = islandActivityCoordinator.primaryActivity(),
-           islandModuleRegistry.isEnabled(activity.moduleID) {
-            return activity.moduleID
-        }
-        if islandModuleRegistry.isEnabled(islandActivityCoordinator.selectedModule) {
-            return islandActivityCoordinator.selectedModule
-        }
-        return islandModuleRegistry.enabledDescriptors.first?.id ?? .transfers
-    }
-
-    private func isCompactMediaTransportHit(
-        _ point: CGPoint,
-        layout: IslandGeometryResolver.Layout
-    ) -> Bool {
-        guard islandActivityCoordinator.primaryActivity()?.moduleID == .media,
-              nowPlayingModuleStore.snapshot != nil,
-              nowPlayingModuleStore.supportsTransportControls else { return false }
-        let controlWidth = layout.hasPhysicalNotch
-            ? IslandGeometryResolver.compactWingWidth
-            : 48
-        let frame = CGRect(x: layout.compactFrame.maxX - controlWidth,
-                           y: layout.compactFrame.minY,
-                           width: controlWidth,
-                           height: layout.compactFrame.height)
-        return frame.contains(point)
+        islandSurface.islandDragEnded(imported: imported)
     }
 }

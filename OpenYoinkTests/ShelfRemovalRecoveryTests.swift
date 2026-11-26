@@ -36,11 +36,11 @@ final class ShelfRemovalRecoveryTests: XCTestCase {
         try persistence.saveNow([])
 
         let restarted = PersistenceController(directoryURL: root)
-        XCTAssertTrue(restarted.load().isEmpty)
+        XCTAssertTrue(restarted.loadResult().contents.isEmpty)
         let archive = try XCTUnwrap(restarted.recoverySnapshots().first { $0.kind == .removedItems })
         XCTAssertTrue(archive.isRecoverable)
         XCTAssertEqual(try restarted.loadRecoverySnapshot(archive), items)
-        let protectedIDs = Set(DragPayloadBuilder.flattenedItems(restarted.recoverableSnapshotItems()).map(\.id))
+        let protectedIDs = Set(restarted.recoverableSnapshotItems().flattened.map(\.id))
         XCTAssertTrue(protectedIDs.isSuperset(of: [external.id, managed.id, materialized.id]))
 
         let store = ShelfStore(items: [], persistence: restarted)
@@ -50,7 +50,7 @@ final class ShelfRemovalRecoveryTests: XCTestCase {
 
         XCTAssertNil(storage.errorMessage)
         XCTAssertEqual(store.items, items)
-        XCTAssertEqual(restarted.load(), items)
+        XCTAssertEqual(restarted.loadResult().contents, items)
         XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(managed.path)))
         XCTAssertTrue(restarted.recoverySnapshots().contains { $0.id == archive.id })
     }

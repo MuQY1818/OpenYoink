@@ -68,7 +68,7 @@ final class PendingImportJournalTests: XCTestCase {
         let updated = try context.journal.updateDestination(id: created.id, to: replacement)
 
         XCTAssertEqual(updated.destinationPath, replacement.path)
-        XCTAssertEqual(context.journal.loadResult().records.first?.destinationPath,
+        XCTAssertEqual(context.journal.loadResult().contents.first?.destinationPath,
                        replacement.path)
     }
 

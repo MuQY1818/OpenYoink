@@ -3,14 +3,6 @@ import Synchronization
 import XCTest
 @testable import OpenYoink
 
-/// FilePromiseProvider 的写入逻辑：用临时目录真实文件直接调 `writeCopy` 与
-/// delegate 方法验证。真实拖拽会话链路（目标应用触发 writePromiseTo）列入
-/// 手动回归清单（Finder / 浏览器上传测试页 / Mail）。
-///
-/// 测试类为 @MainActor（provider/AppKit 对象隔离一致），故不使用
-/// setUp/tearDown（XCTestCase 的这两个 override 是非隔离的，访问 MainActor
-/// 状态会产生告警）——每个用例就地构造 fixtures 并用 defer 清理；
-/// `writeCopy` 本身是非隔离纯函数。
 @MainActor
 final class FilePromiseProviderTests: XCTestCase {
     // MARK: - Helpers
@@ -51,7 +43,7 @@ final class FilePromiseProviderTests: XCTestCase {
 
         XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "promise content")
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path),
-                      "promise 落盘是 copy，源文件必须保留")
+                      "Writing a file promise must copy and preserve the source.")
     }
 
     func testWriteCopy_withBookmark_resolvesAndCopies() throws {
@@ -111,11 +103,11 @@ final class FilePromiseProviderTests: XCTestCase {
     func testDelegate_fileNameForType_returnsSuggestedName() {
         let provider = FilePromiseProvider(
             payload: makePayload(sourceURL: URL(fileURLWithPath: "/tmp/hello.txt"),
-                                 suggestedName: "报告 2026.txt"),
+                                 suggestedName: "bg.txt"),
             bookmarkService: BookmarkService()
         )
         XCTAssertEqual(provider.delegate?.filePromiseProvider(provider, fileNameForType: "public.plain-text"),
-                       "报告 2026.txt")
+                       "bg.txt")
     }
 
     func testDelegate_writePromiseTo_reportsPromiseRepresentationRequested() throws {
@@ -132,7 +124,7 @@ final class FilePromiseProviderTests: XCTestCase {
 
         _ = provider.delegate?.filePromiseProvider(provider, fileNameForType: "public.data")
         XCTAssertEqual(requestCount.withLock { $0 }, 0,
-                       "询问文件名不代表目标已经请求写入")
+                       "A filename inquiry leaves the write unrequested.")
         provider.delegate?.filePromiseProvider(
             provider,
             writePromiseTo: directory.appendingPathComponent("out.txt")
@@ -148,15 +140,9 @@ final class FilePromiseProviderTests: XCTestCase {
         )
         let queue = provider.delegate?.operationQueue?(for: provider)
         XCTAssertEqual(queue?.qualityOfService, .userInitiated)
-        XCTAssertFalse(queue === OperationQueue.main, "promise 写入不得在主队列")
+        XCTAssertFalse(queue === OperationQueue.main, "promise writes must not run on the main queue")
     }
 
-    /// 回归（真机闪退修复）：目标应用请求 promise 内容时，系统经
-    /// `NSFileProviderXPCMessenger` 在**自己的 XPC 队列**同步调 delegate——
-    /// delegate 必须是 nonisolated，否则模块默认 MainActor 隔离会在非主队列
-    /// 触发 `_dispatch_assert_queue_fail`（拖到 QSpace Pro 必现的 SIGTRAP）。
-    /// 用后台队列同步调用两个 delegate 方法复现该场景（GCD `sync` 闭包不
-    /// 逃逸，无 Sendable 约束；若 delegate 带 MainActor 隔离此处必崩）。
     func testDelegate_methodsCallableFromBackgroundQueue() {
         let provider = FilePromiseProvider(
             payload: makePayload(sourceURL: URL(fileURLWithPath: "/tmp/bg.txt"),
@@ -181,8 +167,8 @@ final class FilePromiseProviderTests: XCTestCase {
         let provider = FilePromiseProvider(payload: makePayload(sourceURL: source),
                                            bookmarkService: bookmarkService)
 
-        // delegate 方法的实现是同步写（真实会话中 AppKit 在写队列上调用它），
-        // 测试中直接同步调用即可断言回调结果。
+        // The delegate writes synchronously (AppKit calls it on the write queue in
+        // a real session), so a direct call can assert the result.
         let completionError = Mutex<Error??>(nil)
         provider.delegate?.filePromiseProvider(provider, writePromiseTo: destination) { error in
             completionError.withLock { $0 = error }
@@ -214,12 +200,10 @@ final class FilePromiseProviderTests: XCTestCase {
         }
 
         XCTAssertNotNil(try XCTUnwrap(completionError.withLock { $0 }),
-                        "写失败必须把错误回传给接收应用")
+                        "A failed write must report the error to the receiving app.")
         XCTAssertNotNil(reportedError.withLock { $0 },
-                        "写失败必须上报 onError（预留 UI 订阅）")
+                        "A failed write must invoke onError.")
     }
-
-    // MARK: - 直接文件 writer / promise-only provider
 
     func testDirectFileWriter_serializesFileURLAndChromiumFilenameList() {
         let source = URL(fileURLWithPath: "/tmp/OpenYoink 示例.txt")
@@ -265,12 +249,12 @@ final class FilePromiseProviderTests: XCTestCase {
 
         XCTAssertTrue(pasteboard.writeObjects([writer]))
         XCTAssertEqual(requestCount.withLock { $0 }, 0,
-                       "写入拖拽 pasteboard 时不应提前解码整张图片")
+                       "Populating the drag pasteboard must defer full image decoding.")
         XCTAssertEqual(pasteboard.data(forType: PasteboardTypes.tiff), expected)
         XCTAssertEqual(requestCount.withLock { $0 }, 1)
     }
 
-    /// F-05: 托管剪切项的 provider 永远只声明 promise 类型。
+    /// A managed cut item's provider only ever declares promise types.
     func testFilePromiseProvider_alwaysAdvertisesPromiseOnly() {
         let provider = FilePromiseProvider(
             payload: makePayload(sourceURL: URL(fileURLWithPath: "/tmp/hello.txt")),
@@ -286,7 +270,7 @@ final class FilePromiseProviderTests: XCTestCase {
         XCTAssertTrue(types.contains { NSFilePromiseReceiver.readableDraggedTypes.contains($0.rawValue) })
     }
 
-    /// F-05: 写入完成回调携带目标 URL（剪切项的交付确认）。
+    /// The completion callback carries the destination URL (delivery confirmation).
     func testDelegate_writePromiseTo_successCallsOnDeliveredWithDestination() throws {
         let bookmarkService = BookmarkService()
         defer { bookmarkService.stopAccessingAll() }
@@ -307,7 +291,7 @@ final class FilePromiseProviderTests: XCTestCase {
         XCTAssertEqual(deliveredURL.withLock { $0 }, destination)
     }
 
-    /// F-05: 写入失败不触发交付确认（只走 onError）。
+    /// A failed write doesn't confirm delivery (only onError).
     func testDelegate_writePromiseTo_failureDoesNotCallOnDelivered() throws {
         let bookmarkService = BookmarkService()
         defer { bookmarkService.stopAccessingAll() }

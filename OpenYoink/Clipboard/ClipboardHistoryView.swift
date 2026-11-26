@@ -171,7 +171,6 @@ struct ClipboardHistoryView: View {
     }
 }
 
-
 private struct ClipboardHistoryRow: View {
     let isIsland: Bool
     @Environment(ClipboardHistoryStore.self) private var history

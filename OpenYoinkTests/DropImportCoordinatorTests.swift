@@ -3,17 +3,9 @@ import UniformTypeIdentifiers
 import XCTest
 @testable import OpenYoink
 
-/// DropImportCoordinator 的分类/排序/字段断言。直接构造 `NSPasteboard(name:)`
-/// 实例喂 fileURL/文本/URL/图片数据，验证产出的 ShelfItem。
-///
-/// file promise 路径无法单测：`NSFilePromiseReceiver` 只能由真实拖拽会话的
-/// 来源应用创建（无法在测试中实例化），该链路列入手动回归清单。
 @MainActor
 final class DropImportCoordinatorTests: XCTestCase {
-    /// 每个用例的 fixtures：就地构造、用例末尾 `cleanup()`（经 defer）。
-    /// 不使用 setUp/tearDown —— XCTestCase 的这两个 override 是非隔离的，
-    /// 在 @MainActor 测试类中访问隔离状态会产生告警（与 ShelfStoreTests 的
-    /// defer 清理模式一致）。
+
     @MainActor
     private struct Context {
         let bookmarkService = BookmarkService()
@@ -61,7 +53,7 @@ final class DropImportCoordinatorTests: XCTestCase {
         return url
     }
 
-    /// 1×1 PNG。
+    /// 1×1 PNG
     private func makePNGData() throws -> Data {
         let rep = try XCTUnwrap(NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1,
@@ -71,7 +63,7 @@ final class DropImportCoordinatorTests: XCTestCase {
         return try XCTUnwrap(rep.representation(using: .png, properties: [:]))
     }
 
-    /// 本步不用的异步回调。
+    /// Async callbacks this test doesn't use.
     private func ignoringAsyncItems() -> @MainActor (ShelfItem) -> Void {
         { _ in XCTFail("no async materialization expected for this pasteboard") }
     }
@@ -93,14 +85,14 @@ final class DropImportCoordinatorTests: XCTestCase {
         XCTAssertEqual(item.path, fileURL.path)
         XCTAssertEqual(item.displayName, fileURL.lastPathComponent)
         XCTAssertNotNil(item.bookmark)
-        XCTAssertNil(item.sourceApp) // v1: 跨应用拖拽来源统一留 nil
+        XCTAssertNil(item.sourceApp) // cross-app drags have no source app
     }
 
     func testImport_directoryURL_producesFolderItem_notExpanded() throws {
         var context = makeContext()
         defer { context.cleanup() }
         let folderURL = try makeTempDirectory(in: &context)
-        // 文件夹里放一个文件，验证 v1 不展开递归。
+        // A folder with a file in it: folders aren't expanded.
         try "inner".write(to: folderURL.appendingPathComponent("inner.txt"), atomically: true, encoding: .utf8)
         let pasteboard = makePasteboard()
         pasteboard.writeObjects([folderURL as NSURL])
@@ -225,7 +217,7 @@ final class DropImportCoordinatorTests: XCTestCase {
 
     // MARK: - Priority
 
-    /// fileURL 与文本同时存在时按 F-03 顺序取 fileURL，文本忽略。
+    /// With a file URL and text, the file URL wins and the text is ignored.
     func testImport_fileURLAndText_fileURLWins() throws {
         var context = makeContext()
         defer { context.cleanup() }
@@ -242,7 +234,6 @@ final class DropImportCoordinatorTests: XCTestCase {
 
     // MARK: - Image data
 
-    /// 无文件 URL 的 PNG 位图：异步物化到 TempFileService 目录，kind = .image。
     func testImport_pngData_materializesImageItem() async throws {
         let context = makeContext()
         defer { context.cleanup() }
@@ -268,7 +259,7 @@ final class DropImportCoordinatorTests: XCTestCase {
         XCTAssertNotNil(item.bookmark)
         let path = try XCTUnwrap(item.path)
         XCTAssertTrue(path.hasPrefix(context.tempFileService.directoryURL.path))
-        // 落盘内容与原 PNG 一致。
+        // The written file equals the original PNG.
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), pngData)
         XCTAssertEqual(context.coordinator.transferStore.currentTask?.phase, .delivered)
         XCTAssertEqual(context.coordinator.transferStore.currentTask?.itemIDs, [item.id])

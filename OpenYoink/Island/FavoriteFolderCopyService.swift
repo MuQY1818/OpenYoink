@@ -75,8 +75,7 @@ actor FavoriteFolderCopyService {
     }
     nonisolated static func isSafeDestination(_ folder: URL, for source: URL) -> Bool {
         guard folder.isFileURL, source.isFileURL, !source.lastPathComponent.isEmpty else { return false }
-        return !folder.resolvingSymlinksInPath().standardizedFileURL.pathComponents
-            .starts(with: source.resolvingSymlinksInPath().standardizedFileURL.pathComponents)
+        return !folder.isContained(in: source, includingDirectory: true)
     }
     private static func exists(_ url: URL, manager: FileManager) -> Bool {
         (try? manager.attributesOfItem(atPath: url.path)) != nil

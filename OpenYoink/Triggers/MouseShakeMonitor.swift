@@ -1,7 +1,6 @@
 import AppKit
 
 /// Pure mouse-shake heuristic, decoupled from AppKit for unit testing
-/// (plan §6 「全局摇动误触」 countermeasure).
 ///
 /// A shake is a rapid horizontal back-and-forth: `requiredReversals` direction
 /// reversals within `window` seconds, where the cursor must travel at least
@@ -106,9 +105,9 @@ struct ShakeDetector: Sendable {
     }
 }
 
-/// Global mouse-shake trigger (S7). Registers `mouseMoved` monitors only
+/// Global mouse-shake trigger. Registers `mouseMoved` monitors only
 /// while started; `stop()` removes them so a disabled trigger leaves no
-/// event registration behind (plan §2.3).
+/// event registrations behind.
 ///
 /// Two monitors feed the same detector: the global monitor sees cursor
 /// movement in other apps, the local monitor covers movement over our own
@@ -122,8 +121,9 @@ final class MouseShakeMonitor {
 
     private var detector: ShakeDetector?
     private var activeParameters: ShakeDetector.Parameters?
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+    private lazy var monitor = EventMonitor(matching: .mouseMoved) { [weak self] sample in
+        self?.handleMouseMoved(to: sample.location, at: sample.timestamp)
+    }
 
     /// Ignore-list gate, evaluated only at the moment the heuristic fires.
     private let shouldSuppress: @MainActor () -> Bool
@@ -143,36 +143,13 @@ final class MouseShakeMonitor {
         detector = ShakeDetector(parameters: parameters)
         activeParameters = parameters
 
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
-            guard let self else { return }
-            let location = NSEvent.mouseLocation
-            let timestamp = event.timestamp
-            Task { @MainActor in
-                self.handleMouseMoved(to: location, at: timestamp)
-            }
-        }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
-            guard let self else { return event }
-            let location = NSEvent.mouseLocation
-            let timestamp = event.timestamp
-            Task { @MainActor in
-                self.handleMouseMoved(to: location, at: timestamp)
-            }
-            return event
-        }
+        monitor.start()
         isMonitoring = true
     }
 
     /// Removes all event registrations.
     func stop() {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-            self.globalMonitor = nil
-        }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
-            self.localMonitor = nil
-        }
+        monitor.stop()
         detector = nil
         activeParameters = nil
         isMonitoring = false

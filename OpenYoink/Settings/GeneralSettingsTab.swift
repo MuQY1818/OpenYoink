@@ -64,8 +64,7 @@ struct GeneralSettingsTab: View {
                 }
 
                 if settings.classicShelfEnabled && settings.shelfPosition == .custom {
-                    // S9: custom 模式 —— 面板可拖动，拖动结束持久化 frame；
-                    // 首次选中从右缘默认位置起步。边缘触发在无贴附缘时暂停。
+
                     Text("Drag the shelf by its title bar to place it anywhere. The edge trigger is unavailable in custom mode.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -88,12 +87,12 @@ struct GeneralSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    // UX6: 非空→空迁移时自动收回（手动唤出的空架不受影响）。
+                    // Hides the shelf when it becomes empty (a shelf opened empty is unaffected).
                     Toggle("Hide automatically when empty", isOn: $settings.autoHideWhenEmpty)
 
-                    // EdgeTab: 拉环只在 shelf 隐藏时贴屏幕边缘显示（互斥模型；
-                    // shelf 展开后由面板外缘隐形热区承担同点位收起）。
-                    // custom 模式无贴附缘，开关不生效（说明文案覆盖）。
+                    // The tab shows on the screen edge only while the shelf is hidden (the
+                    // open shelf's invisible outer zone collapses it from the same spot).
+                    // Without an attached edge (custom) it has no effect, as the footnote says.
                     Toggle("Show edge tab while shelf is hidden", isOn: $settings.edgeTabEnabled)
                     Text("Click the tab to show the shelf, drag it along the edge to reposition, or drop files onto it. Not shown in custom position mode.")
                         .font(.caption)
@@ -115,7 +114,7 @@ struct GeneralSettingsTab: View {
                 }
                 .accessibilityIdentifier("settings.dragOutRemovalPolicy")
 
-                // F-05: 双模式拖入说明（静态文案）。
+                // How the two drop modes work (static text).
                 Text("Dropping files keeps a reference. Hold ⌘ while dropping to move the original into the shelf — the original goes to the Trash, so it can be restored.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -172,50 +171,48 @@ struct GeneralSettingsTab: View {
 
             if settings.islandEnabled {
                 Section("Island Modules") {
-                    islandModuleControl("Shelf", id: .shelf)
-                    Text("The Island Shelf and Side Shelf use the same items. Turning this module off never deletes them.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    islandModuleControl("Transfers", id: .transfers)
-                    islandModuleControl("Timer", id: .timer)
-                    islandModuleControl("Battery", id: .battery)
-                    if settings.isIslandModuleEnabled(.battery) {
-                        Toggle("Notify when fully charged",
-                               isOn: $settings.islandFullChargeAlertEnabled)
-                    }
-
-                    islandModuleControl("System Status", id: .system)
-                    Text("System status is read-only and never terminates apps, cleans disks, controls fans, or reads private sensors.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    islandModuleControl("Now Playing", id: .media)
-                    Text("Shows artwork and controls from the active media player. Processing stays on this Mac; compatibility can vary after macOS updates.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    islandModuleControl("Quick Access", id: .folders)
-                    islandModuleControl("Clipboard History", id: .clipboard)
-
-                    islandModuleControl("AI Usage", id: .aiUsage)
-                    if settings.isIslandModuleEnabled(.aiUsage) {
-                        Picker("Show in compact Island", selection: $settings.aiUsageCompactMetric) {
-                            Text("Nothing").tag(AIUsageCompactMetric.off)
-                            Text("Today's spend").tag(AIUsageCompactMetric.todayCost)
-                            Text("Today's tokens").tag(AIUsageCompactMetric.todayTokens)
-                            Text("Highest limit usage").tag(AIUsageCompactMetric.tightestLimit)
+                    ForEach(IslandModuleCatalog.descriptors) { descriptor in
+                        islandModuleControl(descriptor)
+                        switch descriptor.id {
+                        case .shelf:
+                            Text("The Island Shelf and Side Shelf use the same items. Turning this module off never deletes them.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        case .battery:
+                            if settings.isIslandModuleEnabled(.battery) {
+                                Toggle("Notify when fully charged",
+                                       isOn: $settings.islandFullChargeAlertEnabled)
+                            }
+                        case .system:
+                            Text("System status is read-only and never terminates apps, cleans disks, controls fans, or reads private sensors.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        case .media:
+                            Text("Shows artwork and controls from the active media player. Processing stays on this Mac; compatibility can vary after macOS updates.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        case .aiUsage:
+                            if settings.isIslandModuleEnabled(.aiUsage) {
+                                Picker("Show in compact Island", selection: $settings.aiUsageCompactMetric) {
+                                    Text("Nothing").tag(AIUsageCompactMetric.off)
+                                    Text("Today's spend").tag(AIUsageCompactMetric.todayCost)
+                                    Text("Today's tokens").tag(AIUsageCompactMetric.todayTokens)
+                                    Text("Highest limit usage").tag(AIUsageCompactMetric.tightestLimit)
+                                }
+                                .pickerStyle(.menu)
+                                Toggle("Notify at 80% and 95% of a usage limit",
+                                       isOn: $settings.aiUsageLimitAlertsEnabled)
+                            }
+                            HStack(spacing: 4) {
+                                Text("Token usage, spend and plan limits come from TokenTracker, a free, open-source app. It needs to be running.")
+                                Link("Get TokenTracker", destination: TokenTrackerClient.projectURL)
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        default:
+                            EmptyView()
                         }
-                        .pickerStyle(.menu)
-                        Toggle("Notify at 80% and 95% of a usage limit",
-                               isOn: $settings.aiUsageLimitAlertsEnabled)
                     }
-                    HStack(spacing: 4) {
-                        Text("Token usage, spend and plan limits come from TokenTracker, a free, open-source app. It needs to be running.")
-                        Link("Get TokenTracker", destination: TokenTrackerClient.projectURL)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
 
                     Text("Open the Island module library to drag the five pinned positions into order.")
                         .font(.caption)
@@ -225,20 +222,16 @@ struct GeneralSettingsTab: View {
 
             Section("Clipboard History") {
                 Toggle("Record Clipboard", isOn: $settings.clipboardHistoryEnabled)
-                    .onChange(of: settings.clipboardHistoryEnabled) { _, _ in history.updateRecording() }
                 Toggle("Pause Recording", isOn: $settings.clipboardHistoryPaused)
                     .disabled(!settings.clipboardHistoryEnabled)
-                    .onChange(of: settings.clipboardHistoryPaused) { _, _ in history.updateRecording() }
                 Picker("Keep History", selection: $settings.clipboardHistoryRetentionDays) {
                     Text("1 Day").tag(1)
                     Text("7 Days").tag(7)
                     Text("30 Days").tag(30)
                 }
-                .onChange(of: settings.clipboardHistoryRetentionDays) { _, _ in history.prune(force: true) }
                 Picker("History Limit", selection: $settings.clipboardHistoryEntryLimit) {
                     ForEach(ClipboardHistoryPolicy.supportedEntryLimits, id: \.self) { Text("\($0)").tag($0) }
                 }
-                .onChange(of: settings.clipboardHistoryEntryLimit) { _, _ in history.prune(force: true) }
                 LabeledContent("History Shortcut") { ShortcutRecorderView(shortcut: $settings.clipboardHistoryShortcut) }
                 if let error = history.shortcutRegistrationError {
                     Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
@@ -257,14 +250,15 @@ struct GeneralSettingsTab: View {
                     Text("中文").tag(SettingsStore.LanguagePreference.chinese)
                 }
                 .accessibilityIdentifier("settings.language")
-                // S10: AppleLanguages 覆盖在启动最早期应用（AppDelegate.
-                // applicationWillFinishLaunching），运行期切换故需重启生效。
+                // The AppleLanguages override applies at the very start of launch
+                // (applicationWillFinishLaunching), so a change needs a relaunch.
                 Text("Takes effect after relaunch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            // Sparkle: 自动检查更新（应用唯一的联网行为；手动检查在菜单栏菜单）。
+            // Automatic update checks (the app's only network use; manual checks are
+// in the menu bar menu).
             Section("Updates") {
                 Toggle("Automatically check for updates", isOn: $settings.autoUpdateCheckEnabled)
                 Text("Update checks contact GitHub Pages and releases only; nothing else uses the network.")
@@ -307,14 +301,14 @@ struct GeneralSettingsTab: View {
     }
 
     private func islandModuleControl(
-        _ title: LocalizedStringKey,
-        id: IslandModuleID
+        _ descriptor: IslandModuleDescriptor
     ) -> some View {
+        let id = descriptor.id
         let enabled = settings.isIslandModuleEnabled(id)
         let pinned = settings.isIslandModulePinned(id)
         let pinnedCount = settings.islandModuleConfiguration.pinnedModuleIDs.count
         return HStack {
-            Toggle(title, isOn: Binding(
+            Toggle(descriptor.title, isOn: Binding(
                 get: { settings.isIslandModuleEnabled(id) },
                 set: { settings.setIslandModuleEnabled($0, id: id) }
             ))

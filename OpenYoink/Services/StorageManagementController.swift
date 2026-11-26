@@ -1,11 +1,6 @@
 import AppKit
 import Foundation
 
-/// 设置页中的数据恢复与托管存储管理。
-///
-/// 所有删除都被限制在 OpenYoink 的 Application Support 目录；“清理未使用
-/// 文件”还会同时保护当前 shelf 和可恢复快照引用的物化文件。存在无法解码的
-/// 隔离快照时清理被禁用，因为无法可靠计算它引用了哪些文件。
 @MainActor
 @Observable
 final class StorageManagementController {
@@ -55,7 +50,7 @@ final class StorageManagementController {
     var canCleanUnusedFiles: Bool {
         !hasQuarantinedData
             && !snapshots.contains { !$0.isRecoverable }
-            && (managedMoveJournal?.permitsManagedOrphanCleanup ?? true)
+            && (managedMoveJournal?.permitsOrphanCleanup ?? true)
             && (pendingImportJournal?.permitsOrphanCleanup ?? true)
     }
 
@@ -96,7 +91,7 @@ final class StorageManagementController {
         }
 
         do {
-            if containsItem(id: pending.id, in: shelfStore.items) {
+            if shelfStore.items.contains(id: pending.id) {
                 try journal.remove(id: pending.id)
                 statusMessage = String(localized: "This file was already imported. Its recovery record was cleared.")
                 refresh()
@@ -179,7 +174,7 @@ final class StorageManagementController {
         do {
             // A stale record may survive a crash immediately after shelf save.
             // Never delete the payload of an already-persisted item.
-            if containsItem(id: pending.id, in: shelfStore.items) {
+            if shelfStore.items.contains(id: pending.id) {
                 try journal.remove(id: pending.id)
             } else {
                 try journal.remove(id: pending.id)
@@ -198,8 +193,7 @@ final class StorageManagementController {
         statusMessage = nil
         errorMessage = nil
         do {
-            // 先完整解码，再同步保存；只有保存成功才替换内存，避免 UI 与磁盘
-            // 分叉。saveNow 会把恢复前的当前状态写成新的 last-known-good，故可撤回。
+
             let decodedItems = try persistence.loadRecoverySnapshot(snapshot)
             let restoredItems = prepareRestoredItems(decodedItems)
             try persistence.saveNow(restoredItems)
@@ -231,7 +225,7 @@ final class StorageManagementController {
     func cleanUnusedFiles() {
         statusMessage = nil
         errorMessage = nil
-        guard managedMoveJournal?.permitsManagedOrphanCleanup ?? true else {
+        guard managedMoveJournal?.permitsOrphanCleanup ?? true else {
             errorMessage = String(localized: "Resolve managed move recovery data before cleaning files.")
             refresh()
             return
@@ -247,12 +241,11 @@ final class StorageManagementController {
             return
         }
 
-        let protectedItems = shelfStore.items + persistence.recoverableSnapshotItems()
-        var protectedPaths = materializedPaths(in: protectedItems)
-        protectedPaths.formUnion(managedMoveJournal?.protectedManagedPaths() ?? [])
-        protectedPaths.formUnion(pendingImportJournal?.protectedPaths() ?? [])
-        protectedPaths.formUnion(additionalProtectedPaths())
-        protectedPaths.formUnion(shelfStore.undoProtectedPaths)
+        let protectedPaths = MaterializedFileGuard.protectedPaths(
+            for: shelfStore.items, persistence: persistence, tempFiles: tempFileService,
+            managedMoves: managedMoveJournal, pendingImports: pendingImportJournal,
+            additional: additionalProtectedPaths().union(shelfStore.undoProtectedPaths)
+        )
         let result = tempFileService.cleanupOrphans(keepingPaths: protectedPaths)
         if result.removedItemCount == 0 {
             statusMessage = String(localized: "No unused files were found.")
@@ -280,29 +273,6 @@ final class StorageManagementController {
         }
     }
 
-    private func materializedPaths(in items: [ShelfItem]) -> Set<String> {
-        let root = tempFileService.directoryURL.standardizedFileURL.path
-        let prefix = root.hasSuffix("/") ? root : root + "/"
-        var result = Set<String>()
-        for item in items {
-            if let path = item.path {
-                let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-                if standardized.hasPrefix(prefix) {
-                    result.insert(standardized)
-                }
-            }
-            if let children = item.children {
-                result.formUnion(materializedPaths(in: children))
-            }
-        }
-        return result
-    }
-
-    private func containsItem(id: UUID, in items: [ShelfItem]) -> Bool {
-        items.contains { item in
-            item.id == id || containsItem(id: id, in: item.children ?? [])
-        }
-    }
 }
 
 private enum PendingImportRecoveryError: LocalizedError {

@@ -2,7 +2,7 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// One corner-radius rule for every layer of the shelf glass (issue #10).
+/// One corner-radius rule for every layer of the shelf glass.
 /// While the glass grows out of the edge tab it starts at the tab's own 8pt
 /// radius and eases into the appearance radius as it widens, instead of jumping
 /// to a half-height capsule.
@@ -56,12 +56,10 @@ struct ShelfGlassSurface: View {
 /// the shelf content, the tracking container, or the native glass backdrop.
 struct ShelfInteractiveGlassSurface<Content: View>: View {
     let appearance: ShelfAppearance
-    /// 空白处的点击（清选择/收起 Stack）。命中层独立于高度弹簧动画，
-    /// 见下方 `stableSurfaceBounds`。
+
     var onBackgroundTap: (() -> Void)?
     private let content: Content
     @State private var pointer = ShelfGlassPointer()
-    /// issue #10：拉环 ↔ 面板形变（nil 时始终展开）。
     @Environment(\.shelfRevealState) private var reveal
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -205,7 +203,7 @@ private struct ShelfGlassBackdrop: View {
                 }
             }
         }
-        // issue #10: native glass draws its own halo/shadow outside its shape.
+        // native glass draws its own halo/shadow outside its shape.
         // The shelf window only has an 8pt transparent margin, so that halo was
         // cut off at the window's square bounds, and the window shadow (computed
         // from those faint pixels) then outlined a rectangle around the panel.
@@ -273,7 +271,7 @@ private struct ShelfGlassHighlights: View {
 
     var body: some View {
         if appearance.usesNativeGlass(reduceTransparency: reduceTransparency) {
-            // issue #10: native glass keeps its own edge optics; the only
+            // native glass keeps its own edge optics; the only
             // addition is a faint light that follows the pointer, so the panel
             // responds to the cursor without the glass itself moving or scaling.
             nativePointerGlow
@@ -374,7 +372,7 @@ private struct ShelfNativeGlassBackdrop: NSViewRepresentable {
         if view.tintColor != tint { view.tintColor = tint }
         let name: NSAppearance.Name = colorScheme == .dark ? .darkAqua : .aqua
         if view.appearance?.name != name { view.appearance = NSAppearance(named: name) }
-        // issue #10: interactive glass is meant for controls. On a whole panel a
+        // interactive glass is meant for controls. On a whole panel a
         // press inflates the glass beyond its frame while the content stays put,
         // and the window clips the inflated edge into a stray outline.
         if #available(macOS 27.0, *), view.effectIsInteractive {

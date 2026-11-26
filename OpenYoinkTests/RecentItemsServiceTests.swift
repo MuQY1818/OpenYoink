@@ -1,11 +1,11 @@
 import XCTest
 @testable import OpenYoink
 
-/// RecentItemsService 的追加 / 上限 / 持久化往返。
+/// RecentItemsService: appending, the cap, persistence round-trips.
 ///
-/// @MainActor 测试类不使用 setUp/tearDown（XCTestCase 的这两个 override 是
-/// 非隔离的，访问 MainActor 状态会产生告警）——每个用例就地建临时目录并用
-/// defer 清理。
+/// A @MainActor test class without setUp/tearDown (those overrides are
+/// nonisolated and would warn on main-actor state): each test makes a
+/// temporary directory and cleans up with defer.
 @MainActor
 final class RecentItemsServiceTests: XCTestCase {
     // MARK: - Helpers
@@ -48,7 +48,7 @@ final class RecentItemsServiceTests: XCTestCase {
         service.record((1...15).map { makeFileItem("file-\($0).txt") })
         service.record((16...25).map { makeFileItem("file-\($0).txt") })
 
-        // 25 条裁剪到 20：保留最新批次全部 + 旧批次中较新的 10 条。
+        // 25 trimmed to 20: the whole newest batch plus the newer 10 of the old one.
         XCTAssertEqual(service.entries.count, RecentItemsService.maxEntryCount)
         XCTAssertEqual(service.entries.first?.displayName, "file-16.txt")
         XCTAssertEqual(service.entries.last?.displayName, "file-10.txt")
@@ -133,6 +133,6 @@ final class RecentItemsServiceTests: XCTestCase {
 
         XCTAssertTrue(service.entries.isEmpty)
         XCTAssertTrue(RecentItemsService(directoryURL: directory).entries.isEmpty,
-                      "清空必须落盘")
+                      "clearing must be persisted")
     }
 }

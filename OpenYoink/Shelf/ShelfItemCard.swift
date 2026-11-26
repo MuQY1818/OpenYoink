@@ -1,5 +1,4 @@
 import AppKit
-import QuickLookThumbnailing
 import SwiftUI
 
 /// Visible, non-color-only card state. Completed transfers deliberately resolve
@@ -53,62 +52,45 @@ enum ShelfCardVisualStatus: Equatable {
     }
 }
 
-/// 单项目卡片（12pt 圆角、缩略图区、两行名称、语义状态 + 来源应用小图标）。
-///
-/// 缩略图策略：file/folder/image 异步走 `QLThumbnailGenerator` 真实缩略图，
-/// 失败或加载中回退 `NSWorkspace.icon(forFile:)`；text 显示文本片段预览；
-/// url 显示 SF Symbol 链接占位。`isStale`（bookmark 失效）项目整体降透明度，
-/// 并在左上角叠加感叹号角标。
-///
-/// 右键菜单（S6）：Quick Look / Open / Show in Finder（按 kind 与 stale 状态
-/// 自动禁用，stale 项改显示「File Unavailable」），「Remove from Shelf」直接可用
-/// （`ShelfStore.remove(ids:)` 由调用方封装注入）。双击卡片 = Quick Look。
-///
-/// 拖出（S5）：卡片覆盖 `CardDragSourceBridge`（NSViewRepresentable）作为鼠标
-/// 事件权威 —— mouseDragged 超阈值即开始 `NSDraggingSession`（按 §2.1 决策不走
-/// SwiftUI onDrag），mouseUp 无拖拽回落为点击（单击选择并让面板成为 key 以接通
-/// 空格/Delete/Esc 键盘链路；clickCount ≥ 2 双击触发 Quick Look）。拖拽内容与
-/// 批量语义由 `dragContentsProvider`（父视图注入）决定，实际会话由环境里的
-/// `DragOutController` 启动。
 struct ShelfItemCard: View {
-    /// 展示的项目。
     let item: ShelfItem
-    /// 选中态（§3：accent color 描边 + 浅色填充）。
+    /// Accent border and tinted fill.
     let isSelected: Bool
     /// Keyboard focus is independent from multi-selection and gets its own ring.
     let isKeyboardFocused: Bool
-    /// 点击回调；additive 为 true 表示 ⌘点击（切换选中），否则单选。
+    /// `additive` is true for ⌘-click (toggle), false for a plain click.
     let onSelect: (_ additive: Bool) -> Void
-    /// 「Remove from Shelf」。同时驱动右键菜单移除项与 UX4 悬停 ✕ 按钮；
-    /// 为 nil 时两者都不呈现（移除语义由父视图决定注入）。
+    /// Drives both the context menu item and the hover ✕ button; nil shows
+    /// neither.
     var onRemove: (() -> Void)?
-    /// v1.2: safe recovery action selected by the parent (external reconnect,
+    /// safe recovery action selected by the parent (external reconnect,
     /// managed storage, or review a stack's unavailable children).
     var onRecover: (() -> Void)?
     /// One-shot copy action, exposed in the context menu and accessibility rotor.
     var onCopy: (() -> Void)?
+    var onStack: (() -> Void)?
+    var onUnstack: (() -> Void)?
     /// Runtime-only import/export state appended to the VoiceOver label.
     var transferStatus: TransferItemAccessibilityStatus?
-    /// 决定缩略图内容的项目；默认与 `item` 相同。Stack 卡片传入第一个文件类子项。
+    /// The item whose thumbnail is shown; a stack passes its first file child.
     var thumbnailItem: ShelfItem?
-    /// S5 拖出内容计算：给定被拖卡片项目，返回本次拖出的项目集合与涉及的顶层
-    /// id（多选整批 / stack 语义由父视图决定）。nil 时拖出单卡项目。
+    /// What a drag of this card carries (whole selection, stack contents);
+    /// nil drags just this card.
     var dragContentsProvider: ((ShelfItem) -> DragOutContents)?
 
-    /// QL / Workspace 缩略图（已合成 SwiftUI Image，Sendable，跨任务传递安全）。
+    /// Already a SwiftUI `Image`, which is Sendable.
     @State private var thumbnail: Image?
-    /// 来源应用小图标（按 `sourceApp.bundleID` 经 LaunchServices 解析）。
+    /// Resolved from `sourceApp.bundleID` through Launch Services.
     @State private var sourceAppIcon: NSImage?
-    /// UX4: 卡片悬停态（驱动右上角 ✕ 移除按钮淡入淡出）。
+    /// Fades the ✕ remove button in and out.
     @State private var isHovering = false
-    /// S4: 缩略图加载经 bookmark 解析文件访问权（见 `ThumbnailLoader`）。
-    @Environment(\.bookmarkService) private var bookmarkService
-    /// S5: 拖出总控；nil（Preview/单测）时拖拽关闭、点击不受影响。
+    /// Thumbnails resolve bookmarks for file access (see `ThumbnailLoader`).
+    @Environment(\.shelfFileServices) private var fileServices
+    /// nil (previews, tests) disables dragging; clicks still work.
     @Environment(\.dragOutController) private var dragOutController
-    /// S6: Quick Look 会话；nil（Preview/单测）时 QL 入口禁用。
+    /// nil (previews, tests) disables Quick Look.
     @Environment(\.quickLookCoordinator) private var quickLookCoordinator
-    /// S6: text 项打开/定位需写临时 .txt（见 `ItemActions`）。
-    @Environment(\.tempFileService) private var tempFileService
+    /// Opening or revealing a text item writes a temporary .txt (see `ItemActions`).
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
@@ -122,7 +104,7 @@ struct ShelfItemCard: View {
     }
 
     static let cornerRadius: CGFloat = 12
-    /// 缩略图区高度（点）；宽度随网格列（~88pt）。
+    /// Width follows the grid column (~88 pt).
     static let thumbnailHeight: CGFloat = 52
 
     init(item: ShelfItem,
@@ -132,6 +114,8 @@ struct ShelfItemCard: View {
          onRemove: (() -> Void)? = nil,
          onRecover: (() -> Void)? = nil,
          onCopy: (() -> Void)? = nil,
+         onStack: (() -> Void)? = nil,
+         onUnstack: (() -> Void)? = nil,
          transferStatus: TransferItemAccessibilityStatus? = nil,
          thumbnailItem: ShelfItem? = nil,
          dragContentsProvider: ((ShelfItem) -> DragOutContents)? = nil) {
@@ -142,6 +126,8 @@ struct ShelfItemCard: View {
         self.onRemove = onRemove
         self.onRecover = onRecover
         self.onCopy = onCopy
+        self.onStack = onStack
+        self.onUnstack = onUnstack
         self.transferStatus = transferStatus
         self.thumbnailItem = thumbnailItem
         self.dragContentsProvider = dragContentsProvider
@@ -171,9 +157,7 @@ struct ShelfItemCard: View {
         .overlay { availabilityBorder }
         .overlay { keyboardFocusRing }
         .overlay(alignment: selectionMode ? .topTrailing : .topLeading) { selectionBadge }
-        // S5 拖出事件层：透明 NSView 覆盖整卡，成为左键事件权威
-        //（mouseDown 记录 → mouseDragged 超阈值开始拖拽；mouseUp 无拖拽回落为
-        // 点击选择 / 双击 Quick Look）。右键（contextMenu）与滚动透传给 SwiftUI。
+
         .overlay {
             if item.availability == .available {
                 CardDragSourceBridge(
@@ -195,17 +179,12 @@ struct ShelfItemCard: View {
                 )
             }
         }
-        // UX4: 悬停 ✕ 移除按钮。z 序在拖出事件层之上 —— 命中测试先到达
-        // SwiftUI Button，落在 ✕ 上的点击不会触发选择或拖出；未悬停时
-        // 透明且关闭命中测试，不影响卡片的点击/拖拽/框选。
+
         .overlay(alignment: .topTrailing) { removeButton }
         .onHover { isHovering = $0 }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
         .contextMenu { contextMenu }
-        // D9: 卡片作为整体暴露给 VoiceOver —— 名称 + 本地化 kind（stack 附带
-        // 子项数）+ stale 态；选中态走 .isSelected trait；双击 = Quick Look。
-        // UX4: 卡片忽略子元素（✕ 对 VoiceOver 不可见），移除操作改以自定义
-        // action 暴露（rotor「操作」中可触发）。
+
         .accessibilityElement(children: item.availability == .available ? .ignore : .contain)
         .accessibilityIdentifier("shelf.item.\(item.id.uuidString)")
         .accessibilityLabel(cardAccessibilityLabel)
@@ -213,33 +192,8 @@ struct ShelfItemCard: View {
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { onSelect(selectionMode) }
         .accessibilityActions {
-            if item.availability == .available,
-               quickLookCoordinator != nil,
-               ItemActions.canQuickLook(item) {
-                Button("Quick Look") { quickLookCoordinator?.toggle(contextItem: item) }
-            }
-            if item.availability == .available, ItemActions.canOpen(item) {
-                Button("Open") {
-                    ItemActions.open(item,
-                                     bookmarkService: bookmarkService,
-                                     tempFileService: tempFileService)
-                }
-            }
-            if item.availability == .available, ItemActions.canRevealInFinder(item) {
-                Button("Show in Finder") {
-                    ItemActions.revealInFinder(item,
-                                               bookmarkService: bookmarkService,
-                                               tempFileService: tempFileService)
-                }
-            }
-            if let onRecover {
-                Button(availabilityActionTitle, action: onRecover)
-            }
-            if let onCopy {
-                Button("Copy", action: onCopy)
-            }
-            if let onRemove {
-                Button("Remove from Shelf", action: onRemove)
+            ForEach(cardActions.filter(\.isEnabled)) { action in
+                Button(action.title, action: action.perform)
             }
         }
         .simultaneousGesture(TapGesture().onEnded {
@@ -249,9 +203,6 @@ struct ShelfItemCard: View {
         .task(id: item) { await loadAssets() }
     }
 
-    /// UX4: 悬停浮现的移除小圆钮（SF Symbol xmark，material 底保证在各种
-    /// 缩略图上可读）。点击 = 从 shelf 移除（`onRemove` 由父视图注入；
-    /// 为 nil 时不渲染）。
     @ViewBuilder
     private var removeButton: some View {
         if !selectionMode, let onRemove {
@@ -287,8 +238,8 @@ struct ShelfItemCard: View {
         }
     }
 
-    /// D9: VoiceOver 标签（如「Report.pdf, 文件」/「Screenshots, 堆叠, 3 个项目」）。
-    /// F-05: 剪切项追加「拖出时将移动原文件」语义。
+    /// e.g. "Report.pdf, File" or "Screenshots, Stack, 3 items"; cut items add
+    /// that dragging them out moves the original.
     private var cardAccessibilityLabel: Text {
         var label = "\(item.displayName), \(Self.localizedKindName(for: item.kind))"
         if item.kind == .stack, let count = item.children?.count {
@@ -334,7 +285,7 @@ struct ShelfItemCard: View {
         return String(localized: "Press Space for Quick Look or Return to open.")
     }
 
-    /// 本地化的 kind 名称（可访问性标签用）。
+    /// Localized kind name for accessibility labels.
     static func localizedKindName(for kind: ItemKind) -> String {
         switch kind {
         case .file: String(localized: "File")
@@ -370,7 +321,7 @@ struct ShelfItemCard: View {
         .frame(height: Self.thumbnailHeight)
     }
 
-    /// text 类型：文本片段预览样式（多行截断 + 文本底色）。
+    /// A text snippet preview.
     private var textSnippetPreview: some View {
         Text(item.text ?? "")
             .font(.caption2)
@@ -389,7 +340,7 @@ struct ShelfItemCard: View {
             }
     }
 
-    /// url 类型：SF Symbol 链接占位 + 域名（S10 可替换为真实 favicon）。
+    /// A link symbol plus the domain.
     private var urlPlaceholder: some View {
         VStack(spacing: 3) {
             Image(systemName: "link")
@@ -409,7 +360,7 @@ struct ShelfItemCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// 缩略图加载完成前的占位（按 kind 取符号）。
+    /// Shown until the thumbnail has loaded.
     private var kindPlaceholder: some View {
         Image(systemName: placeholderSymbolName)
             .font(.system(size: 26))
@@ -496,8 +447,8 @@ struct ShelfItemCard: View {
 
     // MARK: - Name row
 
-    /// 名称行：来源应用图标 + 最多两行名称。语义字体随系统文字大小变化；
-    /// 卡片纵向扩展而不缩小文字。
+    /// Source-app icon plus up to two lines of name. Text follows the system
+    /// size; the card grows instead of shrinking it.
     private var nameRow: some View {
         HStack(alignment: .top, spacing: 3) {
             if let sourceAppIcon {
@@ -534,7 +485,6 @@ struct ShelfItemCard: View {
 
     // MARK: - Surfaces & badges
 
-    /// 卡片底色与选中态（§3：accent 描边 + 浅色填充）；非选中用语义色弱底 + 细描边。
     private var surface: some View {
         RoundedRectangle(cornerRadius: cardCornerRadius)
             .fill(cardFill)
@@ -566,7 +516,7 @@ struct ShelfItemCard: View {
     }
 
     /// Unavailable state uses a dashed shape in addition to icon/text, so the
-    /// distinction remains visible with “Differentiate Without Color”.
+    /// distinction remains visible with “Differentiate Without Color.
     @ViewBuilder
     private var availabilityBorder: some View {
         if item.availability != .available {
@@ -622,271 +572,76 @@ struct ShelfItemCard: View {
         }
     }
 
-    // MARK: - Context menu
+    private struct CardAction: Identifiable {
+        let id: String
+        let title: String
+        var isEnabled = true
+        var role: ButtonRole?
+        var isVisibleInMenu = true
+        let perform: () -> Void
+    }
 
-    /// S6 项目操作：Quick Look / Open / Show in Finder 按 kind 可用性禁用；
-    /// stale 项（bookmark 失效）三者均无意义，改显示「File Unavailable」态。
-    /// 可用性规则与操作实现见 `ItemActions`；Quick Look 命中多选时预览整个
-    /// 选中集合（规则见 `QuickLookPreviewPlanner`）。
+    private var cardActions: [CardAction] {
+        var actions: [CardAction] = []
+        if item.availability == .available {
+            actions.append(CardAction(id: "preview", title: String(localized: "Quick Look"),
+                                      isEnabled: quickLookCoordinator != nil && ItemActions.canQuickLook(item)) {
+                quickLookCoordinator?.toggle(contextItem: item)
+            })
+            actions.append(CardAction(id: "open", title: String(localized: "Open"),
+                                      isEnabled: ItemActions.canOpen(item)) {
+                guard let fileServices else { return }
+                ItemActions.open(item, bookmarkService: fileServices.bookmarks, tempFileService: fileServices.tempFiles)
+            })
+            actions.append(CardAction(id: "reveal", title: String(localized: "Show in Finder"),
+                                      isEnabled: ItemActions.canRevealInFinder(item)) {
+                guard let fileServices else { return }
+                ItemActions.revealInFinder(item, bookmarkService: fileServices.bookmarks, tempFileService: fileServices.tempFiles)
+            })
+        }
+        if let onRecover {
+            actions.append(CardAction(id: "recover", title: availabilityActionTitle,
+                                      isVisibleInMenu: item.availability != .available, perform: onRecover))
+        }
+        if let onCopy {
+            actions.append(CardAction(id: "copy", title: String(localized: "Copy"), perform: onCopy))
+        }
+        if let onStack {
+            actions.append(CardAction(id: "stack", title: String(localized: "Stack Selected Items"), perform: onStack))
+        }
+        if let onUnstack {
+            actions.append(CardAction(id: "unstack", title: String(localized: "Unstack"), perform: onUnstack))
+        }
+        if let onRemove {
+            actions.append(CardAction(id: "remove", title: String(localized: "Remove from Shelf"),
+                                      role: .destructive, perform: onRemove))
+        }
+        return actions
+    }
+
     @ViewBuilder
     private var contextMenu: some View {
         if item.availability != .available {
             Label(availabilityStatusText, systemImage: availabilitySymbolName)
-            if let onRecover {
-                Button(availabilityActionTitle, action: onRecover)
-            }
-        } else {
-            Button("Quick Look") { quickLookCoordinator?.toggle(contextItem: item) }
-                .disabled(quickLookCoordinator == nil || !ItemActions.canQuickLook(item))
-            Button("Open") {
-                ItemActions.open(item, bookmarkService: bookmarkService, tempFileService: tempFileService)
-            }
-            .disabled(!ItemActions.canOpen(item))
-            Button("Show in Finder") {
-                ItemActions.revealInFinder(item, bookmarkService: bookmarkService, tempFileService: tempFileService)
-            }
-            .disabled(!ItemActions.canRevealInFinder(item))
         }
-        if let onCopy {
-            Button("Copy", action: onCopy)
-        }
-        if let onRemove {
-            Divider()
-            Button("Remove from Shelf", role: .destructive, action: onRemove)
+        ForEach(cardActions.filter(\.isVisibleInMenu)) { action in
+            if action.role == .destructive { Divider() }
+            Button(action.title, role: action.role, action: action.perform)
+                .disabled(!action.isEnabled)
         }
     }
 
     // MARK: - Asset loading
 
-    /// 加载缩略图与来源应用图标。QL 生成在后台执行，失败回退 NSWorkspace 图标。
+    /// Thumbnail (generated in the background) and source-app icon.
     private func loadAssets() async {
+        guard let fileServices else { return }
         thumbnail = await ThumbnailLoader.thumbnail(
             for: thumbnailItem ?? item,
             pointSize: CGSize(width: 88, height: Self.thumbnailHeight),
-            bookmarkService: bookmarkService
+            bookmarkService: fileServices.bookmarks
         )
         sourceAppIcon = ThumbnailLoader.sourceAppIcon(bundleID: item.sourceApp?.bundleID)
-    }
-}
-
-// MARK: - ThumbnailLoader
-
-/// 卡片缩略图加载：`QLThumbnailGenerator` 真实缩略图 + `NSWorkspace` 图标回退。
-///
-/// 并发说明（Swift 6 严格并发）：`QLThumbnailRepresentation`/`NSImage` 均非 Sendable。
-/// QL 调用放在非隔离上下文执行（结果不跨 actor，仅把 `@unchecked Sendable` 的
-/// `CGImage` 交回 MainActor）；NSWorkspace 图标在 MainActor 同步取用后即刻合成
-/// SwiftUI `Image`（Sendable），因此对外只暴露 `Image`/`CGImage`。
-enum ThumbnailLoader {
-    /// file/folder/image（有磁盘路径的 kind）：优先 QL 真实缩略图，失败回退
-    /// NSWorkspace 图标。无路径（text/url/stack 无文件子项）返回 nil，由卡片渲染占位。
-    ///
-    /// S4 起统一经 bookmark 解析：`item.bookmark` 存在时先解析出 URL 并
-    /// `startAccessing`（沙箱下重启后只有解析 security-scoped bookmark 才有
-    /// 文件读取权限），加载完成后配对 `stopAccessing`；解析失败回退原始路径。
-    @MainActor
-    static func thumbnail(for item: ShelfItem, pointSize: CGSize, bookmarkService: BookmarkService) async -> Image? {
-        guard let baseURL = item.fileURL else { return nil }
-        var url = baseURL
-        var accessedURL: URL?
-        if let bookmark = item.bookmark,
-           let resolved = try? bookmarkService.resolve(bookmark) {
-            url = resolved.url
-            if bookmarkService.startAccessing(url) {
-                accessedURL = url
-            }
-        }
-        defer {
-            if let accessedURL {
-                bookmarkService.stopAccessing(accessedURL)
-            }
-        }
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        if let cgImage = await quickLookThumbnail(for: url, pointSize: pointSize, scale: scale) {
-            // S10/C7: 登记到拖拽图像缓存，拖出时（同步路径）直接取用真实缩略图。
-            DragImageCache.register(cgImage, for: item.id)
-            return Image(decorative: cgImage, scale: scale)
-        }
-        let icon = NSWorkspace.shared.icon(forFile: url.path)
-        var proposedRect = NSRect(origin: .zero, size: icon.size)
-        if let cgIcon = icon.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil) {
-            DragImageCache.register(cgIcon, for: item.id)
-        }
-        return Image(nsImage: icon)
-    }
-
-    /// 来源应用小图标；bundleID 缺失或无法解析时返回 nil。
-    @MainActor
-    static func sourceAppIcon(bundleID: String?) -> NSImage? {
-        guard let bundleID,
-              let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            return nil
-        }
-        return NSWorkspace.shared.icon(forFile: appURL.path)
-    }
-
-    /// QL 缩略图生成。非隔离：`QLThumbnailRepresentation` 非 Sendable，在此就地
-    /// 提取 CGImage，避免非 Sendable 值跨 actor 传递。
-    private nonisolated static func quickLookThumbnail(for url: URL,
-                                                       pointSize: CGSize,
-                                                       scale: CGFloat) async -> CGImage? {
-        let request = QLThumbnailGenerator.Request(
-            fileAt: url, size: pointSize, scale: scale, representationTypes: .thumbnail
-        )
-        // 调用方（thumbnail(for:pointSize:bookmarkService:)）已解析 bookmark 并
-        // startAccessing，此处直接读取。生成失败/无缩略图时返回 nil，
-        // 由调用方回退到 NSWorkspace 图标。
-        let representation = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
-        return representation?.cgImage
-    }
-}
-
-// MARK: - DragImageCache (S10/C7)
-
-/// 拖拽图像缓存：卡片缩略图（QL 真实缩略图 / NSWorkspace 图标回退）加载成功后
-/// 按项目 id 登记 CGImage，供 `DragPayloadBuilder.dragImage` 在拖拽启动的
-/// 同步路径上取用。CGImage 为不可变值类型（标注 Sendable 语义安全），跨
-/// MainActor 边界传递无风险。
-///
-/// 容量封顶：超出即整体清空重建 —— 缓存未命中只是回退系统图标，代价低；
-/// 逐条 LRU 对 64pt 小图得不偿失。text/url 项无文件缩略图，不进入缓存
-/// （拖拽图像回退 SF Symbol，与卡片占位一致）。
-@MainActor
-enum DragImageCache {
-    private static var images: [UUID: CGImage] = [:]
-    private static let capacity = 256
-
-    static func register(_ image: CGImage, for id: UUID) {
-        if images.count >= capacity {
-            images.removeAll()
-        }
-        images[id] = image
-    }
-
-    static func image(for id: UUID) -> CGImage? {
-        images[id]
-    }
-}
-
-// MARK: - BookmarkService environment
-
-/// SwiftUI 环境注入 BookmarkService（卡片缩略图/后续打开操作经 bookmark 解析
-/// 文件访问权）。默认值供 Preview 与测试使用；App 入口注入共享实例。
-private struct BookmarkServiceEnvironmentKey: EnvironmentKey {
-    static let defaultValue = BookmarkService()
-}
-
-extension EnvironmentValues {
-    var bookmarkService: BookmarkService {
-        get { self[BookmarkServiceEnvironmentKey.self] }
-        set { self[BookmarkServiceEnvironmentKey.self] = newValue }
-    }
-}
-
-// MARK: - CardDragSourceBridge (S5 拖出事件层)
-
-/// S5 拖出桥接：每张卡片覆盖一个透明 NSView，作为卡片区域的鼠标事件权威。
-///
-/// 点击/拖拽/双击仲裁：
-/// - `mouseDown` 记录按下位置；
-/// - `mouseDragged` 位移超阈值（4pt）→ 回调 `onDragBegin`（由
-///   `DragOutController` 启动 `beginDraggingSession`；多选整批/stack 展开
-///   由卡片的 `dragContentsProvider` 决定）；
-/// - `mouseUp` 且未拖拽 → 回落为点击：`clickCount >= 2` 回调 `onDoubleClick`
-///   （S6 双击 Quick Look，首次点击已完成选择，不再重复切换）；否则单击 ——
-///   先让所在窗口成为 key（nonactivating 面板只接键盘焦点、不激活应用，
-///   接通空格/Delete/Esc 键盘链路），再回调 `onClick`（普通点击单选 /
-///   ⌘点击 toggle，与 S3 语义一致）。
-///
-/// 右键（SwiftUI contextMenu）与滚动透传：`hitTest` 只在左键事件期间接管
-/// （ctrl+click 视为右键）。一旦拖拽开始，后续事件由 NSDraggingSession 接管。
-struct CardDragSourceBridge: NSViewRepresentable {
-    /// 锚点对应的项目 id（调试/日志用）。
-    let itemID: UUID
-    /// 无拖拽的单击 mouseUp（点击选择）。闭包在 MainActor 词法上下文（View body）
-    /// 中创建并继承其隔离；显式标注 @MainActor 参数类型会触发非 Sendable 函数
-    /// 值的跨界转换检查，故保持普通类型。
-    let onClick: (_ additive: Bool) -> Void
-    /// 双击（S6：Quick Look）。
-    let onDoubleClick: () -> Void
-    /// mouseDragged 超阈值；参数为锚点视图与当前事件。
-    let onDragBegin: (_ sourceView: NSView, _ event: NSEvent) -> Void
-
-    func makeNSView(context: Context) -> CardDragSourceAnchorView {
-        let view = CardDragSourceAnchorView()
-        view.itemID = itemID
-        view.onClick = onClick
-        view.onDoubleClick = onDoubleClick
-        view.onDragBegin = onDragBegin
-        return view
-    }
-
-    func updateNSView(_ nsView: CardDragSourceAnchorView, context: Context) {
-        nsView.itemID = itemID
-        nsView.onClick = onClick
-        nsView.onDoubleClick = onDoubleClick
-        nsView.onDragBegin = onDragBegin
-    }
-}
-
-/// `CardDragSourceBridge` 的底层 NSView。
-final class CardDragSourceAnchorView: NSView {
-    var itemID: UUID?
-    var onClick: ((_ additive: Bool) -> Void)?
-    var onDoubleClick: (() -> Void)?
-    var onDragBegin: ((_ sourceView: NSView, _ event: NSEvent) -> Void)?
-
-    /// 拖拽触发位移阈值（点）。
-    static let dragThreshold: CGFloat = 4
-
-    private var mouseDownLocation: NSPoint?
-    private var dragStarted = false
-
-    /// 左键事件（不含 ctrl+click，它等于右键）接管本视图；其余事件透传给
-    /// 下层 SwiftUI 内容（contextMenu 依赖 rightMouseDown，滚动依赖 ScrollView）。
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let event = NSApp.currentEvent else { return nil }
-        switch event.type {
-        case .leftMouseDown where event.modifierFlags.contains(.control):
-            return nil
-        case .leftMouseDown, .leftMouseDragged, .leftMouseUp:
-            return super.hitTest(point)
-        default:
-            return nil
-        }
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        mouseDownLocation = event.locationInWindow
-        dragStarted = false
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard !dragStarted, let downLocation = mouseDownLocation else { return }
-        let location = event.locationInWindow
-        let distance = hypot(location.x - downLocation.x, location.y - downLocation.y)
-        guard distance >= Self.dragThreshold else { return }
-        dragStarted = true
-        onDragBegin?(self, event)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        defer {
-            mouseDownLocation = nil
-            dragStarted = false
-        }
-        // 拖拽开始后手势由 NSDraggingSession 接管，正常不会再收到 mouseUp；
-        // 防御性判断，避免把拖拽结束误当点击。
-        guard !dragStarted else { return }
-        // S6: 双击 → Quick Look（首次点击已完成选择，此处不再切换选择）。
-        if event.clickCount >= 2 {
-            onDoubleClick?()
-            return
-        }
-        // 无拖拽 → 点击选择。先让所在窗口成为 key：nonactivating 面板只接键盘
-        // 焦点、不激活应用，是空格/Delete/Esc 键盘链路（ShelfPanel.keyDown）的入口。
-        window?.makeKey()
-        onClick?(event.modifierFlags.contains(.command))
     }
 }
 
@@ -905,4 +660,5 @@ final class CardDragSourceAnchorView: NSView {
     .padding()
     .frame(width: 320)
     .environment(SettingsStore())
+    .environment(\.shelfFileServices, ShelfFileServices(bookmarks: BookmarkService(), tempFiles: TempFileService()))
 }

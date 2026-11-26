@@ -2,22 +2,20 @@ import AppKit
 import Carbon
 import OSLog
 
-/// UX3 热键单击/双击判别（纯逻辑，与 AppKit 解耦供单测）：
-/// 首次按下进入「待确认单击」；识别窗内第二次按下成立双击（单击作废）；
-/// 窗外第二次按下视为新一轮首次。超时由调用方（HotKeyMonitor 的延迟任务）
-/// 经 `confirmPending()` 确认单击成立。
+/// Tells a single hot-key press from a double press. A first press is
+/// pending; a second one within `window` makes a double press (and cancels
+/// the single); a later one starts over. The caller confirms a single press
+/// with `confirmPending()` once the window has passed.
 struct DoublePressDiscriminator: Sendable, Equatable {
-    /// 一次按下的判定结果。
     enum PressResult: Sendable, Equatable {
-        /// 首次按下：等待窗内第二次按下（调用方启动 window 时长的计时）。
+        /// Wait `window` for a second press.
         case firstPressPending
-        /// 窗内第二次按下：双击成立。
         case doublePress
     }
 
-    /// 双击识别窗（秒）。约 0.3s —— 与系统双击间隔同量级。
+    /// About the system's double-click interval.
     let window: TimeInterval
-    /// 是否有待确认的单击（延迟任务到期时据此决定单击是否成立）。
+    /// A single press is waiting to be confirmed.
     private(set) var hasPending = false
     private var lastPressTime: TimeInterval?
 
@@ -25,7 +23,7 @@ struct DoublePressDiscriminator: Sendable, Equatable {
         self.window = window
     }
 
-    /// 记录一次按下（`time` 为单调时钟，如 ProcessInfo.systemUptime）。
+    /// `time` is monotonic, e.g. `ProcessInfo.systemUptime`.
     mutating func press(at time: TimeInterval) -> PressResult {
         if hasPending, let lastPressTime, time - lastPressTime <= window {
             hasPending = false
@@ -37,24 +35,22 @@ struct DoublePressDiscriminator: Sendable, Equatable {
         return .firstPressPending
     }
 
-    /// 延迟任务到期确认单击；复位待确认状态。
     mutating func confirmPending() {
         hasPending = false
         lastPressTime = nil
     }
 
-    /// 丢弃待确认单击（停用/重注册时调用，作废未到期的延迟任务语义）。
+    /// Drops a pending press (on disable or re-registration).
     mutating func reset() {
         hasPending = false
         lastPressTime = nil
     }
 }
 
-/// Global hot key monitor (S7): toggles the shelf from any app.
-/// UX3: 单击 = toggle；双击（识别窗内第二次按下）= 保存剪贴板到 shelf，
-/// 判别核心 `DoublePressDiscriminator` 为纯类型（见本文件顶部）。
+/// Global hot key monitor: toggles the shelf from any app.
+
 ///
-/// Backend choice (deviates deliberately from plan §2.3's "NSEvent first"):
+/// Hot-key backends:
 /// - **Carbon `RegisterEventHotKey` — primary.** Needs no Accessibility
 ///   permission, the registration result is programmatically detectable
 ///   (`eventHotKeyExistsErr` on conflict), and the hot key is consumed by the
@@ -65,7 +61,7 @@ struct DoublePressDiscriminator: Sendable, Equatable {
 ///   app. Used only when Carbon registration fails.
 ///
 /// Registration state (`isActive` / `activeBackend` / `registrationError`) is
-/// observable so the S8 settings page can surface conflicts.
+/// observable so Settings can surface conflicts.
 @MainActor
 @Observable
 final class HotKeyMonitor {
@@ -84,31 +80,26 @@ final class HotKeyMonitor {
     private(set) var registrationError: String?
 
     private var shortcut: SettingsStore.HotKeyShortcut?
-    /// 首次注册时才构造（`requireActionBox()`）——闭包需弱引用 self 经实例
-    /// 方法 handlePress 仲裁单击/双击，无法在 init 中捕获（self 未完全
-    /// 初始化），而 @Observable 宏又不允许 lazy 属性，故改为按需构造。
+
     private var actionBox: HotKeyActionBox?
     private var enabled = false
     private let hotKeyIdentifier: UInt32
 
-    /// UX3: 单击动作（toggle shelf）。
     private let onPress: @MainActor @Sendable () -> Void
-    /// UX3: 双击动作（保存剪贴板到 shelf）。
     private let onDoublePress: @MainActor @Sendable () -> Void
-    /// UX3: 双击识别开关（设置 `hotKeyDoublePressSavesClipboard` 同步）。
-    /// 关闭时单击零延迟直发。
+
     private var doublePressEnabled = false
     private var discriminator: DoublePressDiscriminator
-    /// 延迟单击任务的代际戳：每次按下/作废自增，到期任务据此识别自己是否
-    /// 已被更新的按下取代（避免已成立的双击之后又补发一次单击）。
+    /// Bumped on every press or reset, so a delayed single press can tell it
+    /// was superseded (no single press after a double press).
     private var pressGeneration: UInt64 = 0
 
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
     private var handlerUserData: UnsafeMutableRawPointer?
-    private var nsEventMonitor: Any?
+    private var nsEventMonitor: EventMonitor<Bool>?
 
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "HotKey")
+    private let logger = Log.make(category: "HotKey")
 
     /// Four-character signature for our hot key IDs ('OYHK').
     private nonisolated static let hotKeySignature = OSType(0x4F59_484B)
@@ -140,7 +131,7 @@ final class HotKeyMonitor {
     }
 
     /// Hot-updates the shortcut; re-registers immediately when enabled.
-    /// A nil shortcut (cleared in the S8 recorder) unregisters and stays
+    /// A nil shortcut (cleared in the shortcut recorder) unregisters and stays
     /// inactive until a new shortcut is recorded.
     func updateShortcut(_ shortcut: SettingsStore.HotKeyShortcut?) {
         guard shortcut != self.shortcut else { return }
@@ -150,18 +141,17 @@ final class HotKeyMonitor {
         }
     }
 
-    /// UX3: 同步双击识别开关（`SettingsStore.hotKeyDoublePressSavesClipboard`）。
     func setDoublePressEnabled(_ enabled: Bool) {
         guard enabled != doublePressEnabled else { return }
         doublePressEnabled = enabled
-        // 设置切换时作废旧模式留下的延迟单击。否则在识别窗内关闭双击后，
-        // 下一次按键会立即触发，旧任务随后又补发一次，造成 shelf 连续切换。
+        // Drop a delayed press from the old mode; otherwise it would fire
+        // after the next, now immediate, press and toggle the shelf twice.
         pressGeneration &+= 1
         discriminator.reset()
     }
 
-    /// UX3: 按下统一入口（Carbon 处理器与 NSEvent 兜底都经 actionBox 路由到
-    /// 这里）。双击识别开启时单击延迟一个识别窗发出；关闭时零延迟直发。
+    /// Every press arrives here, from either backend. With double press on,
+    /// a single press fires one window late.
     private func handlePress() {
         guard doublePressEnabled else {
             onPress()
@@ -169,7 +159,6 @@ final class HotKeyMonitor {
         }
         switch discriminator.press(at: ProcessInfo.processInfo.systemUptime) {
         case .doublePress:
-            // 作废弃用的单击延迟任务（代际戳失效），直发双击。
             pressGeneration &+= 1
             onDoublePress()
         case .firstPressPending:
@@ -179,8 +168,7 @@ final class HotKeyMonitor {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(Int(window * 1000)))
                 guard let self, !Task.isCancelled else { return }
-                // 窗内已有第二次按下（双击成立，代际戳已失效）或状态被
-                // reset → 不补发单击。
+
                 guard self.discriminator.hasPending, self.pressGeneration == generation else { return }
                 self.discriminator.confirmPending()
                 self.onPress()
@@ -190,9 +178,6 @@ final class HotKeyMonitor {
 
     // MARK: - Registration
 
-    /// 返回共享的动作 box（不存在则构造）。Carbon 处理器经 `Unmanaged`
-    /// passRetained/balanced-release 持有它；重复注册复用同一实例，
-    /// retain/release 逐次平衡。
     private func requireActionBox() -> HotKeyActionBox {
         if let actionBox { return actionBox }
         let box = HotKeyActionBox(identifier: hotKeyIdentifier) { [weak self] in
@@ -263,20 +248,19 @@ final class HotKeyMonitor {
     private func installNSEventFallback() {
         guard let shortcut else { return }
         let actionBox = requireActionBox()
-        nsEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            guard HotKeyMonitor.matches(event, shortcut: shortcut) else { return }
-            Task { @MainActor in
-                actionBox.action()
-            }
+        let monitor = EventMonitor(matching: .keyDown, includesLocal: false,
+                                   capture: { HotKeyMonitor.matches($0, shortcut: shortcut) }) { matches in
+            if matches { actionBox.action() }
         }
-        if nsEventMonitor != nil {
+        nsEventMonitor = monitor
+        monitor.start()
+        if monitor.isRunning {
             isActive = true
             activeBackend = .nsEvent
         }
     }
 
     private func unregister() {
-        // UX3: 作废待确认单击与未到期延迟任务（停用/重注册时识别状态清零）。
         pressGeneration &+= 1
         discriminator.reset()
         if let hotKeyRef {
@@ -291,10 +275,8 @@ final class HotKeyMonitor {
             Unmanaged<HotKeyActionBox>.fromOpaque(handlerUserData).release()
             self.handlerUserData = nil
         }
-        if let nsEventMonitor {
-            NSEvent.removeMonitor(nsEventMonitor)
-            self.nsEventMonitor = nil
-        }
+        nsEventMonitor?.stop()
+        nsEventMonitor = nil
         isActive = false
         activeBackend = nil
     }
@@ -351,7 +333,6 @@ final class HotKeyMonitor {
 
 /// `Sendable` box around the press route so the Carbon C callback (no actor
 /// isolation) can reach the MainActor without strongly capturing the monitor
-/// （UX3 起路由闭包经 `weak self` 调用 `handlePress` 仲裁单击/双击）.
 /// Immutable after creation; reference lifetime is managed explicitly via
 /// `Unmanaged` across install/remove of the event handler.
 private final class HotKeyActionBox: @unchecked Sendable {

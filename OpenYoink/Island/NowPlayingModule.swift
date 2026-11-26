@@ -190,13 +190,7 @@ final class NowPlayingModuleStore: IslandModule {
         case unavailable
     }
 
-    let descriptor = IslandModuleDescriptor(
-        id: .media,
-        title: String(localized: "Now Playing"),
-        systemImage: "music.note",
-        order: 5,
-        isCore: false
-    )
+    let descriptor = IslandModuleCatalog.descriptor(for: .media)
 
     private let sourceFactory: @MainActor () -> NowPlayingSource?
     private var source: NowPlayingSource?

@@ -84,7 +84,7 @@ enum ShelfActionSelectionResolver {
 /// external disk can disappear between rendering and clicking.
 enum ShelfActionCatalog {
     static func canPerform(_ action: ShelfAction, on items: [ShelfItem]) -> Bool {
-        let leaves = DragPayloadBuilder.flattenedItems(items)
+        let leaves = items.flattened
         switch action {
         case .share:
             return leaves.contains(where: canShare)
@@ -188,7 +188,7 @@ final class ShelfActionRunner: NSObject {
             guard let anchorView else {
                 notices.show(String(localized: "The selected items could not be shared."))
                 return Result(state: .unavailable, succeededCount: 0,
-                              skippedCount: DragPayloadBuilder.flattenedItems(items).count)
+                              skippedCount: items.flattened.count)
             }
             return presentShare(items, relativeTo: anchorView)
         case .copyPath:
@@ -244,7 +244,7 @@ final class ShelfActionRunner: NSObject {
             return Result(state: .busy, succeededCount: 0, skippedCount: 0)
         }
 
-        let flattened = DragPayloadBuilder.flattenedItems(items)
+        let flattened = items.flattened
         var payload: [Any] = []
         var accessedURLs: [URL] = []
 
@@ -302,7 +302,7 @@ final class ShelfActionRunner: NSObject {
     }
 
     private func resolveFiles(in items: [ShelfItem]) -> ResolvedFileBatch {
-        let flattened = DragPayloadBuilder.flattenedItems(items)
+        let flattened = items.flattened
         var urls: [URL] = []
         var accessedURLs: [URL] = []
 

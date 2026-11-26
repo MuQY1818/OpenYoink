@@ -1,19 +1,19 @@
 import AppKit
 import SwiftUI
 
-/// Custom 位置模式的窗口拖动把手（S9，计划 §1.1 设置行收尾）。
+/// The window drag handle for custom placement.
 ///
-/// 透明 NSView，盖在 ShelfView 顶部标题栏区域：mouseDown 直接进入 AppKit
-/// 标准窗口拖动循环（`performDrag(with:)`，自带跨屏跟随与屏幕边界约束），
-/// 鼠标抬起、拖动结束后经 `onDragEnded` 把窗口最终 frame（屏幕坐标）交给
-/// 上层持久化。
+/// A transparent NSView over ShelfView's title bar: mouse-down enters
+/// AppKit's standard window drag loop (`performDrag(with:)`, which follows
+/// across screens and respects their bounds), and `onDragEnded` hands the
+/// final frame (screen coordinates) up for persisting.
 ///
-/// 为什么不用 `isMovableByWindowBackground`：整面板背景可拖会与卡片拖出
-/// （NSDraggingSession 源，mouseDragged 驱动）和 ScrollView 滚动抢手势；
-/// 拖动入口收窄到标题栏区域后互不干扰。
+/// Not `isMovableByWindowBackground`: a draggable background would fight
+/// card drags and ScrollView scrolling; limiting it to the title bar avoids
+/// that.
 @MainActor
 final class WindowDragHandleView: NSView {
-    /// 拖动结束回调（参数为窗口最终 frame，全局屏幕坐标）。
+    /// The window's final frame, in global screen coordinates.
     var onDragEnded: ((NSRect) -> Void)?
 
     override init(frame frameRect: NSRect) {
@@ -25,8 +25,8 @@ final class WindowDragHandleView: NSView {
         fatalError("WindowDragHandleView is created programmatically")
     }
 
-    /// 点击即进入窗口拖动循环；面板 nonactivating，acceptsFirstMouse 保证
-    /// 应用未激活时第一击同样可拖。
+    /// A click enters the drag loop; with a non-activating panel,
+    /// `acceptsFirstMouse` makes the first click drag even while the app is inactive.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
@@ -41,7 +41,7 @@ final class WindowDragHandleView: NSView {
     }
 }
 
-/// SwiftUI 桥接（见 ShelfView.header，仅 custom 位置模式挂载）。
+/// The SwiftUI bridge (see ShelfView.header; custom placement only).
 struct WindowDragHandle: NSViewRepresentable {
     var onDragEnded: @MainActor (NSRect) -> Void
 

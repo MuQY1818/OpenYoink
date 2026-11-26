@@ -111,13 +111,7 @@ final class PowerSourceMonitor: IslandModule {
                                           powerWatts: nil)
     }
 
-    let descriptor = IslandModuleDescriptor(
-        id: .battery,
-        title: String(localized: "Battery"),
-        systemImage: "battery.75percent",
-        order: 3,
-        isCore: false
-    )
+    let descriptor = IslandModuleCatalog.descriptor(for: .battery)
 
     @ObservationIgnored
     nonisolated(unsafe) private var runLoopSource: CFRunLoopSource?

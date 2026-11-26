@@ -5,19 +5,19 @@ struct OpenYoinkApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        // 菜单栏入口仍由 SettingsWindowController 自管理（LSUIElement 下
-        // showSettingsWindow: 响应链不可靠）；这里也提供同一份真实内容，
-        // 避免应用被激活后从系统“OpenYoink → 设置…”打开一个空白窗口。
+        // The menu bar opens SettingsWindowController; this scene shows the
+        // same content so the system "Settings…" command never opens a blank
+        // window once the app is active.
         Settings {
             SettingsView()
-                .environment(appDelegate.settingsStore)
-                .environment(appDelegate.hotKeyMonitor)
-                .environment(appDelegate.launchAtLoginController)
-                .environment(appDelegate.updateController)
-                .environment(appDelegate.storageManagementController)
-                .environment(appDelegate.settingsNavigation)
-                .environment(appDelegate.supportController)
-                .environment(appDelegate.clipboardHistoryStore)
+                .environment(appDelegate.services.settingsStore)
+                .environment(appDelegate.services.hotKeyMonitor)
+                .environment(appDelegate.services.launchAtLoginController)
+                .environment(appDelegate.services.updateController)
+                .environment(appDelegate.services.storageManagementController)
+                .environment(appDelegate.services.settingsNavigation)
+                .environment(appDelegate.services.supportController)
+                .environment(appDelegate.services.clipboardHistoryStore)
         }
     }
 }

@@ -2,13 +2,6 @@ import CoreGraphics
 import XCTest
 @testable import OpenYoink
 
-/// EdgeTab 布局纯逻辑单测：拉环 frame（贴缘/offset 映射/夹取）、offset 反解、
-/// 换边判定、强调态放大 frame 等（驻点布局已随互斥模型移除——拉环只在
-/// shelf 隐藏时出现，shelf 展开时由面板外缘隐形热区承担同点位收起）。
-/// 以及 shelf 本体的 edgeOffset 垂直定位。
-///
-/// 测试几何与 ShelfLayoutEngineTests 相同：主屏 frame (0,0 1920×1080)、
-/// Dock 占底部 60 → visibleFrame (0,60 1920×1020)。
 final class EdgeTabLayoutTests: XCTestCase {
     func testIconAlwaysLeavesPaddingInsideNormalAndEmphasizedTabs() {
         for size in stride(from: 6.0, through: 10.0, by: 1) {
@@ -35,10 +28,8 @@ final class EdgeTabLayoutTests: XCTestCase {
         visibleFrame: CGRect(x: 0, y: 60, width: 1920, height: 1020)
     )
 
-    // MARK: - edgeTabFrame：贴缘与 offset 映射
-
     func testEdgeTabFrame_rightEdgeOffsetHalfIsVerticallyCentered() {
-        // 行程 = 1020-84 = 936；中心 y = 60 + 42 + 936×0.5 = 570 → y = 528。
+        // Travel = 1020−84 = 936; center y = 60 + 42 + 936×0.5 = 570 → y = 528.
         XCTAssertEqual(
             ShelfLayoutEngine.edgeTabFrame(position: .right, offset: 0.5,
                                            visibleFrame: mainScreen.visibleFrame),
@@ -55,7 +46,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testEdgeTabFrame_offsetExtremesPinToBottomAndTop() {
-        // offset 0：拉环底缘贴可见区底缘；offset 1：顶缘贴顶缘。
+        // offset 0: the tab's bottom on the visible bottom; offset 1: top on top.
         XCTAssertEqual(
             ShelfLayoutEngine.edgeTabFrame(position: .right, offset: 0,
                                            visibleFrame: mainScreen.visibleFrame),
@@ -91,7 +82,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testEdgeTabFrame_tinyVisibleHeightShrinksTab() {
-        // 可见高度小于拉环高度：收缩到可见高度、无垂直行程（不越界）。
+        // Visible height below the tab's: shrink to fit, no travel, never out of bounds.
         let tiny = CGRect(x: 0, y: 0, width: 800, height: 60)
         XCTAssertEqual(
             ShelfLayoutEngine.edgeTabFrame(position: .right, offset: 0.7, visibleFrame: tiny),
@@ -99,11 +90,9 @@ final class EdgeTabLayoutTests: XCTestCase {
         )
     }
 
-    // MARK: - edgeTabOffset：中心 y 反解与夹取
-
     func testEdgeTabOffset_mapsBottomCenterAndTop() {
-        // 底缘贴底（中心 60+42=102）→ 0；中心居中（60+510=570）→ 0.5；
-        // 顶缘贴顶（中心 60+1020-42=1038）→ 1。
+        // Bottom on bottom (center 60+42=102) → 0; centered (60+510=570) → 0.5;
+        // top on top (center 60+1020−42=1038) → 1.
         XCTAssertEqual(ShelfLayoutEngine.edgeTabOffset(forCenterY: 102,
                                                        visibleFrame: mainScreen.visibleFrame), 0)
         XCTAssertEqual(ShelfLayoutEngine.edgeTabOffset(forCenterY: 570,
@@ -125,7 +114,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testEdgeTabOffset_isExactInverseOfEdgeTabFrame() {
-        // 拖动结束按中心 y 持久化 offset 后，重建 frame 必须逐点一致（不跳位）。
+        // Persisting the offset from center y must rebuild the identical frame (no jump).
         for offset in [0, 0.25, 0.5, 0.75, 1] as [CGFloat] {
             let frame = ShelfLayoutEngine.edgeTabFrame(position: .right, offset: offset,
                                                        visibleFrame: mainScreen.visibleFrame)
@@ -136,10 +125,9 @@ final class EdgeTabLayoutTests: XCTestCase {
         }
     }
 
-    // MARK: - shouldFlipSide：换边判定
-
     func testShouldFlipSide_rightTabFlipsNearLeftEdgePastMidline() {
-        // 主屏 frame 宽 1920，中线 960：光标 x=100 已过中线且距左缘 100 < 120 → 换边。
+        // Screen width 1920, midline 960: x=100 is past it and 100 < 120 from the
+// left edge → flip.
         XCTAssertTrue(
             ShelfLayoutEngine.shouldFlipSide(position: .right,
                                              cursorLocation: CGPoint(x: 100, y: 500),
@@ -148,13 +136,13 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testShouldFlipSide_rightTabStaysWhenFarFromOppositeEdge() {
-        // 过中线但距左缘 150 > 120 → 不换。
+        // Past the midline but 150 > 120 from the left edge → no flip.
         XCTAssertFalse(
             ShelfLayoutEngine.shouldFlipSide(position: .right,
                                              cursorLocation: CGPoint(x: 150, y: 500),
                                              screenFrame: mainScreen.frame)
         )
-        // 仍在右半边 → 不换。
+        // Still on the right half → no flip.
         XCTAssertFalse(
             ShelfLayoutEngine.shouldFlipSide(position: .right,
                                              cursorLocation: CGPoint(x: 1500, y: 500),
@@ -163,8 +151,8 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testShouldFlipSide_requiresCrossingMidlineOnNarrowScreens() {
-        // 窄屏（宽 200）：翻转带（120）越过中线（100）。光标 x=110 距左缘
-        // 110 < 120 但未过中线 → 不换边。
+        // Narrow screen (200 wide): the 120 pt band crosses the midline (100).
+        // x=110 is 110 < 120 from the left but not past the midline → no flip.
         let narrow = CGRect(x: 0, y: 0, width: 200, height: 600)
         XCTAssertFalse(
             ShelfLayoutEngine.shouldFlipSide(position: .right,
@@ -179,7 +167,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testShouldFlipSide_leftTabFlipsNearRightEdgePastMidline() {
-        // 光标 x=1820：过中线（> 960）且距右缘 100 < 120 → 换边。
+        // x=1820: past the midline (> 960) and 100 < 120 from the right edge → flip.
         XCTAssertTrue(
             ShelfLayoutEngine.shouldFlipSide(position: .left,
                                              cursorLocation: CGPoint(x: 1820, y: 500),
@@ -201,7 +189,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testShouldFlipSide_flipDistanceIsAdjustable() {
-        // 距对缘 130：默认 120 不换；flipDistance 150 → 换。
+        // 130 from the opposite edge: no flip at the default 120; flips at 150.
         let cursor = CGPoint(x: 130, y: 500)
         XCTAssertFalse(
             ShelfLayoutEngine.shouldFlipSide(position: .right, cursorLocation: cursor,
@@ -213,17 +201,15 @@ final class EdgeTabLayoutTests: XCTestCase {
         )
     }
 
-    // MARK: - edgeTabEmphasisFrame：强调态轻微放大
-
     func testEdgeTabEmphasisFrame_growsInwardKeepingCenterY() {
         let base = CGRect(x: 1906, y: 528, width: 14, height: 84)
-        // 右缘：右缘仍贴 1920（宽 18 → x=1902）；中心 y 570 不变（高 92 → y=524）。
+        // Right edge: stays on 1920 (width 18 → x=1902); center y 570 kept (height 92 → y=524).
         XCTAssertEqual(
             ShelfLayoutEngine.edgeTabEmphasisFrame(from: base, position: .right,
                                                    visibleFrame: mainScreen.visibleFrame),
             CGRect(x: 1902, y: 524, width: 18, height: 92)
         )
-        // 左缘：x=0 不变，向右加宽。
+        // Left edge: x=0 kept, grows to the right.
         XCTAssertEqual(
             ShelfLayoutEngine.edgeTabEmphasisFrame(from: CGRect(x: 0, y: 528, width: 14, height: 84),
                                                    position: .left,
@@ -233,7 +219,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testEdgeTabEmphasisFrame_clampsIntoVisibleFrameAtExtremes() {
-        // 拉环贴底（midY=102）：加高后 y=56 越出底缘 → 夹回 60。
+        // Tab at the bottom (midY=102): grown, y=56 would be below the edge → clamped to 60.
         let base = CGRect(x: 1906, y: 60, width: 14, height: 84)
         XCTAssertEqual(
             ShelfLayoutEngine.edgeTabEmphasisFrame(from: base, position: .right,
@@ -251,10 +237,8 @@ final class EdgeTabLayoutTests: XCTestCase {
         )
     }
 
-    // MARK: - shelf 本体的 edgeOffset 垂直定位
-
     func testEdgeAttachedFrame_edgeOffsetPositionsAlongEdge() {
-        // offset 0 → 底缘贴底；offset 1 → 顶缘贴顶；行程 = 1020-144 = 876。
+        // offset 0 → bottom on bottom; offset 1 → top on top; travel = 1020−144 = 876.
         XCTAssertEqual(
             ShelfLayoutEngine.edgeAttachedFrame(position: .right, width: 320, height: 144,
                                                 visibleFrame: mainScreen.visibleFrame,
@@ -270,7 +254,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testEdgeAttachedFrame_defaultOffsetKeepsLegacyCentering() {
-        // 不传 edgeOffset = 0.5：与旧的固定垂直居中公式一致（y = 60+876/2 = 498）。
+        // No edgeOffset = 0.5: the old fixed centering (y = 60+876/2 = 498).
         XCTAssertEqual(
             ShelfLayoutEngine.edgeAttachedFrame(position: .left, width: 320, height: 144,
                                                 visibleFrame: mainScreen.visibleFrame),
@@ -290,7 +274,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testTargetFrame_edgeOffsetFlowsThrough() {
-        // 1 项 → 标题与语义状态行的卡片紧凑高 192；offset 0 → 主屏右缘贴底。
+        // One item → compact height 192 (title plus status line); offset 0 → bottom right.
         XCTAssertEqual(
             ShelfLayoutEngine.targetFrame(position: .right, width: 320, itemCount: 1,
                                           mouseLocation: CGPoint(x: 500, y: 500),
@@ -298,7 +282,7 @@ final class EdgeTabLayoutTests: XCTestCase {
                                           edgeOffset: 0),
             CGRect(x: 1600, y: 60, width: 320, height: 192)
         )
-        // offset 1 → 贴顶：y = 60 + 860 = 920。
+        // offset 1 → top: y = 60 + 860 = 920.
         XCTAssertEqual(
             ShelfLayoutEngine.targetFrame(position: .left, width: 320, itemCount: 1,
                                           mouseLocation: CGPoint(x: 500, y: 500),
@@ -309,7 +293,7 @@ final class EdgeTabLayoutTests: XCTestCase {
     }
 
     func testTargetFrame_defaultOffsetKeepsLegacyCentering() {
-        // 不传 edgeOffset：含语义状态行的卡片垂直居中 y = 474。
+        // No edgeOffset: centered with the status line, y = 474.
         XCTAssertEqual(
             ShelfLayoutEngine.targetFrame(position: .left, width: 300, itemCount: 1,
                                           mouseLocation: CGPoint(x: 500, y: 500),

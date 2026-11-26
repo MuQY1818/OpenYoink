@@ -1,16 +1,37 @@
 import XCTest
 @testable import OpenYoink
 
-/// SettingsStore 的 S8 面：通用设置持久化往返、可清除的快捷键
-/// （Optional：键缺失 → 默认；持久化 null → 明确清除），以及忽略列表
-/// 编辑 helper（去重/裁剪/移除）。
+/// SettingsStore: general settings round-trips, clearable shortcuts
+/// (Optional: missing key → default; persisted null → cleared), and the
+/// ignore-list helpers (dedupe, trim, remove).
 @MainActor
 final class SettingsStoreTests: XCTestCase {
-    /// 独立 UserDefaults suite，避免污染应用自身的设置。
+    /// A separate UserDefaults suite, so the app's own settings stay clean.
     private func makeSuite() throws -> (defaults: UserDefaults, name: String) {
         let name = "OpenYoinkTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         return (defaults, name)
+    }
+
+    func testStoreDeliversOneChangeForASettingsBurst() async throws {
+        let (defaults, name) = try makeSuite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SettingsStore(defaults: defaults)
+        let delivered = expectation(description: "Settings writes were delivered")
+        delivered.assertForOverFulfill = true
+        var count = 0
+        store.observeChanges {
+            count += 1
+            XCTAssertEqual(store.shelfWidth, 360)
+            XCTAssertFalse(store.edgeTabEnabled)
+            delivered.fulfill()
+        }
+
+        store.shelfWidth = 360
+        store.edgeTabEnabled = false
+        XCTAssertEqual(count, 0)
+        await fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(count, 1)
     }
 
     // MARK: - General settings persistence
@@ -99,7 +120,6 @@ final class SettingsStoreTests: XCTestCase {
                        [.shelf, .transfers, .timer, .battery, .system])
         XCTAssertEqual(store.islandModuleConfiguration.pinnedModuleIDs,
                        [.shelf, .timer, .system])
-        XCTAssertTrue(store.classicShelfHoverRevealEnabled)
     }
 
     func testExistingUserKeepsSuccessfulDropBehaviorWithoutNewPreference() throws {
@@ -138,7 +158,6 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.islandModuleConfiguration.pinnedModuleIDs,
                        [.shelf, .media, .transfers, .timer])
         XCTAssertFalse(store.isIslandModuleEnabled(.system))
-        XCTAssertTrue(store.classicShelfHoverRevealEnabled)
     }
 
     func testUnknownModuleIDsSurviveReloadAndRuntimeEdits() throws {
@@ -345,7 +364,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(reloaded.hadPersistedOnboardingVersion)
     }
 
-    // MARK: - Custom shelf frame (S9)
+    // MARK: - Custom shelf frame
 
     func testCustomShelfFrame_defaultsToNil() throws {
         let (defaults, name) = try makeSuite()
@@ -410,8 +429,8 @@ final class SettingsStoreTests: XCTestCase {
         let store = SettingsStore(defaults: defaults)
         store.hotKeyShortcut = nil
 
-        // 「清除」必须作为显式状态持久化（编码为 JSON null），而不是
-        // 回退成默认快捷键。
+        // "Clear" must persist as an explicit state (JSON null), not fall back to
+        // the default shortcut.
         let reloaded = SettingsStore(defaults: defaults)
         XCTAssertNil(reloaded.hotKeyShortcut)
     }
@@ -439,7 +458,7 @@ final class SettingsStoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
 
         let store = SettingsStore(defaults: defaults)
-        // 默认垂直居中（保持旧版视觉）、拉环默认开。
+        // Centered by default (the old look); the tab is on by default.
         XCTAssertEqual(store.shelfEdgeOffset, 0.5)
         XCTAssertTrue(store.edgeTabEnabled)
     }

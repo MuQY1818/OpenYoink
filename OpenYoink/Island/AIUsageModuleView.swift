@@ -9,7 +9,7 @@ struct IslandAIUsageView: View {
             IslandModuleHeader(
                 title: "AI Usage",
                 subtitle: subtitle,
-                systemImage: AIUsageModuleStore.moduleDescriptor.systemImage
+                systemImage: IslandModuleCatalog.descriptor(for: .aiUsage).systemImage
             )
             .overlay(alignment: .trailing) {
                 if store.status == .ready { dashboardButton }
@@ -228,7 +228,7 @@ struct IslandAIUsageView: View {
                 message: installed
                     ? "Open TokenTracker and your AI usage shows up here."
                     : "AI usage comes from TokenTracker, a free, open-source tracker for Claude Code, Codex, Cursor and more.",
-                systemImage: AIUsageModuleStore.moduleDescriptor.systemImage
+                systemImage: IslandModuleCatalog.descriptor(for: .aiUsage).systemImage
             )
             .frame(maxHeight: 130)
             HStack(spacing: 8) {

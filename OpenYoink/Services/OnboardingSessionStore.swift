@@ -1,7 +1,5 @@
 import Foundation
 
-/// 快速上手练习的独立、可恢复状态。这里只保存随机令牌、阶段和练习卡 id；
-/// 文件路径始终由 `Tutorial/<session-id>/` 推导，永不信任磁盘 JSON 提供路径。
 final class OnboardingSessionStore {
     struct Record: Codable, Equatable, Sendable {
         enum Phase: String, Codable, Sendable {
@@ -25,11 +23,12 @@ final class OnboardingSessionStore {
     let rootURL: URL
     private let fileManager: FileManager
 
-    private var recordURL: URL { rootURL.appendingPathComponent("tutorial-session.json") }
+    private let recordFile: JSONFileStore<Record>
 
     init(rootURL: URL? = nil, fileManager: FileManager = .default) {
         self.rootURL = rootURL
-            ?? AppDirectories.applicationSupport().appendingPathComponent("Tutorial", isDirectory: true)
+            ?? AppPaths.applicationSupport().appendingPathComponent("Tutorial", isDirectory: true)
+        self.recordFile = JSONFileStore(self.rootURL.appendingPathComponent("tutorial-session.json"))
         self.fileManager = fileManager
     }
 
@@ -49,11 +48,8 @@ final class OnboardingSessionStore {
         return record
     }
 
-    /// 返回结构和路径均有效的未完成 session。损坏记录只返回 nil；调用方可
-    /// 用 `discardAll()` 清掉完全位于 Tutorial 根目录内的残留后重新开始。
     func load() -> Record? {
-        guard let data = try? Data(contentsOf: recordURL),
-              let record = try? JSONDecoder().decode(Record.self, from: data),
+        guard let record = try? recordFile.decode(contentsOf: recordFile.url),
               !record.token.isEmpty,
               (record.phase == .awaitingImport || record.tutorialItemID != nil),
               (try? sessionDirectory(for: record.sessionID)) != nil else {
@@ -76,20 +72,18 @@ final class OnboardingSessionStore {
             .appendingPathComponent(Self.tutorialFileName, isDirectory: false)
     }
 
-    /// 删除单个 session。删除前严格验证目录是 Tutorial 根目录的 UUID 直属
-    /// 子目录；任何外部路径都不会被接受。
+    /// Deletes one session, after verifying the directory is a UUID-named direct
+    /// child of the Tutorial root; nothing outside it is accepted.
     func discard(_ record: Record) throws {
         let directory = try sessionDirectory(for: record.sessionID)
         if fileManager.fileExists(atPath: directory.path) {
             try fileManager.removeItem(at: directory)
         }
-        if fileManager.fileExists(atPath: recordURL.path) {
-            try fileManager.removeItem(at: recordURL)
+        if fileManager.fileExists(atPath: recordFile.url.path) {
+            try fileManager.removeItem(at: recordFile.url)
         }
     }
 
-    /// 清理全部教程残留。目标是构造时固定的 Tutorial 根目录本身，不从
-    /// 持久化数据读取，因此不会扩大到 Application Support 或用户目录。
     func discardAll() throws {
         if fileManager.fileExists(atPath: rootURL.path) {
             try fileManager.removeItem(at: rootURL)
@@ -103,9 +97,7 @@ final class OnboardingSessionStore {
     private func save(_ record: Record) throws {
         _ = try sessionDirectory(for: record.sessionID)
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(record).write(to: recordURL, options: .atomic)
+        try recordFile.writeAtomically(record)
     }
 
     private func sessionDirectory(for sessionID: UUID) throws -> URL {

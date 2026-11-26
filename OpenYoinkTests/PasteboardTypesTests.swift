@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import XCTest
 @testable import OpenYoink
 
-/// PasteboardTypes 能力探测与优先级（纯函数，不构造 pasteboard 实例）。
+/// PasteboardTypes capability checks and priority (pure, no pasteboard).
 final class PasteboardTypesTests: XCTestCase {
     // MARK: - Category detection
 
@@ -64,14 +64,14 @@ final class PasteboardTypesTests: XCTestCase {
         XCTAssertFalse(PasteboardTypes.hasFileDragContent(in: []))
     }
 
-    // MARK: - Priority (F-03: promise → fileURL → image → url → text)
+    // MARK: - Import priority
 
     func testPreferredCategory_promiseBeatsEverything() {
         let types = PasteboardTypes.filePromiseTypes + [.fileURL, .png, PasteboardTypes.url, .string]
         XCTAssertEqual(PasteboardTypes.preferredCategory(in: types), .filePromise)
     }
 
-    /// 文本与 fileURL 同时存在时按顺序取 fileURL。
+    /// With text and a file URL, the file URL comes first.
     func testPreferredCategory_fileURLBeatsText() {
         XCTAssertEqual(PasteboardTypes.preferredCategory(in: [.string, .fileURL]), .fileURL)
     }
@@ -111,9 +111,6 @@ final class PasteboardTypesTests: XCTestCase {
         }
     }
 
-    // MARK: - 任务一：宽兜底注册与「Drop everything」判定
-
-    /// 注册清单放宽：URL 变体 + 无 conformance 的具体类型 + 泛型兜底全部在列。
     func testDragInTypes_includesWideNetFallbacks() {
         let registered = PasteboardTypes.dragInTypes
         for type in [PasteboardTypes.text, PasteboardTypes.uriList, PasteboardTypes.vCard,
@@ -124,7 +121,7 @@ final class PasteboardTypesTests: XCTestCase {
         }
     }
 
-    /// 「Drop everything」高亮语义：声明任意类型即接受；零类型才拒绝。
+    /// Drop everything: any declared type is accepted; only none is refused.
     func testHasImportableContent_acceptsAnythingWithDeclaredTypes() {
         XCTAssertFalse(PasteboardTypes.hasImportableContent(in: []))
         XCTAssertTrue(PasteboardTypes.hasImportableContent(in: [.string]))
@@ -133,9 +130,7 @@ final class PasteboardTypesTests: XCTestCase {
             in: [NSPasteboard.PasteboardType("com.example.unknown")]))
     }
 
-    // MARK: - 任务一：通用物化候选挑选（纯函数）
-
-    /// 主链/专门分支已处理的类型不进入候选。
+    /// Types handled by the main chain or a dedicated branch aren't candidates.
     func testMaterializationCandidates_excludesHandledElsewhereTypes() {
         let handled: [NSPasteboard.PasteboardType] =
             [.fileURL, PasteboardTypes.url, .string, PasteboardTypes.html, PasteboardTypes.rtf]
@@ -143,8 +138,8 @@ final class PasteboardTypesTests: XCTestCase {
         XCTAssertTrue(PasteboardTypes.materializationCandidates(in: handled).isEmpty)
     }
 
-    /// tier 归属：带扩展名的具体 UTI → 1；无扩展名的具体 UTI → 2；
-    /// 未声明标识 / 泛型信号类型 → 3。
+    /// Tiers: a concrete UTI with an extension → 1; without → 2; undeclared
+    /// identifiers and generic types → 3.
     func testMaterializationCandidates_tierAssignment() {
         XCTAssertEqual(PasteboardTypes.materializationCandidates(in: [PasteboardTypes.vCard]),
                        [.init(type: PasteboardTypes.vCard, tier: 1)])
@@ -159,8 +154,8 @@ final class PasteboardTypesTests: XCTestCase {
                        [.init(type: PasteboardTypes.data, tier: 3)])
     }
 
-    /// 排序：tier1 优先，同梯队保持声明顺序；文本族（conforms to .text 且无
-    /// 扩展名）不入选 —— 交给字符串兜底分支。
+    /// Order: tier 1 first, declaration order within a tier; text types (conform
+    /// to .text, no extension) are left to the string branch.
     func testMaterializationCandidates_orderingAndTextExclusion() {
         let unknown = NSPasteboard.PasteboardType("com.openyoink.test.undeclared")
         let utf16 = NSPasteboard.PasteboardType("public.utf16-plain-text")
@@ -170,8 +165,6 @@ final class PasteboardTypesTests: XCTestCase {
                                     .init(type: PasteboardTypes.calendarEvent, tier: 2),
                                     .init(type: unknown, tier: 3)])
     }
-
-    // MARK: - 任务一：物化扩展名与显示名
 
     func testMaterializationFileExtension_preferredThenKnownTableThenDat() {
         XCTAssertEqual(PasteboardTypes.materializationFileExtension(for: PasteboardTypes.vCard), "vcf")

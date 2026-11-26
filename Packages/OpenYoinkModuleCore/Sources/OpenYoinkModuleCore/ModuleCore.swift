@@ -27,22 +27,14 @@ public struct IslandModuleDescriptor: Identifiable, Equatable, Sendable {
     public let title: String
     public let systemImage: String
     public let order: Int
-    public let isCore: Bool
 
     public init(id: IslandModuleID, title: String, systemImage: String,
-                order: Int, isCore: Bool) {
+                order: Int) {
         self.id = id
         self.title = title
         self.systemImage = systemImage
         self.order = order
-        self.isCore = isCore
     }
-}
-
-public enum IslandModuleAvailability: Equatable, Codable, Sendable {
-    case available
-    case unavailable(reason: String)
-    case degraded(reason: String)
 }
 
 public enum IslandActivityPriority: Int, Comparable, Codable, Sendable {
@@ -91,7 +83,6 @@ public enum IslandModuleEvent: Equatable, Sendable {
     case publishActivity(IslandActivity)
     case removeActivity(id: String)
     case removeAllActivities
-    case availabilityChanged(IslandModuleAvailability)
 }
 
 /// Persisted user configuration. `enabledModuleIDs` is an ordered array rather

@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 /// Crash-recovery journal for managed moves (`Command`-drop).
 ///
@@ -10,12 +9,10 @@ import OSLog
 /// can reconstruct a safe shelf item instead of treating the managed copy as
 /// an orphan.
 ///
-/// The journal intentionally lives beside `shelf.json`, but uses an independent
-/// envelope and atomic replacement.  All access is serialized by `lock` because
-/// managed copies are prepared on a background task while startup/storage
-/// recovery runs on the main actor.
-final class ManagedMoveJournal: @unchecked Sendable {
-    static let currentSchemaVersion = 1
+/// The journal lives beside `shelf.json` in its own file. Access is serialized
+/// because managed copies are prepared on a background task while startup and
+/// storage recovery run on the main actor.
+final class ManagedMoveJournal: Sendable {
 
     struct Record: Codable, Equatable, Identifiable, Sendable {
         enum State: String, Codable, Equatable, Sendable {
@@ -38,26 +35,6 @@ final class ManagedMoveJournal: @unchecked Sendable {
         var createdAt: Date
     }
 
-    enum LoadResult: Equatable, Sendable {
-        case loaded([Record])
-        case missing
-        /// The file exists but cannot be decoded.  Callers must block managed
-        /// orphan cleanup because its protected paths are unknown.
-        case failed
-
-        var records: [Record] {
-            guard case .loaded(let records) = self else { return [] }
-            return records
-        }
-
-        var permitsManagedOrphanCleanup: Bool {
-            switch self {
-            case .loaded, .missing: true
-            case .failed: false
-            }
-        }
-    }
-
     enum JournalError: LocalizedError, Equatable {
         case damaged
         case missingRecord(UUID)
@@ -72,40 +49,26 @@ final class ManagedMoveJournal: @unchecked Sendable {
         }
     }
 
-    private struct Snapshot: Codable, Sendable {
-        var schemaVersion: Int
-        var records: [Record]
-    }
-
     let directoryURL: URL
-    private var journalURL: URL { directoryURL.appendingPathComponent("managed-moves.json") }
-    private var temporaryURL: URL { directoryURL.appendingPathComponent("managed-moves.json.tmp") }
-    private var backupURL: URL { directoryURL.appendingPathComponent("managed-moves.json.backup") }
-
-    private let lock = NSLock()
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "ManagedMoveJournal")
-
-    private let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }()
-
-    private let decoder = JSONDecoder()
+    private let journal: RecoveryJournal<Record>
 
     init(directoryURL: URL? = nil) {
-        self.directoryURL = directoryURL ?? AppDirectories.applicationSupport()
+        self.directoryURL = directoryURL ?? AppPaths.applicationSupport()
+        self.journal = RecoveryJournal(
+            fileURL: self.directoryURL.appendingPathComponent("managed-moves.json"),
+            logCategory: "ManagedMoveJournal",
+            damagedError: { JournalError.damaged }
+        )
     }
 
-    func loadResult() -> LoadResult {
-        withLock { loadResultLocked() }
+    func loadResult() -> LoadResult<[Record]> {
+        journal.load()
     }
 
     /// Writes the safety boundary that must exist before the original can be
     /// moved to the Trash.
     func createPrepared(referenceItem: ShelfItem, managedItem: ShelfItem) throws {
-        try withLock {
-            var records = try recordsForMutationLocked()
+        try journal.mutate { records in
             records.removeAll { $0.id == managedItem.id }
             records.append(Record(
                 state: .prepared,
@@ -114,115 +77,36 @@ final class ManagedMoveJournal: @unchecked Sendable {
                 resultingTrashPath: nil,
                 createdAt: Date()
             ))
-            try writeLocked(records)
         }
     }
 
-    /// Marks the destructive step as completed.  A failure to persist this
+    /// Marks the destructive step as completed. A failure to persist this
     /// transition is still recoverable: the durable `.prepared` record plus a
     /// missing source and existing managed copy is treated conservatively on
     /// the next launch.
     func markOriginalTrashed(id: UUID, resultingURL: URL?) throws {
-        try withLock {
-            var records = try recordsForMutationLocked()
+        try journal.mutate { records in
             guard let index = records.firstIndex(where: { $0.id == id }) else {
                 throw JournalError.missingRecord(id)
             }
             records[index].state = .originalTrashed
             records[index].resultingTrashPath = resultingURL?.path
-            try writeLocked(records)
         }
     }
 
     /// Removes a transaction only after its ShelfItem has been synchronously
     /// persisted, or after startup recovery has safely resolved it.
     func remove(id: UUID) throws {
-        try withLock {
-            var records = try recordsForMutationLocked()
-            guard records.contains(where: { $0.id == id }) else { return }
-            records.removeAll { $0.id == id }
-            try writeLocked(records)
-        }
+        try journal.remove(id: id)
     }
 
     /// Paths that must survive automatic and user-triggered orphan cleanup.
-    func protectedManagedPaths() -> Set<String> {
-        let result = loadResult()
-        guard case .loaded(let records) = result else { return [] }
-        return Set(records.compactMap { $0.managedItem.path })
+    func protectedPaths() -> Set<String> {
+        Set(loadResult().contents.compactMap(\.managedItem.path))
     }
 
-    var permitsManagedOrphanCleanup: Bool {
-        loadResult().permitsManagedOrphanCleanup
-    }
-
-    // MARK: - Locked persistence
-
-    private func loadResultLocked() -> LoadResult {
-        guard FileManager.default.fileExists(atPath: journalURL.path) else { return .missing }
-        do {
-            let data = try Data(contentsOf: journalURL)
-            let snapshot = try decoder.decode(Snapshot.self, from: data)
-            if snapshot.schemaVersion > Self.currentSchemaVersion {
-                logger.warning("Managed move journal schema v\(snapshot.schemaVersion) is newer than supported v\(Self.currentSchemaVersion)")
-                return .failed
-            }
-            return .loaded(snapshot.records)
-        } catch {
-            logger.error("Failed to load managed move journal: \(error.localizedDescription, privacy: .public)")
-            return .failed
-        }
-    }
-
-    private func recordsForMutationLocked() throws -> [Record] {
-        switch loadResultLocked() {
-        case .loaded(let records): records
-        case .missing: []
-        case .failed: throw JournalError.damaged
-        }
-    }
-
-    private func writeLocked(_ records: [Record]) throws {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-
-        if records.isEmpty {
-            if fileManager.fileExists(atPath: journalURL.path) {
-                try fileManager.removeItem(at: journalURL)
-            }
-            if fileManager.fileExists(atPath: temporaryURL.path) {
-                try? fileManager.removeItem(at: temporaryURL)
-            }
-            if fileManager.fileExists(atPath: backupURL.path) {
-                try? fileManager.removeItem(at: backupURL)
-            }
-            return
-        }
-
-        let snapshot = Snapshot(schemaVersion: Self.currentSchemaVersion, records: records)
-        let data = try encoder.encode(snapshot)
-        try data.write(to: temporaryURL, options: .atomic)
-
-        if fileManager.fileExists(atPath: journalURL.path) {
-            // Preserve the previous valid generation.  The backup is a
-            // diagnostic fallback; a damaged primary still blocks cleanup.
-            do {
-                let previousData = try Data(contentsOf: journalURL)
-                _ = try decoder.decode(Snapshot.self, from: previousData)
-                try previousData.write(to: backupURL, options: .atomic)
-            } catch {
-                logger.warning("Could not refresh managed move journal backup: \(error.localizedDescription, privacy: .public)")
-            }
-            _ = try fileManager.replaceItemAt(journalURL, withItemAt: temporaryURL)
-        } else {
-            try fileManager.moveItem(at: temporaryURL, to: journalURL)
-        }
-    }
-
-    private func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock.lock()
-        defer { lock.unlock() }
-        return try body()
+    var permitsOrphanCleanup: Bool {
+        loadResult().isTrusted
     }
 }
 

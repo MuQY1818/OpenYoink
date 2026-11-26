@@ -550,14 +550,6 @@ struct AIUsageLimitAlertEvaluator {
 @MainActor
 @Observable
 final class AIUsageModuleStore: IslandModuleRuntime {
-    static let moduleDescriptor = IslandModuleDescriptor(
-        id: .aiUsage,
-        title: String(localized: "AI Usage"),
-        systemImage: "chart.line.uptrend.xyaxis",
-        order: 8,
-        isCore: false
-    )
-
     enum Status: Equatable {
         case idle
         case loading
@@ -566,7 +558,7 @@ final class AIUsageModuleStore: IslandModuleRuntime {
         case failed(String)
     }
 
-    let descriptor = AIUsageModuleStore.moduleDescriptor
+    let descriptor = IslandModuleCatalog.descriptor(for: .aiUsage)
     let events: AsyncStream<IslandModuleEvent>
 
     private(set) var status: Status = .idle
@@ -596,9 +588,9 @@ final class AIUsageModuleStore: IslandModuleRuntime {
         self.compactMetric = compactMetric
         self.alertsEnabled = alertsEnabled
         self.now = now
-        var captured: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { captured = $0 }
-        continuation = captured!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     deinit {

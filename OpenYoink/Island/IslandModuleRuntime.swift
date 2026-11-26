@@ -59,11 +59,9 @@ final class CallbackIslandModuleRuntime: IslandModuleRuntime {
         self.descriptor = descriptor
         self.startAction = start
         self.stopAction = stop
-        var capturedContinuation: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { continuation in
-            capturedContinuation = continuation
-        }
-        continuation = capturedContinuation!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     func start() {
@@ -93,13 +91,7 @@ final class CallbackIslandModuleRuntime: IslandModuleRuntime {
 /// `refresh`, but only this runtime publishes the resulting module event.
 @MainActor
 final class TransfersModuleRuntime: IslandModuleRuntime {
-    let descriptor = IslandModuleDescriptor(
-        id: .transfers,
-        title: String(localized: "Transfers"),
-        systemImage: "arrow.up.arrow.down",
-        order: 1,
-        isCore: true
-    )
+    let descriptor = IslandModuleCatalog.descriptor(for: .transfers)
     let events: AsyncStream<IslandModuleEvent>
 
     private let transferStore: TransferStore
@@ -108,11 +100,9 @@ final class TransfersModuleRuntime: IslandModuleRuntime {
 
     init(transferStore: TransferStore) {
         self.transferStore = transferStore
-        var capturedContinuation: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { continuation in
-            capturedContinuation = continuation
-        }
-        continuation = capturedContinuation!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     func start() {
@@ -170,7 +160,6 @@ final class TransfersModuleRuntime: IslandModuleRuntime {
 @Observable
 final class IslandModuleContainer {
     private(set) var registrations: [IslandModuleRegistration]
-    private(set) var availability: [IslandModuleID: IslandModuleAvailability] = [:]
     private(set) var runningModuleIDs: Set<IslandModuleID> = []
 
     @ObservationIgnored private let coordinator: IslandActivityCoordinator
@@ -240,7 +229,6 @@ final class IslandModuleContainer {
             }
         }
         registration.runtime.start()
-        availability[moduleID] = .available
     }
 
     private func stop(_ registration: IslandModuleRegistration) {
@@ -248,7 +236,6 @@ final class IslandModuleContainer {
         registration.runtime.stop()
         eventTasks.removeValue(forKey: registration.id)?.cancel()
         coordinator.removeActivities(for: registration.id)
-        availability.removeValue(forKey: registration.id)
     }
 
     private func consume(_ event: IslandModuleEvent, from moduleID: IslandModuleID) {
@@ -261,8 +248,6 @@ final class IslandModuleContainer {
             coordinator.removeActivity(id: id)
         case .removeAllActivities:
             coordinator.removeActivities(for: moduleID)
-        case let .availabilityChanged(next):
-            availability[moduleID] = next
         }
     }
 }

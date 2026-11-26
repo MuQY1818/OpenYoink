@@ -1,13 +1,13 @@
 import XCTest
 @testable import OpenYoink
 
-/// 触发设置的默认值与持久化（SettingsStore 的 S7 字段），以及
-/// TriggerSensitivity → 识别参数的档位映射。
+/// Trigger defaults and persistence in SettingsStore, and the mapping from
+/// TriggerSensitivity to detector parameters.
 @MainActor
 final class TriggerSettingsTests: XCTestCase {
     // MARK: - Helpers
 
-    /// 独立 UserDefaults suite，避免污染应用自身的设置。
+    /// A separate UserDefaults suite, so the app's own settings stay clean.
     private func makeSuite() throws -> (defaults: UserDefaults, name: String) {
         let name = "OpenYoinkTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
@@ -20,7 +20,7 @@ final class TriggerSettingsTests: XCTestCase {
         let low = TriggerSensitivity.low.shakeParameters
         let medium = TriggerSensitivity.medium.shakeParameters
         let high = TriggerSensitivity.high.shakeParameters
-        // 越不敏感：窗口越短、要求反转越多、段长阈值越高。
+        // Less sensitive: shorter window, more reversals, longer segments.
         XCTAssertLessThan(low.window, medium.window)
         XCTAssertLessThan(medium.window, high.window)
         XCTAssertGreaterThan(low.requiredReversals, medium.requiredReversals)
@@ -41,7 +41,8 @@ final class TriggerSettingsTests: XCTestCase {
     }
 
     func testEdgeMappings_dragTunedValues() {
-        // UX2: 拖拽场景（按住左键移动中贴边）比悬停场景的停留更短、带宽更宽。
+        // While dragging (left button held, at the edge) the dwell is shorter and
+// the band wider than when hovering.
         XCTAssertEqual(TriggerSensitivity.low.edgeDwellTime, 0.4)
         XCTAssertEqual(TriggerSensitivity.medium.edgeDwellTime, 0.2)
         XCTAssertEqual(TriggerSensitivity.high.edgeDwellTime, 0.1)
@@ -53,7 +54,7 @@ final class TriggerSettingsTests: XCTestCase {
     // MARK: - SettingsStore defaults & persistence
 
     func testDefaults_matchPlanRiskTable() throws {
-        // 计划 §6：快捷键默认开，摇动/边缘默认关，灵敏度默认中档。
+        // Defaults: hot key on, shake and edge off, medium sensitivity.
         let (defaults, name) = try makeSuite()
         defer { defaults.removePersistentDomain(forName: name) }
 
@@ -65,7 +66,8 @@ final class TriggerSettingsTests: XCTestCase {
         XCTAssertEqual(store.edgeTriggerSensitivity, .medium)
         XCTAssertEqual(store.hotKeyShortcut, .default)
         XCTAssertEqual(store.ignoredAppBundleIDs, [])
-        // UX 批次新增项的默认值：拖到边缘再出现、双击存剪贴板、空架自动隐藏。
+        // Defaults: show at the edge while dragging, double-click saves the
+// clipboard, hide an empty shelf.
         XCTAssertEqual(store.dragAutoAppearMode, .edgeOnly)
         XCTAssertTrue(store.hotKeyDoublePressSavesClipboard)
         XCTAssertTrue(store.autoHideWhenEmpty)
@@ -99,7 +101,7 @@ final class TriggerSettingsTests: XCTestCase {
     }
 
     func testLegacyDoubleSensitivity_fallsBackToMedium() throws {
-        // S7 之前占位实现存的是 Double；读到旧值/脏值时回退中档，不崩溃。
+        // An early version stored a Double; old or bad values fall back to medium without crashing.
         let (defaults, name) = try makeSuite()
         defer { defaults.removePersistentDomain(forName: name) }
 
@@ -110,8 +112,6 @@ final class TriggerSettingsTests: XCTestCase {
         XCTAssertEqual(store.shakeSensitivity, .medium)
         XCTAssertEqual(store.edgeTriggerSensitivity, .medium)
     }
-
-    // MARK: - UX 批次：新设置持久化与迁移
 
     func testUXSettings_persistAcrossInstances() throws {
         let (defaults, name) = try makeSuite()
@@ -138,7 +138,8 @@ final class TriggerSettingsTests: XCTestCase {
     }
 
     func testDragAutoAppearMode_legacyEdgeTriggerEnabled_migratesToEdgeOnly() throws {
-        // UX1 迁移：旧版布尔边缘触发开关为开、且从未持久化过新模式 → .edgeOnly。
+        // Migration: the old boolean edge trigger was on and the new mode was never
+// persisted → .edgeOnly.
         let (defaults, name) = try makeSuite()
         defer { defaults.removePersistentDomain(forName: name) }
 
@@ -146,13 +147,13 @@ final class TriggerSettingsTests: XCTestCase {
         let store = SettingsStore(defaults: defaults)
         XCTAssertEqual(store.dragAutoAppearMode, .edgeOnly)
 
-        // 迁移立即落盘：后续实例仍读到 edgeOnly。
+        // The migration is written immediately: later instances read edgeOnly too.
         let reloaded = SettingsStore(defaults: defaults)
         XCTAssertEqual(reloaded.dragAutoAppearMode, .edgeOnly)
     }
 
     func testDragAutoAppearMode_explicitModeWinsOverLegacyFlag() throws {
-        // 显式持久化过新模式 → 旧布尔开关不再参与（迁移只发生一次）。
+        // Once the new mode was persisted the old boolean is ignored (migrates once).
         let (defaults, name) = try makeSuite()
         defer { defaults.removePersistentDomain(forName: name) }
 
