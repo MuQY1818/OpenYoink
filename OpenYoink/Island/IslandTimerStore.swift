@@ -55,13 +55,7 @@ final class IslandTimerStore: IslandModule {
         var goal: String
     }
 
-    let descriptor = IslandModuleDescriptor(
-        id: .timer,
-        title: String(localized: "Timer"),
-        systemImage: "timer",
-        order: 2,
-        isCore: false
-    )
+    let descriptor = IslandModuleCatalog.descriptor(for: .timer)
 
     private static let persistenceKey = "OpenYoink.islandTimerState"
     private static let configurationKey = "OpenYoink.islandTimerConfiguration"

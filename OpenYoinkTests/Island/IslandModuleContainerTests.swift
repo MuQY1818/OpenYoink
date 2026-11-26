@@ -86,7 +86,7 @@ private final class RuntimeSpy: IslandModuleRuntime {
 
     init(id: IslandModuleID) {
         descriptor = .init(id: id, title: id.rawValue,
-                           systemImage: "circle", order: 0, isCore: false)
+                           systemImage: "circle", order: 0)
         var captured: AsyncStream<IslandModuleEvent>.Continuation?
         events = AsyncStream { captured = $0 }
         continuation = captured!
