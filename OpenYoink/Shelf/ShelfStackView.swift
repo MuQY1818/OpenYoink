@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ShelfStackView: View {
     @Environment(\.shelfSelectionMode) private var selectionMode
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     let item: ShelfItem
     let isSelected: Bool
     var isKeyboardFocused: Bool = false
@@ -39,10 +40,12 @@ struct ShelfStackView: View {
             thumbnailItem: item.children?.first(where: { $0.fileURL != nil }),
             dragContentsProvider: dragContentsProvider
         )
-        .overlay(alignment: selectionMode ? .topLeading : .topTrailing) { countBadge }
+        .overlay(alignment: .topLeading) { countBadge }
     }
 
-    /// The accent count capsule, top right.
+    /// The accent count capsule, top left. The top-right corner belongs to the
+    /// hover remove button: a badge there hid the button, and since the badge
+    /// passes clicks through, clicking the count removed the whole stack.
     private var countBadge: some View {
         Text("\(item.children?.count ?? 0)")
             .font(.caption2.weight(.semibold))
@@ -52,7 +55,15 @@ struct ShelfStackView: View {
             .padding(.vertical, 1)
             .background { Capsule().fill(Color.accentColor) }
             .padding(5)
+            // Clear the selection checkmark ShelfItemCard draws top left when
+            // colors alone mustn't convey selection.
+            .padding(.leading, showsSelectionCheckmark ? 20 : 0)
             .allowsHitTesting(false)
+    }
+
+    private var showsSelectionCheckmark: Bool {
+        // Same condition the card uses for its selected look.
+        !selectionMode && (isSelected || isExpanded) && differentiateWithoutColor
     }
 }
 
