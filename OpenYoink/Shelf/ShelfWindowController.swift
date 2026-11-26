@@ -622,12 +622,6 @@ final class ShelfWindowController: NSObject {
             object: nil
         )
         // S8: 位置/宽度设置变更时动画过渡到新 frame（见 applyLayoutSettings）。
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(userDefaultsDidChange(_:)),
-            name: UserDefaults.didChangeNotification,
-            object: nil
-        )
     }
 
     deinit {
@@ -1706,16 +1700,6 @@ final class ShelfWindowController: NSObject {
     /// 必须 nonisolated：通知按投递线程同步回调，投递方可能是任意线程；
     /// 选择器方法若保留 MainActor 隔离会在投递线程上触发隔离断言
     /// （同 AppDelegate.userDefaultsDidChange 的说明）。
-    @objc private nonisolated func userDefaultsDidChange(_ notification: Notification) {
-        Task { @MainActor in
-            self.applyLayoutSettings()
-        }
-    }
-
-    private func applyLayoutSettings() {
-        applyPresentationSettings(animated: true)
-    }
-
     private func applyClassicLayout(animated: Bool = true) {
         guard appState.isShelfVisible else { return }
         // 形变以当前窗口 frame 为画布；中途改 frame 会让拉环起点错位。

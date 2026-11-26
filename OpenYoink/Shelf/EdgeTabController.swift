@@ -116,12 +116,6 @@ final class EdgeTabController: NSObject {
         beginObservation()
         // 设置变更（edgeTabEnabled / shelfPosition / shelfEdgeOffset —— 含
         // 拖动拉环抬起时的持久化写）统一重估。
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(userDefaultsDidChange(_:)),
-            name: UserDefaults.didChangeNotification,
-            object: nil
-        )
         // 插拔屏/改分辨率 → 按新几何重算（所在屏被拔掉时回退鼠标屏/主屏）。
         NotificationCenter.default.addObserver(
             self,
@@ -155,7 +149,7 @@ final class EdgeTabController: NSObject {
     }
 
     /// 统一状态评估：可见性 / 设置 / 屏幕参数 / 拖拽状态变更后调用。
-    private func applyState(animated: Bool) {
+    func applyState(animated: Bool) {
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         tabView.configure(appearance: settings.appearance,
                           iconVisible: settings.edgeTabIconVisible,
@@ -379,12 +373,6 @@ final class EdgeTabController: NSObject {
 
     /// 必须 nonisolated：通知按投递线程同步回调（同 ShelfWindowController /
     /// AppDelegate 的说明）。
-    @objc private nonisolated func userDefaultsDidChange(_ notification: Notification) {
-        Task { @MainActor in
-            self.applyState(animated: true)
-        }
-    }
-
     @objc private nonisolated func screenParametersDidChange(_ notification: Notification) {
         Task { @MainActor in
             self.applyState(animated: true)

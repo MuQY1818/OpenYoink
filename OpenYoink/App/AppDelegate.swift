@@ -69,10 +69,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             services.applyTriggerSettings()
         }
         services.shelfPresentationCoordinator.applyCurrentMode(animated: false)
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(userDefaultsDidChange(_:)),
-                                               name: UserDefaults.didChangeNotification,
-                                               object: nil)
+        services.settingsStore.observeChanges { [weak services] in
+            guard let services else { return }
+            services.applyTriggerSettings()
+            services.shelfPresentationCoordinator.applyCurrentMode(animated: true)
+            services.edgeTabController.applyState(animated: true)
+            services.updateController.applySettings()
+            services.clipboardHistoryStore.prune(force: true)
+            services.clipboardHistoryStore.updateRecording()
+        }
         services.maintenance.run()
         // 引导必须排在 shelf 读取、事务恢复、bookmark 解析和安全清理之后，
         // 此时「空架」才是可信事实。
@@ -117,15 +122,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         services.onboardingController.applicationWillTerminate()
         services.maintenance.finish()
         services.stopTriggers()
-    }
-
-    @objc private nonisolated func userDefaultsDidChange(_ notification: Notification) {
-        Task { @MainActor in
-            services.applyTriggerSettings()
-            services.shelfPresentationCoordinator.applyCurrentMode(animated: true)
-            services.updateController.applySettings()
-            services.clipboardHistoryStore.prune(force: true)
-            services.clipboardHistoryStore.updateRecording()
-        }
     }
 }
