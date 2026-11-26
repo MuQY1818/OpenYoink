@@ -30,6 +30,7 @@ final class EdgeTabController: NSObject {
     private let settings: SettingsStore
     private let store: ShelfStore
     private let importCoordinator: DropImportCoordinator
+    private let notices: ShelfNoticeModel
     private let dragStartMonitor: DragStartMonitor
     private let onToggleShelf: @MainActor () -> Void
     private let onShowShelf: @MainActor () -> Void
@@ -97,6 +98,7 @@ final class EdgeTabController: NSObject {
          settings: SettingsStore,
          store: ShelfStore,
          importCoordinator: DropImportCoordinator,
+         notices: ShelfNoticeModel,
          dragStartMonitor: DragStartMonitor,
          onToggleShelf: @escaping @MainActor () -> Void,
          onShowShelf: @escaping @MainActor () -> Void,
@@ -105,6 +107,7 @@ final class EdgeTabController: NSObject {
         self.settings = settings
         self.store = store
         self.importCoordinator = importCoordinator
+        self.notices = notices
         self.dragStartMonitor = dragStartMonitor
         self.onToggleShelf = onToggleShelf
         self.onShowShelf = onShowShelf
@@ -326,23 +329,23 @@ final class EdgeTabController: NSObject {
         let result = importCoordinator.importItems(
             from: pasteboard,
             mode: mode,
-            onManagedMoveReady: { [store, importCoordinator] item in
+            onManagedMoveReady: { [store, importCoordinator, notices] item in
                 do {
                     try store.addAndPersistNow(item)
                     importCoordinator.markManagedMoveCommitted(itemID: item.id)
                     return true
                 } catch {
                     store.add(item)
-                    importCoordinator.noticeCenter.show(String(localized: "The moved item is being kept for recovery because the shelf could not be saved immediately."))
+                    notices.show(String(localized: "The moved item is being kept for recovery because the shelf could not be saved immediately."))
                     return false
                 }
             },
-            onPromisedItemReady: { [store, importCoordinator] item in
+            onPromisedItemReady: { [store, notices] item in
                 do {
                     try store.addAndPersistNow(item)
                     return true
                 } catch {
-                    importCoordinator.noticeCenter.show(String(localized: "The received file was kept safely. Open Recovery to finish importing it."))
+                    notices.show(String(localized: "The received file was kept safely. Open Recovery to finish importing it."))
                     return false
                 }
             }

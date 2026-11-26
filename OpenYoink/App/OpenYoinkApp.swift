@@ -10,14 +10,14 @@ struct OpenYoinkApp: App {
         // 避免应用被激活后从系统“OpenYoink → 设置…”打开一个空白窗口。
         Settings {
             SettingsView()
-                .environment(appDelegate.settingsStore)
-                .environment(appDelegate.hotKeyMonitor)
-                .environment(appDelegate.launchAtLoginController)
-                .environment(appDelegate.updateController)
-                .environment(appDelegate.storageManagementController)
-                .environment(appDelegate.settingsNavigation)
-                .environment(appDelegate.supportController)
-                .environment(appDelegate.clipboardHistoryStore)
+                .environment(appDelegate.services.settingsStore)
+                .environment(appDelegate.services.hotKeyMonitor)
+                .environment(appDelegate.services.launchAtLoginController)
+                .environment(appDelegate.services.updateController)
+                .environment(appDelegate.services.storageManagementController)
+                .environment(appDelegate.services.settingsNavigation)
+                .environment(appDelegate.services.supportController)
+                .environment(appDelegate.services.clipboardHistoryStore)
         }
     }
 }

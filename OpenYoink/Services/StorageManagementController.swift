@@ -247,12 +247,11 @@ final class StorageManagementController {
             return
         }
 
-        let protectedItems = shelfStore.items + persistence.recoverableSnapshotItems()
-        var protectedPaths = protectedItems.materializedPaths(in: tempFileService.directoryURL)
-        protectedPaths.formUnion(managedMoveJournal?.protectedPaths() ?? [])
-        protectedPaths.formUnion(pendingImportJournal?.protectedPaths() ?? [])
-        protectedPaths.formUnion(additionalProtectedPaths())
-        protectedPaths.formUnion(shelfStore.undoProtectedPaths)
+        let protectedPaths = MaterializedFileGuard.protectedPaths(
+            for: shelfStore.items, persistence: persistence, tempFiles: tempFileService,
+            managedMoves: managedMoveJournal, pendingImports: pendingImportJournal,
+            additional: additionalProtectedPaths().union(shelfStore.undoProtectedPaths)
+        )
         let result = tempFileService.cleanupOrphans(keepingPaths: protectedPaths)
         if result.removedItemCount == 0 {
             statusMessage = String(localized: "No unused files were found.")

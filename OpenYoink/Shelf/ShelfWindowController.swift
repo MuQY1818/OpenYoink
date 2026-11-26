@@ -62,6 +62,9 @@ final class ShelfWindowController: NSObject {
     private var isUserRemovalInProgress = false
     /// S4: 拖入分派（pasteboard → ShelfItem），供 DragContainerView 调用。
     private let importCoordinator: DropImportCoordinator
+    private let bookmarkService: BookmarkService
+    private let notices: ShelfNoticeModel
+    private let transferStore: TransferStore
     /// S4: 拖入悬停高亮/插入位置状态，DragContainerView 驱动、ShelfView 渲染。
     private let classicDropTargetState = DropTargetState()
     private let islandDropTargetState = DropTargetState()
@@ -217,8 +220,8 @@ final class ShelfWindowController: NSObject {
                 .environment(settings)
                 .environment(gridGeometry)
                 .environment(interaction)
-                .environment(importCoordinator.noticeCenter)
-                .environment(importCoordinator.transferStore)
+                .environment(notices)
+                .environment(transferStore)
                 .environment(islandActivityCoordinator)
                 .environment(islandModuleRegistry)
                 .environment(islandModuleContainer)
@@ -231,7 +234,7 @@ final class ShelfWindowController: NSObject {
                 .environment(favoriteFolderDropCoordinator)
                 .environment(clipboardHistoryStore)
                 .environment(recentDownloadsStore)
-                .environment(\.bookmarkService, importCoordinator.bookmarkService)
+                .environment(\.bookmarkService, bookmarkService)
                 .environment(\.dragOutController, dragOutController)
                 .environment(\.quickLookCoordinator, quickLookCoordinator)
                 .environment(\.tempFileService, tempFileService)
@@ -337,6 +340,9 @@ final class ShelfWindowController: NSObject {
     init(appState: AppState,
          store: ShelfStore,
          importCoordinator: DropImportCoordinator,
+         bookmarkService: BookmarkService,
+         notices: ShelfNoticeModel,
+         transferStore: TransferStore,
          tempFileService: TempFileService,
          settings: SettingsStore,
          recents: RecentItemsService,
@@ -349,11 +355,14 @@ final class ShelfWindowController: NSObject {
         self.appState = appState
         self.store = store
         self.importCoordinator = importCoordinator
+        self.bookmarkService = bookmarkService
+        self.notices = notices
+        self.transferStore = transferStore
         self.tempFileService = tempFileService
         self.settings = settings
         self.clipboardHistoryStore = clipboardHistoryStore
         self.recentDownloadsStore = RecentDownloadsStore(defaults: settings.defaultsStore,
-                                                         bookmarks: importCoordinator.bookmarkService)
+                                                         bookmarks: bookmarkService)
         self.dragStartMonitor = dragStartMonitor
         self.onOpenSettings = onOpenSettings
         let islandActivityCoordinator = IslandActivityCoordinator()
@@ -387,15 +396,15 @@ final class ShelfWindowController: NSObject {
         )
         let favoriteFoldersStore = FavoriteFoldersStore(
             persistence: FavoriteFoldersPersistenceController(),
-            bookmarkService: importCoordinator.bookmarkService
+            bookmarkService: bookmarkService
         )
         let favoriteFolderDropCoordinator = FavoriteFolderDropCoordinator(folders: favoriteFoldersStore,
-                                                                          bookmarks: importCoordinator.bookmarkService)
+                                                                          bookmarks: bookmarkService)
         let shelfRuntime = CallbackIslandModuleRuntime(
             descriptor: islandModuleRegistry.descriptor(for: .shelf)!
         )
         let transfersModuleRuntime = TransfersModuleRuntime(
-            transferStore: importCoordinator.transferStore
+            transferStore: transferStore
         )
         // Recording belongs to the app lifecycle, independently of Island.
         let clipboardRuntime = CallbackIslandModuleRuntime(
@@ -495,7 +504,7 @@ final class ShelfWindowController: NSObject {
             store: store,
             settings: settings,
             recents: recents,
-            bookmarkService: importCoordinator.bookmarkService,
+            bookmarkService: bookmarkService,
             deliveryCoordinator: deliveryCoordinator,
             onSourceDragEnded: {
                 dragStartMonitor.finishDrag()
@@ -506,7 +515,7 @@ final class ShelfWindowController: NSObject {
             store: store,
             settings: settings,
             recents: recents,
-            bookmarkService: importCoordinator.bookmarkService,
+            bookmarkService: bookmarkService,
             deliveryCoordinator: deliveryCoordinator,
             onSourceDragEnded: {
                 dragStartMonitor.finishDrag()
@@ -515,18 +524,18 @@ final class ShelfWindowController: NSObject {
         )
         self.quickLookCoordinator = QuickLookCoordinator(
             store: store,
-            bookmarkService: importCoordinator.bookmarkService,
+            bookmarkService: bookmarkService,
             tempFileService: tempFileService
         )
         self.itemRecoveryController = ItemRecoveryController(
             store: store,
-            bookmarkService: importCoordinator.bookmarkService,
-            notices: importCoordinator.noticeCenter,
+            bookmarkService: bookmarkService,
+            notices: notices,
             openStorageRecovery: onOpenStorageRecovery
         )
         self.shelfActionRunner = ShelfActionRunner(
-            bookmarkService: importCoordinator.bookmarkService,
-            notices: importCoordinator.noticeCenter
+            bookmarkService: bookmarkService,
+            notices: notices
         )
         super.init()
         islandActivityCoordinator.onSurfaceStateWillChange = { [weak self] oldState, newState in
@@ -568,7 +577,7 @@ final class ShelfWindowController: NSObject {
         interaction.onActionSelectionDidChange = { [weak self] in
             self?.handleQuickActionVisibilityDidChange()
         }
-        importCoordinator.transferStore.onVisibilityDidChange = { [weak self] in
+        transferStore.onVisibilityDidChange = { [weak self] in
             self?.handleActivityVisibilityDidChange()
         }
         // S8: autoHide —— 拖出成功（operation 非空）且设置开启时隐藏 shelf。
@@ -1383,9 +1392,9 @@ final class ShelfWindowController: NSObject {
         guard !items.isEmpty else { return false }
         let result = ClipboardController.copy(
             items,
-            bookmarkService: importCoordinator.bookmarkService
+            bookmarkService: bookmarkService
         )
-        importCoordinator.noticeCenter.show(ClipboardController.statusMessage(for: result))
+        notices.show(ClipboardController.statusMessage(for: result))
         return true
     }
 
@@ -1419,7 +1428,7 @@ final class ShelfWindowController: NSObject {
         }
         guard ItemActions.canOpen(item) else { return false }
         ItemActions.open(item,
-                         bookmarkService: importCoordinator.bookmarkService,
+                         bookmarkService: bookmarkService,
                          tempFileService: tempFileService)
         return true
     }
@@ -1438,7 +1447,7 @@ final class ShelfWindowController: NSObject {
             do {
                 try store.removeBatchForUser(ids: ids)
             } catch {
-                importCoordinator.noticeCenter.show(String(localized: "Could not save a recovery copy. Nothing was removed."))
+                notices.show(String(localized: "Could not save a recovery copy. Nothing was removed."))
                 return true
             }
         }
@@ -1460,7 +1469,7 @@ final class ShelfWindowController: NSObject {
             position: settings.shelfPosition,
             width: settings.shelfWidth,
             itemCount: store.items.count,
-            hasActivity: importCoordinator.transferStore.hasVisibleActivity,
+            hasActivity: transferStore.hasVisibleActivity,
             hasQuickActions: hasVisibleQuickActions,
             hasSearchControls: true,
             mouseLocation: NSEvent.mouseLocation,
