@@ -496,9 +496,9 @@ final class SystemStatusModuleStore: IslandModuleRuntime {
         self.provider = provider
         self.isSelectedAndExpanded = isSelectedAndExpanded
         self.now = now
-        var capturedContinuation: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { continuation in capturedContinuation = continuation }
-        continuation = capturedContinuation!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     deinit {

@@ -9,27 +9,24 @@ final class ShelfImporter {
     private let appState: AppState
     private let shelfNotice: ShelfNoticeModel
     private let bookmarkService: BookmarkService
-    private let shelfPresentationCoordinator: ShelfPresentationCoordinator
+    private let shelfWindowController: ShelfWindowController
 
     init(shelfStore: ShelfStore,
          dropImportCoordinator: DropImportCoordinator,
          appState: AppState,
          shelfNotice: ShelfNoticeModel,
          bookmarkService: BookmarkService,
-         shelfPresentationCoordinator: ShelfPresentationCoordinator) {
+         shelfWindowController: ShelfWindowController) {
         self.shelfStore = shelfStore
         self.dropImportCoordinator = dropImportCoordinator
         self.appState = appState
         self.shelfNotice = shelfNotice
         self.bookmarkService = bookmarkService
-        self.shelfPresentationCoordinator = shelfPresentationCoordinator
+        self.shelfWindowController = shelfWindowController
     }
 
-    // MARK: - UX3 clipboard save
+    // MARK: - clipboard save
 
-    /// 双击快捷键保存剪贴板：复用 `DropImportCoordinator` 的拖入分派（文件 /
-    /// 图片 / URL / 文本）。成功导入即唤出 shelf 给出反馈；空剪贴板或无
-    /// 可导入内容时不动作（shelf 可见时走既有 notice 提示）。
     func saveClipboardToShelf() {
         let result = importItems(from: .general)
         guard result.handled else {
@@ -38,20 +35,20 @@ final class ShelfImporter {
             }
             return
         }
-        shelfPresentationCoordinator.show(animated: true)
+        shelfWindowController.showPreferredShelf(animated: true)
     }
 
     func saveClipboardImageToShelf() {
         let scheduled = dropImportCoordinator.importClipboardImages(from: .general) { [weak self] item in
             self?.shelfStore.add(item)
         }
-        shelfPresentationCoordinator.show(animated: true)
+        shelfWindowController.showPreferredShelf(animated: true)
         if scheduled == 0 {
             shelfNotice.show(String(localized: "No supported image on the clipboard."))
         }
     }
 
-    // MARK: - Recent items re-add (S10)
+    // MARK: - Recent items re-add
 
     func addHistoryToShelf(_ content: ClipboardHistoryEntry.Content) {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -65,12 +62,9 @@ final class ShelfImporter {
         pasteboard.writeObjects([item])
         let result = importItems(from: pasteboard)
         guard result.handled else { return }
-        shelfPresentationCoordinator.show(animated: true)
+        shelfWindowController.showPreferredShelf(animated: true)
     }
 
-    /// 菜单栏「最近项目」点击重新入架：文件类按路径重建 ShelfItem（含新的
-    /// 安全书签；`canReadd` 已在菜单侧确认可访问），URL 直接复原。text/stack
-    /// 条目在菜单侧已置灰，不会到达这里。入架后唤出 shelf 给出明确反馈。
     func readdRecent(_ entry: RecentEntry) {
         switch entry.kind {
         case .file, .folder, .image:
@@ -90,7 +84,7 @@ final class ShelfImporter {
         case .text, .stack:
             return
         }
-        shelfPresentationCoordinator.show(animated: true)
+        shelfWindowController.showPreferredShelf(animated: true)
     }
 
     private func importItems(from pasteboard: NSPasteboard) -> DropImportResult {

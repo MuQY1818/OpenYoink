@@ -1,11 +1,11 @@
 import Foundation
 
 /// Shared three-tier sensitivity for the shake and edge triggers
-/// (plan §6: 「全局摇动误触」 calls for tunable sensitivity).
+/// can trade reachability against accidental triggers.
 ///
 /// Persisted by `SettingsStore` as the raw value string under the existing
 /// `OpenYoink.*Sensitivity` keys — no separate persistence lives here.
-/// `CaseIterable` so the S8 settings page can drive a picker directly.
+/// `CaseIterable` so Settings can drive a picker directly.
 enum TriggerSensitivity: String, CaseIterable, Sendable, Codable {
     /// Hardest to trigger (longest dwell / most reversals, widest margins).
     case low
@@ -33,9 +33,9 @@ extension TriggerSensitivity {
         }
     }
 
-    /// Dwell time before the drag edge trigger fires (UX2 — fed by
+    /// Dwell time before the drag edge trigger fires (used by
     /// `leftMouseDragged` samples while the left button is held, so the dwell
-    /// is much shorter than the pre-UX hover version): low 0.4 s, medium
+    /// is much shorter than the original hover trigger): low 0.4 s, medium
     /// 0.2 s, high 0.1 s (higher sensitivity = shorter dwell).
     var edgeDwellTime: TimeInterval {
         switch self {
@@ -45,8 +45,8 @@ extension TriggerSensitivity {
         }
     }
 
-    /// Width of the edge band in points (UX2: mid-drag aiming is coarser than
-    /// a parked cursor, so the band is wider than the pre-UX 3/4/6):
+    /// Width of the edge band in points (mid-drag aiming is coarser than
+    /// a parked cursor, so the band is wider than the original hover trigger):
     /// low 6, medium 10, high 16.
     var edgeBandWidth: CGFloat {
         switch self {

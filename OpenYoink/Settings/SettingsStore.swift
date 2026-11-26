@@ -6,7 +6,7 @@ import OpenYoinkModuleCore
 /// All keys are prefixed with `OpenYoink.` to avoid collisions. Defaults are
 /// registered on init, so reads always return meaningful values. Trigger
 /// settings are consumed by `HotKeyMonitor` / `MouseShakeMonitor` /
-/// `EdgeTriggerMonitor` (S7); the settings UI lives in `SettingsView` (S8).
+/// `EdgeTriggerMonitor`; the settings UI lives in `SettingsView`.
 @MainActor
 @Observable
 final class SettingsStore {
@@ -15,7 +15,7 @@ final class SettingsStore {
     /// Screen edge the shelf attaches to, or free placement (custom).
     enum ShelfPosition: String, CaseIterable, Sendable {
         case left, right
-        /// Free placement (S9): the panel is dragged by its title-bar area and
+        /// Free placement: the panel is dragged by its title-bar area and
         /// the frame persists in `customShelfFrame`.
         case custom
     }
@@ -44,7 +44,7 @@ final class SettingsStore {
         case automatic
         case display(String)
 
-        fileprivate var persistedValue: String {
+        var persistedValue: String {
             switch self {
             case .main: "main"
             case .automatic: "automatic"
@@ -81,7 +81,7 @@ final class SettingsStore {
     enum DragOutRemovalPolicy: String, CaseIterable, Sendable {
         case keep   // keep the item on the shelf
         case remove // remove it after a successful drop
-        case ask    // ask every time (NSAlert in DragSessionController, S8)
+        case ask    // ask every time (NSAlert in DragSessionController)
     }
 
     /// UI language override.
@@ -90,7 +90,7 @@ final class SettingsStore {
     }
 
     /// What happens when the user starts dragging with the left mouse button
-    /// held (UX batch, task 1/2; Yoink's signature "shelf appears on drag").
+    /// held.
     enum DragAutoAppearMode: String, CaseIterable, Sendable {
         /// Show the shelf at its configured position as soon as a drag starts.
         case immediate
@@ -102,7 +102,7 @@ final class SettingsStore {
     }
 
     /// Codable description of the global toggle hot key. Consumed by
-    /// `HotKeyMonitor` (S7), which maps it to Carbon modifiers; the S8
+    /// `HotKeyMonitor`, which maps it to Carbon modifiers; the
     /// `ShortcutRecorderView` writes new values (and clears to nil).
     struct HotKeyShortcut: Codable, Equatable, Sendable {
         /// Hardware-independent virtual key code (kVK_*; 49 = Space).
@@ -331,22 +331,12 @@ final class SettingsStore {
     }
 
     /// Versioned primary configuration for Island module enablement and the
-    /// five user-controlled pinned positions. The v1.5 booleans remain shadow
+    /// five user-controlled pinned positions. Legacy module flags remain downgrade
     /// keys for one release so downgrading does not discard user choices.
     var islandModuleConfiguration: IslandModuleConfiguration {
         didSet {
             persistIslandModuleConfiguration()
-            applyConfigurationToLegacyProperties()
-        }
-    }
-
-    /// Hovering the classic edge tab briefly previews the side shelf. The
-    /// feature is on by default so the shelf stays out of the way until the
-    /// pointer approaches its edge tab; an explicitly saved choice still wins.
-    var classicShelfHoverRevealEnabled: Bool {
-        didSet {
-            save(classicShelfHoverRevealEnabled,
-                         forKey: SettingsKeys.classicShelfHoverRevealEnabled)
+            writeLegacyModuleKeys()
         }
     }
 
@@ -394,7 +384,7 @@ final class SettingsStore {
         didSet { save(keepShelfOpenAfterDrop, forKey: SettingsKeys.keepShelfOpenAfterDrop) }
     }
 
-    /// UX6: hide the shelf automatically when its items go from non-empty to
+    /// hide the shelf automatically when its items go from non-empty to
     /// empty (removal / drag-out). A shelf explicitly summoned while empty
     /// stays put — the rule only fires on the non-empty → empty transition.
     /// Default: true.
@@ -412,21 +402,16 @@ final class SettingsStore {
         didSet { save(language.rawValue, forKey: SettingsKeys.language) }
     }
 
-    /// Sparkle 自动检查更新（唯一联网行为）。Default: true。
-    /// 由 UpdateController 应用到 SPUUpdater.automaticallyChecksForUpdates
-    /// （启动时一次性 + UserDefaults 变更时同步）。
     var autoUpdateCheckEnabled: Bool {
         didSet { save(autoUpdateCheckEnabled, forKey: SettingsKeys.autoUpdateCheckEnabled) }
     }
 
-    /// 已完成/跳过的快速上手版本。0 表示尚未完成；新增流程时递增该值，
-    /// 不需要修改 shelf 持久化 schema。
     var onboardingVersion: Int {
         didSet { save(onboardingVersion, forKey: SettingsKeys.onboardingVersion) }
     }
 
-    /// 启动时该键是否真实存在于持久化偏好中。它刻意不进入
-    /// `register(defaults:)`，从而能区分「全新安装」与「已经明确处理过引导」。
+    /// Whether `onboardingVersion` was actually persisted at launch. It is
+    /// never registered as a default, which tells fresh installs apart.
     let hadPersistedOnboardingVersion: Bool
 
     /// EdgeTab: vertical placement of the shelf (and its edge tab) along the
@@ -468,7 +453,7 @@ final class SettingsStore {
             : defaultEdgeTabIconSize
     }
 
-    /// Persisted panel frame for the `custom` shelf position (S9), in global
+    /// Persisted panel frame for the `custom` shelf position, in global
     /// screen coordinates. nil = no custom placement yet — the first switch to
     /// custom starts from the right-edge default frame (see
     /// `ShelfLayoutEngine.targetFrame`). Readers must re-validate against the
@@ -484,7 +469,7 @@ final class SettingsStore {
         }
     }
 
-    // MARK: - Triggers (wired in S7; settings UI in S8)
+    // MARK: - Triggers
 
     /// Global hot key (⌘⇧Space) toggles the shelf. Default: true.
     var hotKeyEnabled: Bool {
@@ -492,22 +477,18 @@ final class SettingsStore {
     }
 
     /// Mouse-shake gesture shows the shelf. Default: false (off until the
-    /// heuristic proves reliable, see plan §6).
+    /// gesture is enabled in Settings).
     var shakeTriggerEnabled: Bool {
         didSet { save(shakeTriggerEnabled, forKey: SettingsKeys.shakeTriggerEnabled) }
     }
 
-    /// Resting the cursor on a screen edge shows the shelf. Default: false.
-    ///
-    /// UX2: legacy pre-UX-batch semantic (hover dwell). The UX batch replaced
-    /// the user-facing control with `dragAutoAppearMode`; this flag is kept
-    /// for persistence compatibility and only feeds the one-time migration in
-    /// `init` (legacy ON → `.edgeOnly`).
+    /// Compatibility preference for releases that used the original edge trigger.
     var edgeTriggerEnabled: Bool {
-        didSet { save(edgeTriggerEnabled, forKey: SettingsKeys.edgeTriggerEnabled) }
+        get { defaults.bool(forKey: SettingsKeys.edgeTriggerEnabled) }
+        set { defaults.set(newValue, forKey: SettingsKeys.edgeTriggerEnabled) }
     }
 
-    /// UX1: drag-triggered shelf appearance. Default: `.edgeOnly`, so starting
+    /// drag-triggered shelf appearance. Default: `.edgeOnly`, so starting
     /// a drag does not cover content before the pointer approaches the shelf.
     /// `.edgeOnly` requires a non-custom shelf position (no attachment edge
     /// otherwise); `custom` position pauses the edge mechanism while active.
@@ -515,7 +496,7 @@ final class SettingsStore {
         didSet { save(dragAutoAppearMode.rawValue, forKey: SettingsKeys.dragAutoAppearMode) }
     }
 
-    /// UX3: double-pressing the global hot key saves the general pasteboard
+    /// double-pressing the global hot key saves the general pasteboard
     /// to the shelf. While enabled, a single press toggles the shelf after a
     /// short (~0.3 s) discrimination delay; disabling it restores zero-latency
     /// single presses. Default: true.
@@ -560,7 +541,7 @@ final class SettingsStore {
         didSet { save(ignoredAppBundleIDs, forKey: SettingsKeys.ignoredAppBundleIDs) }
     }
 
-    /// Adds a bundle ID to the ignore list (settings page, S8). Trims
+    /// Adds a bundle ID to the ignore list in Settings. Trims
     /// whitespace and dedupes case-insensitively, mirroring the matching
     /// rules of `IgnoreListService.isIgnored`.
     func addIgnoredApp(bundleID: String) {
@@ -573,7 +554,7 @@ final class SettingsStore {
         ignoredAppBundleIDs.append(trimmed)
     }
 
-    /// Removes entries from the ignore list (settings page, S8).
+    /// Removes entries from the ignore list in Settings.
     func removeIgnoredApps(bundleIDs: Set<String>) {
         guard !bundleIDs.isEmpty else { return }
         ignoredAppBundleIDs.removeAll { bundleIDs.contains($0) }
@@ -617,50 +598,11 @@ final class SettingsStore {
         )
         // Registration defaults are process-wide and leak into isolated test
         // suites. Only durable migration evidence may classify an install as
-        // existing; v1.5 has onboardingVersion, while pre-release modular
+        // existing. Established installs have an onboarding version, while earlier modular
         // builds may only have the versioned configuration blob.
         let hadPersistedAppSettings = hadPersistedOnboardingVersion || persistedModuleConfigurationData != nil
         let migration = SettingsMigration(defaults: defaults)
-        defaults.register(defaults: [
-            SettingsKeys.clipboardHistoryEnabled: false,
-            SettingsKeys.clipboardHistoryPaused: false,
-            SettingsKeys.clipboardHistoryRetentionDays: 7,
-            SettingsKeys.shelfPosition: ShelfPosition.right.rawValue,
-            SettingsKeys.shelfPresentationMode: ShelfPresentationMode.classic.rawValue,
-            SettingsKeys.classicShelfEnabled: true,
-            SettingsKeys.islandEnabled: true,
-            SettingsKeys.islandDisplayTarget: IslandDisplayTarget.main.persistedValue,
-            SettingsKeys.islandShelfEnabled: true,
-            SettingsKeys.preferredShelfSurface: PreferredShelfSurface.island.rawValue,
-            SettingsKeys.islandHoverRevealEnabled: false,
-            SettingsKeys.islandDragApproachEnabled: false,
-            SettingsKeys.islandTimerEnabled: true,
-            SettingsKeys.islandBatteryEnabled: true,
-            SettingsKeys.islandFullChargeAlertEnabled: false,
-            SettingsKeys.islandMediaEnabled: false,
-            SettingsKeys.aiUsageCompactMetric: AIUsageCompactMetric.todayCost.rawValue,
-            SettingsKeys.islandFloatingIdleStyle: IslandFloatingIdleStyle.dot.rawValue,
-            SettingsKeys.aiUsageLimitAlertsEnabled: true,
-            SettingsKeys.aiUsageServerPort: TokenTrackerClient.defaultPort,
-            SettingsKeys.shelfWidth: 320.0,
-            SettingsKeys.shelfEdgeOffset: 0.5,
-            SettingsKeys.edgeTabEnabled: true,
-            SettingsKeys.edgeTabIconVisible: true,
-            SettingsKeys.edgeTabIconSize: Self.defaultEdgeTabIconSize,
-            SettingsKeys.autoHide: false,
-            SettingsKeys.keepShelfOpenAfterDrop: true,
-            SettingsKeys.autoHideWhenEmpty: true,
-            SettingsKeys.dragOutRemovalPolicy: DragOutRemovalPolicy.keep.rawValue,
-            SettingsKeys.language: LanguagePreference.system.rawValue,
-            SettingsKeys.autoUpdateCheckEnabled: true,
-            SettingsKeys.hotKeyEnabled: true,
-            SettingsKeys.hotKeyDoublePressSavesClipboard: true,
-            SettingsKeys.shakeTriggerEnabled: false,
-            SettingsKeys.edgeTriggerEnabled: false,
-            SettingsKeys.shakeSensitivity: TriggerSensitivity.medium.rawValue,
-            SettingsKeys.edgeTriggerSensitivity: TriggerSensitivity.medium.rawValue,
-            SettingsKeys.ignoredAppBundleIDs: [String](),
-        ])
+        defaults.register(defaults: SettingsKeys.registeredDefaults)
 
         clipboardHistoryEnabled = defaults.bool(forKey: SettingsKeys.clipboardHistoryEnabled)
         clipboardHistoryPaused = defaults.bool(forKey: SettingsKeys.clipboardHistoryPaused)
@@ -709,14 +651,6 @@ final class SettingsStore {
             shelfEnabled: surfaces.shelf, timerEnabled: resolvedIslandTimerEnabled,
             batteryEnabled: resolvedIslandBatteryEnabled, mediaEnabled: resolvedIslandMediaEnabled
         )
-        let resolvedClassicShelfHoverRevealEnabled =
-            defaults.object(forKey: SettingsKeys.classicShelfHoverRevealEnabled) as? Bool
-            ?? true
-        classicShelfHoverRevealEnabled = resolvedClassicShelfHoverRevealEnabled
-        if defaults.object(forKey: SettingsKeys.classicShelfHoverRevealEnabled) == nil {
-            defaults.set(resolvedClassicShelfHoverRevealEnabled,
-                         forKey: SettingsKeys.classicShelfHoverRevealEnabled)
-        }
         shelfWidth = defaults.double(forKey: SettingsKeys.shelfWidth)
         if let data = defaults.data(forKey: SettingsKeys.appearance),
            let decoded = try? JSONDecoder().decode(ShelfAppearance.self, from: data) {
@@ -736,7 +670,6 @@ final class SettingsStore {
         autoUpdateCheckEnabled = defaults.bool(forKey: SettingsKeys.autoUpdateCheckEnabled)
         onboardingVersion = defaults.object(forKey: SettingsKeys.onboardingVersion) as? Int ?? 0
         if let data = defaults.data(forKey: SettingsKeys.customShelfFrame) {
-            // 解码失败视为无自定义位置（下次选 custom 从右缘默认起步）。
             customShelfFrame = try? JSONDecoder().decode(CGRect.self, from: data)
         } else {
             customShelfFrame = nil
@@ -744,14 +677,11 @@ final class SettingsStore {
         hotKeyEnabled = defaults.bool(forKey: SettingsKeys.hotKeyEnabled)
         hotKeyDoublePressSavesClipboard = defaults.bool(forKey: SettingsKeys.hotKeyDoublePressSavesClipboard)
         shakeTriggerEnabled = defaults.bool(forKey: SettingsKeys.shakeTriggerEnabled)
-        edgeTriggerEnabled = defaults.bool(forKey: SettingsKeys.edgeTriggerEnabled)
         dragAutoAppearMode = migration.resolveDragMode()
         shakeSensitivity = read(TriggerSensitivity.self, SettingsKeys.shakeSensitivity, fallback: .medium)
         edgeTriggerSensitivity = read(TriggerSensitivity.self, SettingsKeys.edgeTriggerSensitivity, fallback: .medium)
         if let data = defaults.data(forKey: SettingsKeys.hotKeyShortcut) {
-            // 显式 do/catch 而非 `try? … ?? .default`：try? 会把
-            // 「解码成功为 nil」（JSON null = 明确清除）与「解码失败」
-            // 扁平化成同一个 nil（SE-0230），清除态会被吞掉。
+
             do {
                 hotKeyShortcut = try JSONDecoder().decode(HotKeyShortcut?.self, from: data)
             } catch {
@@ -762,9 +692,9 @@ final class SettingsStore {
         }
         ignoredAppBundleIDs = defaults.stringArray(forKey: SettingsKeys.ignoredAppBundleIDs) ?? []
         // A valid primary configuration wins on every launch. Refresh the
-        // one-release v1.5 shadow keys immediately, not only after the user
+        // legacy keys immediately, including when the user has never
         // changes a module in this process.
-        applyConfigurationToLegacyProperties()
+        writeLegacyModuleKeys()
     }
 
     private func persistIslandModuleConfiguration() {
@@ -772,7 +702,7 @@ final class SettingsStore {
         save(data, forKey: SettingsKeys.islandModuleConfiguration)
     }
 
-    private func applyConfigurationToLegacyProperties() {
+    private func writeLegacyModuleKeys() {
         for (key, module) in SettingsKeys.legacyModules {
             defaults.set(islandModuleConfiguration.isEnabled(module), forKey: key)
         }

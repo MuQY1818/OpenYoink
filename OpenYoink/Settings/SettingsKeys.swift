@@ -29,7 +29,6 @@ enum SettingsKeys {
     static let islandModuleConfiguration = prefix + "islandModuleConfiguration"
     static let islandModuleConfigurationCorruptBackup =
         prefix + "islandModuleConfigurationCorruptBackup"
-    static let classicShelfHoverRevealEnabled = prefix + "classicShelfHoverRevealEnabled"
     static let shelfWidth = prefix + "shelfWidth"
     static let shelfEdgeOffset = prefix + "shelfEdgeOffset"
     static let edgeTabEnabled = prefix + "edgeTabEnabled"
@@ -56,4 +55,46 @@ enum SettingsKeys {
         (islandShelfEnabled, .shelf), (islandTimerEnabled, .timer),
         (islandBatteryEnabled, .battery), (islandMediaEnabled, .media),
     ]
+
+    @MainActor
+    static var registeredDefaults: [String: Any] { [
+            clipboardHistoryEnabled: false,
+            clipboardHistoryPaused: false,
+            clipboardHistoryRetentionDays: 7,
+            shelfPosition: SettingsStore.ShelfPosition.right.rawValue,
+            shelfPresentationMode: SettingsStore.ShelfPresentationMode.classic.rawValue,
+            classicShelfEnabled: true,
+            islandEnabled: true,
+            islandDisplayTarget: SettingsStore.IslandDisplayTarget.main.persistedValue,
+            islandShelfEnabled: true,
+            preferredShelfSurface: SettingsStore.PreferredShelfSurface.island.rawValue,
+            islandHoverRevealEnabled: false,
+            islandDragApproachEnabled: false,
+            islandTimerEnabled: true,
+            islandBatteryEnabled: true,
+            islandFullChargeAlertEnabled: false,
+            islandMediaEnabled: false,
+            aiUsageCompactMetric: AIUsageCompactMetric.todayCost.rawValue,
+            islandFloatingIdleStyle: IslandFloatingIdleStyle.dot.rawValue,
+            aiUsageLimitAlertsEnabled: true,
+            aiUsageServerPort: TokenTrackerClient.defaultPort,
+            shelfWidth: 320.0,
+            shelfEdgeOffset: 0.5,
+            edgeTabEnabled: true,
+            edgeTabIconVisible: true,
+            edgeTabIconSize: SettingsStore.defaultEdgeTabIconSize,
+            autoHide: false,
+            keepShelfOpenAfterDrop: true,
+            autoHideWhenEmpty: true,
+            dragOutRemovalPolicy: SettingsStore.DragOutRemovalPolicy.keep.rawValue,
+            language: SettingsStore.LanguagePreference.system.rawValue,
+            autoUpdateCheckEnabled: true,
+            hotKeyEnabled: true,
+            hotKeyDoublePressSavesClipboard: true,
+            shakeTriggerEnabled: false,
+            edgeTriggerEnabled: false,
+            shakeSensitivity: TriggerSensitivity.medium.rawValue,
+            edgeTriggerSensitivity: TriggerSensitivity.medium.rawValue,
+            ignoredAppBundleIDs: [String](),
+    ] }
 }

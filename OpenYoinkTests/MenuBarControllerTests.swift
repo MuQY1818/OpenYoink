@@ -1,7 +1,7 @@
 import XCTest
 @testable import OpenYoink
 
-/// S10/C8: 菜单栏「最近项目」重新入架可行性裁决（MenuBarController.canReadd）。
+/// Whether a recent item can go back on the shelf (MenuBarController.canReadd).
 final class MenuBarControllerTests: XCTestCase {
     private var temporaryFileURL: URL!
 
@@ -23,24 +23,25 @@ final class MenuBarControllerTests: XCTestCase {
                     draggedOutAt: Date())
     }
 
-    /// 文件仍存在且可读 → 可重新入架。
+    /// A file that still exists and is readable → can be re-added.
     func testFileEntryReaddsWhenReadable() {
         XCTAssertTrue(MenuBarController.canReadd(entry(kind: .file, path: temporaryFileURL.path)))
     }
 
-    /// 文件已删除/不可访问 → 置灰。
+    /// A deleted or inaccessible file → disabled.
     func testFileEntryDisabledWhenUnreachable() {
         XCTAssertFalse(MenuBarController.canReadd(entry(kind: .file, path: "/nonexistent/gone-\(UUID().uuidString)")))
         XCTAssertFalse(MenuBarController.canReadd(entry(kind: .image, path: nil)))
     }
 
-    /// URL 条目可解析即可重新入架。
+    /// A URL entry that parses → can be re-added.
     func testURLEntryReaddsWhenParseable() {
         XCTAssertTrue(MenuBarController.canReadd(entry(kind: .url, urlString: "https://example.com")))
         XCTAssertFalse(MenuBarController.canReadd(entry(kind: .url, urlString: nil)))
     }
 
-    /// text 仅存 100 字符摘要、stack 拖出时已展开为子项 —— 均无法忠实恢复，置灰。
+    /// Text keeps only a 100-character summary and stacks were expanded on
+/// drag; neither can be restored faithfully, so both are disabled.
     func testTextAndStackEntriesAreDisabled() {
         XCTAssertFalse(MenuBarController.canReadd(entry(kind: .text)))
         XCTAssertFalse(MenuBarController.canReadd(entry(kind: .stack)))

@@ -82,7 +82,7 @@ final class AppearanceSettingsTests: XCTestCase {
         var appearance = ShelfAppearance.default
         XCTAssertTrue(appearance.usesNativeGlass(reduceTransparency: false))
         XCTAssertNil(appearance.nativeGlassTint)
-        // issue #10: a faint pointer glow replaces the removed interactive glass.
+        // a faint pointer glow replaces the removed interactive glass.
         XCTAssertTrue(appearance.shouldTrackPointer(isClassicShelf: true,
                                                     reduceMotion: false,
                                                     reduceTransparency: false))

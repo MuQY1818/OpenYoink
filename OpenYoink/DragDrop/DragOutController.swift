@@ -2,18 +2,19 @@ import AppKit
 import OSLog
 import SwiftUI
 
-/// 一次拖出的内容集合，由卡片事件层（ShelfView / Stack 浮层）计算。
+/// What one drag-out carries, computed by the card event layer.
 struct DragOutContents: Equatable, Sendable {
-    /// 实际拖出的项目（顶层选择集合或浮层子项集合；stack 由
-    /// `DragPayloadBuilder.flattenedItems` 展开为子项）。
+    /// The dragged items: the top-level selection or children of the open
+    /// stack. Stacks are flattened when the payload is built.
     var items: [ShelfItem]
-    /// 涉及的顶层项目 id：drop 成功且策略为移除时从 store 删除。
-    /// Stack 浮层子项拖出传空集 —— 子项的移除语义（unstack 局部移除）
-    /// 随 S6 的 stack 批量操作一起设计，本步不移除子项。
+    /// Top-level items removed from the shelf when the removal policy says
+    /// so. Empty for children dragged out of an open stack: they are never
+    /// removed by the policy.
     var topLevelIDs: Set<UUID>
 }
 
-/// Tutorial 卡与普通多选拖拽之间的隔离规则（纯函数，避免练习 token 搭便车）。
+/// Keeps the onboarding exercise card and ordinary cards out of each
+/// other's drags, so the exercise token never rides along with user items.
 enum TutorialDragScope {
     static func effectiveContents(_ contents: DragOutContents,
                                   originatingItemID: UUID,
@@ -32,10 +33,10 @@ enum TutorialDragScope {
     }
 }
 
-/// 拖出总控（MainActor）：把卡片 mouseDragged 转成 AppKit 拖拽会话。
+/// Turns a card's `mouseDragged` into an AppKit dragging session.
 ///
-/// 经 SwiftUI 环境（`\.dragOutController`）注入卡片；Preview/测试中环境缺省
-/// 为 nil，卡片拖拽静默关闭、点击不受影响。
+/// Injected through `\.dragOutController`; without one (previews, tests)
+/// cards can't be dragged but still respond to clicks.
 @MainActor
 final class DragOutController {
     private let store: ShelfStore
@@ -45,16 +46,12 @@ final class DragOutController {
     /// Long-lived delivery state survives the AppKit drag session because file
     /// promise callbacks may arrive before or after `endedAt`.
     private let deliveryCoordinator: DeliveryCoordinator
-    /// 活动练习卡的运行时令牌。令牌只随该卡本次拖出写入 pasteboard；普通
-    /// 项目返回 nil。闭包避免把 tutorial 状态写进 ShelfItem schema。
+
     private let tutorialTokenForItem: @MainActor (UUID) -> String?
     /// Balances the shared drag-start monitor when AppKit ends this dragging
     /// session. The closure is optional for previews and isolated tests.
     private let onSourceDragEnded: (@MainActor () -> Void)?
 
-    /// S8: 拖出成功（`operation` 非空）后的回调，由 ShelfWindowController
-    /// 在 init 完成后接线以实现 autoHide（init 期无法捕获未完成的 self）。
-    /// 为 nil 时不做任何事（Preview/测试）。
     var onSuccessfulDrop: (@MainActor () -> Void)?
 
     init(store: ShelfStore,
@@ -73,16 +70,16 @@ final class DragOutController {
         self.tutorialTokenForItem = tutorialTokenForItem
     }
 
-    /// 拖拽启动入口：`CardDragSourceAnchorView` 在 mouseDragged 超阈值时经卡片
-    /// 回调调用。必须在主线程、且 `event` 为当前手势的 mouseDown/mouseDragged
-    /// 事件（`beginDraggingSession` 的硬性要求）。
+    /// Called once a card drag passes its threshold. `event` must be the
+    /// gesture's current mouse-down/dragged event, as
+    /// `beginDraggingSession` requires.
     func beginDrag(contents: DragOutContents,
                    originatingItemID: UUID,
                    from sourceView: NSView,
                    event: NSEvent) {
-        // 练习 token 绝不能搭便车混进普通多选拖拽：从练习卡起拖时只拖
-        // 练习卡；从普通卡起拖时剔除可能被选中的练习卡。这样教程目标接受
-        // token 时不会连带触发其他用户卡片的移除/最近项目策略。
+        // Dragging the exercise card drags only it; dragging any other card
+        // leaves a selected exercise card behind. A tutorial target that
+        // accepts the token then never applies removal/recents to user cards.
         let tutorialIDs = Set(contents.items.compactMap { item in
             tutorialTokenForItem(item.id) == nil ? nil : item.id
         })
@@ -139,7 +136,7 @@ final class DragOutController {
             deliveryCoordinator.noteSessionEnded(id: sessionID, accepted: false)
             return
         }
-        // 每次会话独立的 NSDraggingSource：无复用状态，结果处理只依赖本次 contents。
+        // One source per session: its result handling depends only on these contents.
         let source = DragSessionController(contents: effectiveContents,
                                            sessionID: sessionID,
                                            store: store,
@@ -277,14 +274,11 @@ final class DragOutController {
     }
 }
 
-
 private struct DragOutControllerEnvironmentKey: EnvironmentKey {
-    // nil 缺省：Preview 与单测中拖拽关闭（点击仍工作）。
     static var defaultValue: DragOutController? { nil }
 }
 
 extension EnvironmentValues {
-    /// 拖出总控；由 ShelfWindowController 在面板内容根上注入。
     var dragOutController: DragOutController? {
         get { self[DragOutControllerEnvironmentKey.self] }
         set { self[DragOutControllerEnvironmentKey.self] = newValue }

@@ -1,20 +1,6 @@
 import AppKit
 import OSLog
 
-/// `NSFilePromiseReceiver` 处理：接收「放下后才生成文件」的拖入
-/// （Photos、Safari 大图等来源），物化到 `TempFileService` 管理的目录，
-/// 完成后生成 `ShelfItem`（kind 按 UTType 推断）+ 安全书签，回调到 MainActor
-/// 入架。
-///
-/// 流程：performDragOperation 内同步取出 receiver（必须在拖拽会话内读取），
-/// 为每个 receiver 建独立 staging 子目录 → `receivePromisedFiles` 在
-/// `OperationQueue`（.userInitiated，不阻塞主线程）后台写入 → 完成后把文件
-/// 先把 staging 与预定物化路径写入 `PendingImportJournal` → 移动到物化目录
-/// 顶层 → 创建 bookmark + ShelfItem → MainActor 同步持久化回调。只有 shelf
-/// 快照落盘后才删除恢复记录。
-///
-/// 错误路径：接收阶段失败提示从来源重拖；一旦恢复记录已建立，移文件、书签
-/// 或 shelf 持久化失败都会保留文件，并提供 Storage 中的真实重试入口。
 @MainActor
 final class FilePromiseReceiver {
     private let tempFileService: TempFileService
@@ -34,16 +20,10 @@ final class FilePromiseReceiver {
         self.transferStore = transferStore
         self.operationQueue = OperationQueue()
         self.operationQueue.name = "com.weijue.OpenYoink.FilePromiseReceive"
-        // 计划 §2.3：promise 写入放后台队列，QoS userInitiated。
+        // Promise writes run in the background at user-initiated QoS.
         self.operationQueue.qualityOfService = .userInitiated
     }
 
-    /// 从拖入 pasteboard 取出全部 promise receiver 并派发物化。
-    ///
-    /// 必须在拖拽会话内调用（`performDragOperation` 中）——会话结束后
-    /// pasteboard 与 receiver 的 `fileTypes` 均不再可靠。返回成功派发的
-    /// receiver 数量；返回 0 表示声明了 promise 类型但读不到对象，调用方应
-    /// 按优先级回退到 fileURL 等后续类别。
     func receivePromises(from pasteboard: NSPasteboard,
                          taskID: UUID,
                          onItemReady: @escaping @MainActor (ShelfItem) -> Bool) -> Int {
@@ -55,13 +35,8 @@ final class FilePromiseReceiver {
         }
 
         var dispatched = 0
-        // 评审 P1 修复：同一批拖入的所有 receiver 共享**一个** staging 目录
-        // （NSFilePromiseReceiver.h:25「All file promisesReceiver's in a drag
-        // must specify the same destination location」）。此前每个 receiver
-        // 独立目录 + 回调即删——但 reader 回调是**逐文件**触发的（同一
-        // receiver 可交付多个文件），首个文件完成就删目录会把后续文件
-        // 仍需写入的位置抽空。现在共享目录且不在回调中清理：文件一到即
-        // 移往物化目录顶层；staging 残留由启动时的按龄清理兜底。
+        // （NSFilePromiseReceiver.h:25All file promisesReceiver's in a drag
+
         let stagingURL: URL
         do {
             stagingURL = try tempFileService.createPromiseStagingDirectory()
@@ -105,15 +80,15 @@ final class FilePromiseReceiver {
             )
         }
         for receiver in receivers {
-            // `fileTypes` 仅在拖拽会话内有效，立即提取为值类型。
+            // `fileTypes` is valid only within the drag session; copy it now.
             let promisedTypes = receiver.fileTypes
             dispatched += 1
-            // 回调在 operationQueue（后台）执行：只捕获 Sendable 的服务与值类型，
-            // 不捕获 MainActor 隔离的 self；成功/失败均经闭包内 Task 跳回 MainActor。
-            // 闭包必须显式 `@Sendable`（SE-0420：@Sendable 闭包恒为 nonisolated）——
-            // 否则在 MainActor 上下文形成的闭包会携带 MainActor 隔离，被后台队列
-            // 调用时触发 `_dispatch_assert_queue_fail`（SIGTRAP 闪退：从浏览器
-            // 拖图片/GIF 经 promise 物化时必现）。
+            // The callback runs on the background queue: capture only Sendable
+            // services and values, never the main-actor `self`, and hop back with a
+            // Task. The closure must be explicitly `@Sendable` (SE-0420: @Sendable
+            // closures are nonisolated); otherwise a closure formed on the main actor
+            // inherits its isolation and the background call traps in
+            // `_dispatch_assert_queue_fail` (seen when dragging GIFs from a browser).
             receiver.receivePromisedFiles(
                 atDestination: stagingURL,
                 options: [:],
@@ -149,10 +124,10 @@ final class FilePromiseReceiver {
         return dispatched
     }
 
-    /// 后台物化完成处理（OperationQueue 上下文，非隔离）。
-    /// 成功：移动到物化目录顶层 → kind 推断 + bookmark → completion。
-    /// 失败：记日志 + failure 回调（D10 内联提示）。
-    /// 回调逐文件触发，故**不触碰共享 staging 目录**（清理由启动时按龄兜底）。
+    /// Handles a finished materialization (nonisolated, on the operation queue).
+    /// Success: move to the top of the materialized directory, infer the kind,
+    /// bookmark, complete. Failure: log and call `failure` (an inline notice).
+    /// Fires per file, so the shared staging directory is never touched.
     nonisolated static func handleMaterializedPromise(
         fileURL: URL?,
         error: Error?,
@@ -197,7 +172,7 @@ final class FilePromiseReceiver {
                 ),
                 path: destination.path,
                 bookmark: bookmark,
-                // 显示名用 promise 来源提供的原始文件名，不带 UUID 前缀。
+                // Display the original file name the source provided, without the UUID prefix.
                 displayName: record.displayName
             )
             completion(item, record.id)

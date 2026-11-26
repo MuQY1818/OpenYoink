@@ -45,15 +45,11 @@ final class ShelfKeyboardRouter {
         self.withUserRemoval = withUserRemoval
     }
 
-    // MARK: - Item keyboard handling (S6)
+    // MARK: - Item keyboard handling
 
     /// Complete keyboard path for the visible shelf. Focus remains independent
     /// from multi-selection; only Shift+Arrow extends selection.
-    ///
-    /// 事件到达前提：卡片单击让面板成为 key（CardDragSourceAnchorView.mouseUp）。
-    /// 带修饰键的组合一律放行（⌘⇧Space 等由 AppDelegate 的快捷键监听处理）；
-    /// QL 面板为 key 时键盘事件由 QL 自己接管（空格/Esc 关闭、方向键翻页），
-    /// 不会到达这里。
+
     func handle(_ event: NSEvent, in sourcePanel: ShelfPanel, isIsland: Bool, module: IslandModuleID) -> Bool {
         if let editor = sourcePanel.firstResponder as? NSTextView, editor.isFieldEditor { return false }
         var modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -68,17 +64,13 @@ final class ShelfKeyboardRouter {
             return false
         }
 
-        if isIsland,
-           module == .clipboard {
-            if event.keyCode == 53, modifiers.isEmpty {
-                collapseIsland(true)
-                return true
-            }
-            return false
+        if event.keyCode == 53, modifiers.isEmpty {
+            handleEscape(isIsland: isIsland, module: module)
+            return true
         }
 
-        if isIsland,
-           module == .folders {
+        if isIsland, module == .clipboard { return false }
+        if isIsland, module == .folders {
             return handleFavoriteFoldersKeyDown(event, modifiers: modifiers)
         }
 
@@ -136,32 +128,30 @@ final class ShelfKeyboardRouter {
             return openFocusedItem()
         case 51, 117: // Delete / Forward Delete
             return withUserRemoval { removeKeyboardItems() }
-        case 53: // Escape
-            if quickLookCoordinator.isPreviewing {
-                quickLookCoordinator.dismiss()
-                return true
-            }
-            if interaction.isSelecting {
-                interaction.isSelecting = false
-                store.clearSelection()
-                return true
-            }
-            if isIsland {
-                collapseIsland(!NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-                return true
-            }
-            if interaction.expandedStackID != nil {
-                interaction.exitStack()
-                return true
-            }
-            if !store.selection.isEmpty {
-                store.clearSelection()
-                return true
-            }
-            hideShelf(!NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-            return true
         default:
             return false
+        }
+    }
+
+    private func handleEscape(isIsland: Bool, module: IslandModuleID) {
+        let animated = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if isIsland, module == .clipboard {
+            collapseIsland(true)
+        } else if isIsland, module == .folders {
+            collapseIsland(animated)
+        } else if quickLookCoordinator.isPreviewing {
+            quickLookCoordinator.dismiss()
+        } else if interaction.isSelecting {
+            interaction.isSelecting = false
+            store.clearSelection()
+        } else if isIsland {
+            collapseIsland(animated)
+        } else if interaction.expandedStackID != nil {
+            interaction.exitStack()
+        } else if !store.selection.isEmpty {
+            store.clearSelection()
+        } else {
+            hideShelf(animated)
         }
     }
 
@@ -177,9 +167,6 @@ final class ShelfKeyboardRouter {
         case 126: return favoriteFoldersStore.selectRelative(delta: -2)
         case 36, 76: return favoriteFoldersStore.openSelected()
         case 51, 117: return favoriteFoldersStore.removeSelected()
-        case 53:
-            collapseIsland(!NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-            return true
         default:
             return false
         }

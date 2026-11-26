@@ -2,8 +2,8 @@ import CoreGraphics
 import XCTest
 @testable import OpenYoink
 
-/// UX1 拖拽开始状态机（DragGestureTracker）与自动唤出会话裁决
-/// （DragAutoShowSession）的纯逻辑单测。
+/// The drag-start state machine (DragGestureTracker) and the auto-show
+/// session's decisions (DragAutoShowSession).
 @MainActor
 final class DragStartMonitorTests: XCTestCase {
     // MARK: - DragGestureTracker
@@ -11,9 +11,9 @@ final class DragStartMonitorTests: XCTestCase {
     func testClickWithoutMovement_neverStartsDrag() {
         var tracker = DragGestureTracker(threshold: 8)
         tracker.mouseDown(at: CGPoint(x: 100, y: 100))
-        XCTAssertFalse(tracker.mouseDragged(to: CGPoint(x: 103, y: 102))) // 位移 ~3.6 < 8
+        XCTAssertFalse(tracker.mouseDragged(to: CGPoint(x: 103, y: 102))) // ~3.6 < 8
         XCTAssertEqual(tracker.phase, .pressing)
-        // 普通点击抬起：不报告拖拽结束。
+        // A plain click: no drag end reported.
         XCTAssertFalse(tracker.mouseUp())
         XCTAssertEqual(tracker.phase, .idle)
     }
@@ -22,18 +22,19 @@ final class DragStartMonitorTests: XCTestCase {
         var tracker = DragGestureTracker(threshold: 8)
         tracker.mouseDown(at: CGPoint(x: 100, y: 100))
         XCTAssertFalse(tracker.mouseDragged(to: CGPoint(x: 105, y: 100))) // 5pt < 8
-        // 恰好到达阈值（>= 判定）即确认。
+        // Exactly at the threshold (>=) confirms.
         XCTAssertTrue(tracker.mouseDragged(to: CGPoint(x: 108, y: 100)))
         XCTAssertEqual(tracker.phase, .dragging)
-        // 确认后继续移动不重复回调。
+        // Moving on after confirmation doesn't call back again.
         XCTAssertFalse(tracker.mouseDragged(to: CGPoint(x: 200, y: 200)))
-        // 抬起报告拖拽结束，随后复位。
+        // Mouse-up reports the drag end, then resets.
         XCTAssertTrue(tracker.mouseUp())
         XCTAssertEqual(tracker.phase, .idle)
     }
 
     func testDisplacementIsMeasuredFromOrigin_notPathLength() {
-        // 绕小圈抖动：路径长度早已超过阈值，但与起点位移从未达到 → 不触发。
+        // Circling in place: the path is long, but the distance from the start never
+// reaches the threshold → no trigger.
         var tracker = DragGestureTracker(threshold: 8)
         tracker.mouseDown(at: CGPoint(x: 100, y: 100))
         XCTAssertFalse(tracker.mouseDragged(to: CGPoint(x: 104, y: 100)))
@@ -51,7 +52,7 @@ final class DragStartMonitorTests: XCTestCase {
     }
 
     func testNewMouseDown_rearmsAfterMissedMouseUp() {
-        // 上一轮抬起事件丢失（防御）：新按下重置会话，可再次触发。
+        // The previous mouse-up was lost (defensive): a new press resets, so it can trigger again.
         var tracker = DragGestureTracker(threshold: 8)
         tracker.mouseDown(at: .zero)
         XCTAssertTrue(tracker.mouseDragged(to: CGPoint(x: 20, y: 0)))
@@ -241,7 +242,7 @@ final class DragStartMonitorTests: XCTestCase {
         session.dragBegan()
         session.markShownAutomatically()
         XCTAssertTrue(session.dragEnded())
-        // 结束后会话复位：再次抬起不重复请求。
+        // The session resets after ending: another mouse-up requests nothing.
         XCTAssertFalse(session.dragEnded())
     }
 
@@ -383,7 +384,8 @@ final class DragStartMonitorTests: XCTestCase {
     }
 
     func testAutoShow_markedOutsideDrag_isIgnored() {
-        // 非拖拽会话中的唤出（快捷键/剪贴板保存）是显式意图，不参与自动收回。
+        // Showing outside a drag (hot key, clipboard save) is explicit and never
+// auto-hidden.
         var session = DragAutoShowSession()
         session.markShownAutomatically()
         XCTAssertFalse(session.shownAutomatically)
@@ -391,10 +393,11 @@ final class DragStartMonitorTests: XCTestCase {
     }
 
     func testAutoShow_shelfVisibleBeforeDrag_staysUntouched() {
-        // 拖拽前 shelf 已可见（手动唤出）：调用方不打标记，拖结束不收回。
+        // The shelf was visible before the drag (opened by hand): the caller
+// doesn't mark it, and it stays after the drag.
         var session = DragAutoShowSession()
         session.dragBegan()
-        // （无 markShownAutomatically —— 对应 AppDelegate 的可见性守卫）
+        // (no markShownAutomatically, matching the visibility guard in the caller)
         XCTAssertFalse(session.dragEnded())
     }
 
@@ -403,7 +406,7 @@ final class DragStartMonitorTests: XCTestCase {
         session.dragBegan()
         session.markShownAutomatically()
         session.noteImport()
-        // 新一轮拖拽重置全部标记：本轮无导入的自动唤出仍会收回。
+        // A new drag resets every mark: a drag-shown shelf with no import still hides.
         session.dragBegan()
         session.markShownAutomatically()
         XCTAssertTrue(session.dragEnded())

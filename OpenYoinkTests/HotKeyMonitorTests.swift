@@ -3,9 +3,9 @@ import Carbon
 import XCTest
 @testable import OpenYoink
 
-/// HotKeyMonitor 的纯逻辑：快捷键 → Carbon 修饰键位映射。
-/// （Carbon RegisterEventHotKey 注册与 NSEvent 全局事件分发依赖运行中的
-/// WindowServer / 应用事件循环，无法无头单测；见 HotKeyMonitor 文档注释。）
+/// HotKeyMonitor's pure logic: shortcut → Carbon modifier bits. (Carbon
+/// registration and global event dispatch need a running WindowServer and
+/// event loop, so they can't run headless; see HotKeyMonitor.)
 final class HotKeyMonitorTests: XCTestCase {
     func testCarbonEventsReachOnlyTheirRegisteredShortcut() {
         let shelf = EventHotKeyID(signature: 0x4F59_484B, id: 1)
@@ -81,7 +81,7 @@ final class HotKeyMonitorTests: XCTestCase {
         XCTAssertFalse(HotKeyMonitor.matches(missingOption, shortcut: expected))
     }
 
-    // MARK: - UX3 DoublePressDiscriminator
+    // MARK: - DoublePressDiscriminator
 
     func testDoublePress_secondPressInsideWindow_isDouble() {
         var discriminator = DoublePressDiscriminator(window: 0.3)
@@ -94,14 +94,14 @@ final class HotKeyMonitorTests: XCTestCase {
     func testDoublePress_secondPressOutsideWindow_startsNewPending() {
         var discriminator = DoublePressDiscriminator(window: 0.3)
         XCTAssertEqual(discriminator.press(at: 10.0), .firstPressPending)
-        // 窗外第二次按下 → 不是双击，而是新一轮待确认单击。
+        // A second press outside the window isn't a double click but a new pending click.
         XCTAssertEqual(discriminator.press(at: 10.5), .firstPressPending)
         XCTAssertTrue(discriminator.hasPending)
     }
 
     func testDoublePress_exactWindowBoundary_countsAsDouble() {
-        // 边界值取可精确表示的二进制小数（0.5/1.5），避免 0.3 这类浮点
-        // 误差淹没「恰好等于窗口」的判定（判别器用 <= window）。
+        // Boundaries use exactly representable binary fractions (0.5/1.5), so float
+        // error like 0.3's can't hide "exactly at the window" (the check is <= window).
         var discriminator = DoublePressDiscriminator(window: 0.5)
         XCTAssertEqual(discriminator.press(at: 1.0), .firstPressPending)
         XCTAssertEqual(discriminator.press(at: 1.5), .doublePress)
@@ -110,9 +110,9 @@ final class HotKeyMonitorTests: XCTestCase {
     func testDoublePress_confirmedSingle_rearmsForNextPress() {
         var discriminator = DoublePressDiscriminator(window: 0.3)
         XCTAssertEqual(discriminator.press(at: 1.0), .firstPressPending)
-        discriminator.confirmPending() // 延迟任务到期：单击成立
+        discriminator.confirmPending() // the delay fired: a single click
         XCTAssertFalse(discriminator.hasPending)
-        // 下一次按下是新的首次（与上次单击无关）。
+        // The next press is a new first press, unrelated to the last click.
         XCTAssertEqual(discriminator.press(at: 1.2), .firstPressPending)
     }
 
@@ -120,7 +120,7 @@ final class HotKeyMonitorTests: XCTestCase {
         var discriminator = DoublePressDiscriminator(window: 0.3)
         XCTAssertEqual(discriminator.press(at: 0.0), .firstPressPending)
         XCTAssertEqual(discriminator.press(at: 0.2), .doublePress)
-        // 三连击的第三下：重新进入待确认（等待可能的第四下）。
+        // The third press of a triple: pending again (a fourth may follow).
         XCTAssertEqual(discriminator.press(at: 0.4), .firstPressPending)
     }
 

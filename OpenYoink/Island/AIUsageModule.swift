@@ -588,9 +588,9 @@ final class AIUsageModuleStore: IslandModuleRuntime {
         self.compactMetric = compactMetric
         self.alertsEnabled = alertsEnabled
         self.now = now
-        var captured: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { captured = $0 }
-        continuation = captured!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     deinit {

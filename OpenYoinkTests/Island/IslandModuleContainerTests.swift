@@ -87,9 +87,9 @@ private final class RuntimeSpy: IslandModuleRuntime {
     init(id: IslandModuleID) {
         descriptor = .init(id: id, title: id.rawValue,
                            systemImage: "circle", order: 0)
-        var captured: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { captured = $0 }
-        continuation = captured!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     func start() { startCount += 1 }

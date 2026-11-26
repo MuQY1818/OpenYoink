@@ -2,10 +2,9 @@ import AppKit
 import OSLog
 import SwiftUI
 
-
-/// 统一记录直接拖出与托管剪切交付：普通项目由 AppKit 会话结果确认；托管
-/// 剪切项目必须同时满足「目标接受会话」与「file promise 已写入」才会离架。
-/// 会话快照也用于失败恢复和运行期文件租约。
+/// the AppKit session result; a managed cut item leaves the shelf only once
+/// the target accepted the session *and* its file promise was written. The
+/// session snapshots also drive failure recovery and runtime file leases.
 @MainActor
 final class DeliveryCoordinator {
     private enum PromiseState {

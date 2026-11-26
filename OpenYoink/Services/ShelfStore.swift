@@ -102,12 +102,12 @@ final class ShelfStore {
         }
     }
 
-    /// UX5/UX6: items 变更回调（每次触发持久化的项目变更后调用 —— 增、删、
-    /// 移动、stack 操作、update）。ShelfWindowController 据此做紧凑高度动画
-    /// 与空架自动隐藏；选择集变更不触发（不影响布局）。测试可不设置。
+    /// Called after every persisted item change (add, remove, move, stack
+    /// operations, update), for the compact-height animation and hiding an empty
+    /// shelf. Selection changes don't call it (they don't affect layout).
     var onItemsDidChange: (@MainActor () -> Void)?
 
-    /// Selection controls the v1.3 quick-action row and therefore affects the
+    /// Selection controls the quick-action row and therefore affects the
     /// compact panel height even though it is never persisted.
     var onSelectionDidChange: (@MainActor () -> Void)?
 
@@ -156,8 +156,7 @@ final class ShelfStore {
     }
 
     /// Inserts multiple items starting at `index` (clamped to bounds),
-    /// preserving their order; nil appends (S10/C6: drop-in at the indicated
-    /// insertion position).
+    /// preserving their order. A nil index appends to the end.
     func add(contentsOf newItems: [ShelfItem], at index: Int?) {
         guard !newItems.isEmpty else { return }
         let insertionIndex = min(max(index ?? items.count, 0), items.count)
@@ -193,9 +192,6 @@ final class ShelfStore {
         return removed
     }
 
-    /// 先同步持久化“已移除”的完整快照，再更新运行期状态。教程清理等随后
-    /// 会删除应用自有文件的路径必须走这个边界，避免崩溃时 shelf.json 仍
-    /// 引用已经删除的文件。无 persistence 的测试/预览等价于普通移除。
     @discardableResult
     func removeAndPersistNow(ids: Set<UUID>) throws -> [ShelfItem] {
         let removed = items.filter { ids.contains($0.id) }
@@ -291,8 +287,6 @@ final class ShelfStore {
         selection.removeAll()
     }
 
-    /// 用已经成功写入磁盘的恢复快照替换运行期内容。调用方必须先调用
-    /// PersistenceController.saveNow；这里不再安排第二次异步写入。
     func replaceWithPersistedItems(_ restoredItems: [ShelfItem]) {
         removalUndo.removeAll()
         items = restoredItems
@@ -301,6 +295,18 @@ final class ShelfStore {
     }
 
     // MARK: - Stacks
+
+    func canStackSelection(anchoredAt id: UUID) -> Bool {
+        guard selection.count >= 2, selection.contains(id) else { return false }
+        let members = selectedItems
+        return members.count == selection.count && members.allSatisfy { $0.kind != .stack }
+    }
+
+    @discardableResult
+    func stackSelection(anchoredAt id: UUID) -> UUID? {
+        guard canStackSelection(anchoredAt: id) else { return nil }
+        return makeStack(from: selection)
+    }
 
     /// Merges the given top-level items into a stack, preserving their current
     /// display order. The stack takes the position of the first selected item
@@ -347,10 +353,6 @@ final class ShelfStore {
         return true
     }
 
-    /// UX4: 从 stack 中移除一个子项（卡片悬停 ✕）。只移除引用，不删除用户
-    /// 的原始文件。剩余 1 项时 stack 自动解散 —— 原位替换为普通项，选中
-    /// 跟随存活项；剩余 0 项（防御性分支，stack 按构造至少 2 项）时移除
-    /// stack 本身。id 不存在或子项不在该 stack 中时不做任何事，返回 false。
     @discardableResult
     func removeChild(_ childID: UUID, fromStack stackID: UUID) -> Bool {
         guard let index = items.firstIndex(where: { $0.id == stackID }),
@@ -448,11 +450,10 @@ final class ShelfStore {
 
     private func persist() {
         persistence?.scheduleSave(items)
-        // UX5/UX6: 一切会持久化的变更都是 items 变更（选择集不持久化、
-        // 不触发）——高度动画/空架裁决的统一下发点。
+        // Every persisted change is an item change (selection isn't persisted and
+        // doesn't notify): the one place that drives height and empty-shelf decisions.
         onItemsDidChange?()
     }
-
 
     private static func replace(_ replacement: ShelfItem, inside items: inout [ShelfItem]) -> Bool {
         for index in items.indices {

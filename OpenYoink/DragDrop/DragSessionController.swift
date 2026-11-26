@@ -2,8 +2,7 @@ import AppKit
 import OSLog
 import SwiftUI
 
-
-/// 单次拖出会话的 `NSDraggingSource`（每会话一个实例，无跨会话状态）。
+/// The `NSDraggingSource` of one drag-out session.
 @MainActor
 final class DragSessionController: NSObject, NSDraggingSource {
     private let contents: DragOutContents
@@ -21,8 +20,8 @@ final class DragSessionController: NSObject, NSDraggingSource {
     private let settings: SettingsStore
     private let recents: RecentItemsService
     private let delivery: DeliveryCoordinator?
-    /// Tutorial 项由 OnboardingController 在真实目标确认后清理，不受用户的
-    /// 常规拖出策略影响，也绝不能进入「最近项目」。
+    /// Exercise items: onboarding cleans them up once a real target confirms;
+    /// the removal policy and Recent Items never see them.
     private let policyExcludedItemIDs: Set<UUID>
     private let onSuccessfulDrop: (@MainActor () -> Void)?
     private let onSourceDragEnded: (@MainActor () -> Void)?
@@ -54,26 +53,11 @@ final class DragSessionController: NSObject, NSDraggingSource {
         super.init()
     }
 
-    /// 操作掩码：只声明 `.copy`，永不声明 `.move`。
-    ///
-    /// 若声明 .move，Finder 目标在默认或修饰键组合下会执行「移动」—— 复制到
-    /// 目标后删除原位置文件，违背「任何情况下都不删除用户原文件」（计划 §1.2；
-    /// 调研报告 7.2 风险 C：最终语义由源掩码、目标返回值与修饰键共同决定，
-    /// 源侧收窄是最可靠的边界）。只给 .copy 后拖到 Finder 永远是复制，
-    /// ⌥/⌘ 不能把它升级为移动。
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         .copy
     }
 
-    /// 会话结束处理：仅当实际 drop 发生（`operation` 非空；取消/目标拒绝为空）
-    /// 才按设置策略处理 —— 移除顶层项目并记入最近历史、原样保留，或（.ask）
-    /// 弹确认框。成功 drop 后先回调 onSuccessfulDrop（autoHide 接线处）。
-    ///
-    /// F-05: 剪切（isCut）项不参与上述策略 —— 剪切语义即移走，交付确认
-    /// （promise 写入完成）后由 `DeliveryCoordinator` 移出 shelf 并删除
-    /// 保管副本，不受 dragOutRemovalPolicy 影响。会话取消（operation == []）
-    /// 时 cut 项与保管文件原样保留。
     func draggingSession(_ session: NSDraggingSession,
                          endedAt screenPoint: NSPoint,
                          operation: NSDragOperation) {
@@ -114,9 +98,9 @@ final class DragSessionController: NSObject, NSDraggingSource {
         acceptedByShelfReorder = true
     }
 
-    /// F-05: 剔除剪切项后的顶层 id 集合（策略移除/询问只作用于非剪切项）。
-    /// 若不剔除，.remove 会在交付确认到达前就把待交付的 cut 项移架，保管
-    /// 文件成孤儿（下次启动被 cleanupOrphans 删除），移动中的数据丢失。
+    /// Top-level IDs the policy may remove. Removing a cut item before its
+    /// delivery is confirmed would orphan the managed copy, and the next
+    /// launch's orphan cleanup would delete data that is still in transit.
     private var nonCutTopLevelIDs: Set<UUID> {
         contents.topLevelIDs.filter { id in
             !policyExcludedItemIDs.contains(id)
@@ -124,16 +108,14 @@ final class DragSessionController: NSObject, NSDraggingSource {
         }
     }
 
-    /// F-05: 剔除剪切项后的展开项目集合（最近历史只记非剪切项；剪切项在
-    /// 交付确认时由 DeliveryCoordinator 单独记录）。
     private var nonCutFlattenedItems: [ShelfItem] {
         contents.items.flattened.filter {
             !$0.isCut && !policyExcludedItemIDs.contains($0.id)
         }
     }
 
-    /// 移除顶层项目并记入最近历史（.remove 策略与 .ask 确认移除共用）。
-    /// 浮层子项拖出 topLevelIDs 为空、不从 shelf 移除，但同样记入历史。
+    /// Shared by `.remove` and a confirmed `.ask`. Children dragged out of a
+    /// stack stay on the shelf but are still recorded.
     private func removeDraggedItems() {
         let ids = nonCutTopLevelIDs
         if !ids.isEmpty {
@@ -142,15 +124,6 @@ final class DragSessionController: NSObject, NSDraggingSource {
         recents.record(nonCutFlattenedItems)
     }
 
-    /// S8: .ask 策略 —— 成功拖出后询问是否从 shelf 移除；勾选
-    /// 「Don't ask again」则把本次选择写回为 keep/remove 策略。
-    /// F-05: 只问非剪切项（剪切项交付后自动离架，无需询问）。
-    ///
-    /// LSUIElement 注意点：应用无 Dock 且平时处于非活跃状态，弹 NSAlert
-    /// 前必须 `NSApp.activate(ignoringOtherApps:)` 把应用提到前台，否则
-    /// 对话框会落在其他应用窗口之后、看起来「什么都没发生」。
-    /// runModal 是应用级模态：拖出会话此时已结束，阻塞主线程等待回答是
-    /// 可接受的，也是「每次询问」语义本身所需。
     private func askWhetherToRemove() {
         let itemCount = nonCutTopLevelIDs.isEmpty
             ? nonCutFlattenedItems.count
@@ -182,13 +155,10 @@ final class DragSessionController: NSObject, NSDraggingSource {
     }
 }
 
-/// S8: .ask 策略确认框的裁决（纯逻辑，单测覆盖；NSAlert 交互本身无法
-/// 无头测试）。「不再询问」勾选时把本次选择固化为后续策略。
 enum DragOutRemovalDecision {
     struct Verdict: Equatable, Sendable {
-        /// 本次是否从 shelf 移除。
         var shouldRemove: Bool
-        /// 需要写回 SettingsStore 的固化策略；未勾选「不再询问」为 nil。
+        /// Set when "Don't ask again" was checked.
         var policyToPersist: SettingsStore.DragOutRemovalPolicy?
     }
 

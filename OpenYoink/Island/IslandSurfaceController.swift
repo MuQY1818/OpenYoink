@@ -33,7 +33,7 @@ final class IslandSurfaceController: NSObject {
     )
     private var islandHoverTask: Task<Void, Never>?
     private var islandLayoutTask: Task<Void, Never>?
-    /// Floating Island idle dot / hidden mode (issue #11).
+    /// Floating Island idle dot / hidden mode.
     private var isFloatingIslandRevealed = false
     private var floatingConcealTask: Task<Void, Never>?
     private var floatingShrinkTask: Task<Void, Never>?
@@ -138,7 +138,6 @@ final class IslandSurfaceController: NSObject {
             panel.orderOut(nil)
         }
     }
-
 
     func collapseIsland(animated: Bool = true) {
         guard settings.islandEnabled else { return }

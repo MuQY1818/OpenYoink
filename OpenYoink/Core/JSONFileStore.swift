@@ -176,8 +176,8 @@ struct JSONFileStore<Document: Codable & Sendable>: Sendable {
     /// Moves an unreadable file aside so the next write starts fresh while the
     /// damaged data stays available for manual recovery.
     @discardableResult
-    func quarantine(logger: Logger) -> URL? {
-        let stamp = JSONDateStyle.iso8601Formatter().string(from: Date())
+    func quarantine(logger: Logger, suffix: String? = nil) -> URL? {
+        let stamp = suffix ?? JSONDateStyle.iso8601Formatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
         let destination = directoryURL.appendingPathComponent(quarantinePrefix + stamp)
         do {

@@ -52,7 +52,7 @@ final class OnboardingSessionStoreTests: XCTestCase {
         try store.discard(record)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.path),
-                      "单个 session 清理只删除 UUID 子目录和记录，根目录可以保留")
+                      "cleaning up one session deletes only its UUID directory and record; the root may stay")
         XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
     }
 

@@ -20,7 +20,6 @@ extension ShelfWindowController {
         if presentationStyle == .island {
             panel.appearance = NSAppearance(named: .darkAqua)
         }
-        // S4: DragContainerView（NSDraggingDestination）包裹 hosting 视图。
         let hostingController = NSHostingController(
             rootView: ShelfPresentationRootView(
                 presentationStyle: presentationStyle,
@@ -50,15 +49,14 @@ extension ShelfWindowController {
                 .environment(favoriteFolderDropCoordinator)
                 .environment(clipboardHistoryStore)
                 .environment(islandModules.recentDownloadsStore)
-                .environment(\.bookmarkService, bookmarkService)
+                .environment(\.shelfFileServices,
+                              ShelfFileServices(bookmarks: bookmarkService, tempFiles: tempFileService))
                 .environment(\.dragOutController, dragOutController)
                 .environment(\.quickLookCoordinator, quickLookCoordinator)
-                .environment(\.tempFileService, tempFileService)
                 .environment(\.itemRecoveryController, itemRecoveryController)
                 .environment(\.shelfActionRunner, shelfActionRunner)
                 .environment(\.accessibilityAnnouncementCenter,
                               accessibilityAnnouncementCenter)
-                // 任务三：内缘收起把手点击 → 走标准 hideShelf 滑出动画。
                 .environment(\.shelfRevealState,
                              presentationStyle == .classic ? classicReveal : nil)
                 .environment(\.shelfHideAction, { [weak self] in
@@ -72,7 +70,7 @@ extension ShelfWindowController {
                     guard let panel else { return }
                     panel.makeKey()
                     if let editor = panel.firstResponder as? NSTextView, editor.isFieldEditor {
-                        panel.makeFirstResponder(nil)
+                        _ = panel.makeFirstResponder(nil)
                     }
                 })
                 .environment(\.shelfUserRemovalAction, { [weak self] action in
@@ -116,8 +114,7 @@ extension ShelfWindowController {
         )
         panel.contentView?.wantsLayer = true
         panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
-        // S6: 键盘链路入口 —— 卡片单击已让面板成为 key，未被内容消费的
-        // keyDown 到达这里（空格/Delete/Esc，见 handleItemKeyDown）。
+
         panel.onKeyDown = { [weak self] event in
             guard let self else { return false }
             return keyboardRouter.handle(event, in: panel, isIsland: presentationStyle == .island,

@@ -13,8 +13,11 @@ struct ShelfDropHandler {
     /// it), except the current onboarding exercise. Any declared type is
     /// accepted: the fallback chain can materialize almost anything.
     func accepts(_ sender: NSDraggingInfo) -> Bool {
-        let pasteboard = sender.draggingPasteboard
-        guard sender.draggingSource == nil || coordinator.acceptsInternalTutorialDrag(pasteboard) else {
+        accepts(sender.draggingPasteboard, isInternal: sender.draggingSource != nil)
+    }
+
+    func accepts(_ pasteboard: NSPasteboard, isInternal: Bool) -> Bool {
+        guard !isInternal || isTutorialDrag(pasteboard) else {
             return false
         }
         return PasteboardTypes.hasImportableContent(in: pasteboard.types ?? [])
@@ -26,16 +29,19 @@ struct ShelfDropHandler {
 
     /// Reads the live modifier keys: ⌘ moves files (never the onboarding
     /// exercise, which the app itself created).
-    func mode(for pasteboard: NSPasteboard) -> DropInMode {
-        guard !coordinator.acceptsInternalTutorialDrag(pasteboard) else { return .copy }
-        return DropImportCoordinator.dropMode(for: pasteboard, modifiers: NSEvent.modifierFlags)
+    func mode(for pasteboard: NSPasteboard, modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) -> DropInMode {
+        guard !isTutorialDrag(pasteboard) else { return .copy }
+        return DropImportCoordinator.dropMode(for: pasteboard, modifiers: modifiers)
     }
 
     /// Imports a drop. Synchronous items go in at `insertionIndex` (or the
     /// end); asynchronously materialized ones are appended as they finish.
     func performDrop(_ sender: NSDraggingInfo, at insertionIndex: Int? = nil) -> Bool {
-        guard accepts(sender) else { return false }
-        let pasteboard = sender.draggingPasteboard
+        performDrop(from: sender.draggingPasteboard, isInternal: sender.draggingSource != nil, at: insertionIndex)
+    }
+
+    func performDrop(from pasteboard: NSPasteboard, isInternal: Bool, at insertionIndex: Int? = nil) -> Bool {
+        guard accepts(pasteboard, isInternal: isInternal) else { return false }
         let store = store
         let coordinator = coordinator
         let result = coordinator.importItems(

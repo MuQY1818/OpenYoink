@@ -79,9 +79,7 @@ enum ShortcutRecorderLogic {
 /// the previous shortcut), Delete/Forward Delete clears (nil), any other
 /// valid combination is saved. All keyDowns are consumed while recording so
 /// nothing leaks into the settings window's other controls.
-///
-/// 本地监听足够且必须：录制时设置窗口是 key window，keyDown 必达本应用；
-/// 全局监听无法消费事件，按键会漏到其他应用。
+
 @MainActor
 @Observable
 final class ShortcutRecorderController {
@@ -149,7 +147,7 @@ final class ShortcutRecorderController {
     }
 }
 
-/// Lightweight shortcut recorder (S8): shows the current combination with
+/// Lightweight shortcut recorder: shows the current combination with
 /// modifier symbols; click to re-record. Visual states: idle capsule,
 /// accent-tinted pulsing capsule while recording.
 struct ShortcutRecorderView: View {

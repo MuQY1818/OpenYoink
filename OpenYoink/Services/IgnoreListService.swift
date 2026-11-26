@@ -1,6 +1,6 @@
 import AppKit
 
-/// Ignore-list matching (plan §2.2): apps in which the shake and edge
+/// Ignore-list matching: apps in which the shake and edge
 /// triggers stay silent. The global hot key is never filtered — it is the
 /// unambiguous main entry point (research report §7.2).
 ///

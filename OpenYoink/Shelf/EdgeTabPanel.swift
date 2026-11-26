@@ -1,11 +1,11 @@
 import AppKit
 
-/// EdgeTab 拉环窗口：贴在屏幕边缘的常驻小长条（shelf 展开时驻点面板下角）。
+/// The edge tab's window: a small resident strip on the screen edge.
 ///
-/// 窗口行为与 `ShelfPanel` 同一套基线：non-activating、borderless、浮动、
-/// 跨 Space、全屏辅助；透明背景，vibrancy/圆角/描边由内容层
-/// （`EdgeTabView`）绘制。显示/隐藏与强调态动画由 `EdgeTabController`
-/// 用 NSAnimationContext 显式驱动。
+/// Same baseline as `ShelfPanel`: non-activating, borderless, floating, on
+/// every Space and beside full-screen apps; transparent, with vibrancy,
+/// corners and stroke drawn by `EdgeTabView`. `EdgeTabController` drives the
+/// show/hide and emphasis animations.
 @MainActor
 final class EdgeTabPanel: NSPanel {
     override init(contentRect: NSRect,
@@ -23,12 +23,12 @@ final class EdgeTabPanel: NSPanel {
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
 
-        // 透明背景：朝内圆角 / vibrancy / 描边由 EdgeTabView 绘制。
+        // Transparent: EdgeTabView draws the inward corners, vibrancy and stroke.
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
 
-        // 淡入淡出与强调态 frame 动画由 EdgeTabController 显式驱动。
+        // Fades and emphasis frame animations are driven by EdgeTabController.
         animationBehavior = .none
     }
 }

@@ -44,7 +44,7 @@ final class ShelfItemTests: XCTestCase {
         XCTAssertEqual(try decoder.decode(ShelfItem.self, from: encoder.encode(link)), link)
     }
 
-    /// F-05: isCut 持久化（顶层与 stack 子项递归）。
+    /// isCut persists (top level and, recursively, stack children).
     func testCodableRoundTrip_isCut_persistsIncludingStackChildren() throws {
         let cutChild = ShelfItem(kind: .file, path: "/tmp/cut.txt", displayName: "cut.txt", isCut: true)
         let stack = ShelfItem(kind: .stack, displayName: "cut.txt", children: [cutChild])
@@ -80,7 +80,7 @@ final class ShelfItemTests: XCTestCase {
         XCTAssertNil(item.urlString)
         XCTAssertNil(item.children)
         XCTAssertFalse(item.isStale)
-        XCTAssertFalse(item.isCut, "旧版 JSON 无 isCut 字段，解码应为 false（F-05 向后兼容）")
+        XCTAssertFalse(item.isCut, "older JSON has no isCut field and decodes as false")
     }
 
     /// `isStale` is runtime-only and must never be written to disk.

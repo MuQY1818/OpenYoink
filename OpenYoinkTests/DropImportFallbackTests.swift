@@ -2,16 +2,10 @@ import AppKit
 import XCTest
 @testable import OpenYoink
 
-/// 任务一「万能拖入」兜底链单测：主链（promise→fileURL→image→url→text）全部
-/// 零产出时，逐 pasteboard item 走 a(uri-list)→b(仅 HTML/RTF)→c(通用数据物化)
-/// →d(字符串兜底) 分支；全部失败 → notice 提示 + 不接收拖放。
-///
-/// 说明（与 prompt 的出入）：「多 item 混合」用两个兜底相关 item（vCard +
-/// 未知二进制）验证逐 item 独立处理；fileURL+text 混合由既有断言
-/// `testImport_fileURLAndText_fileURLWins` 锁定为「主链整板优先」，不能改。
 @MainActor
 final class DropImportFallbackTests: XCTestCase {
-    /// 与 DropImportCoordinatorTests 相同的 fixtures 模式：就地构造、defer 清理。
+    /// Same fixtures pattern as DropImportCoordinatorTests: built in place,
+/// cleaned up with defer.
     @MainActor
     private struct Context {
         let bookmarkService = BookmarkService()
@@ -52,10 +46,6 @@ final class DropImportFallbackTests: XCTestCase {
         { _ in XCTFail("no async materialization expected for this pasteboard") }
     }
 
-    // MARK: - 分支 b：仅 HTML / 仅 RTF
-
-    /// 仅 HTML（无 plain text —— 主链文本阶段读不到）：物化为 .html 文件项，
-    /// displayName 用 NSAttributedString 提取的纯文本首行，落盘内容即原文。
     func testFallback_htmlOnlyDrop_materializesHTMLFileItem() throws {
         let context = makeContext()
         defer { context.cleanup() }
@@ -74,18 +64,19 @@ final class DropImportFallbackTests: XCTestCase {
         let path = try XCTUnwrap(item.path)
         XCTAssertTrue(path.hasPrefix(context.tempFileService.directoryURL.path))
         XCTAssertEqual(URL(fileURLWithPath: path).pathExtension, "html")
-        // 落盘原文不变 —— 拖出到 Pages/浏览器仍是富文本。
+        // The original is written unchanged, so dragging it to Pages or a browser
+// keeps it rich.
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), html)
     }
 
-    /// 仅 RTF 且系统桥接的 plain-text 转换不可用（探针：有效 RTF 会被
-    /// pasteboard 自动桥接出 utf8/utf16 plain-text flavor，由主链文本阶段
-    /// 产出文本项 —— 那是既有行为；本用例覆盖桥接失败时的 b 分支）：
-    /// 物化为 .rtf 文件项，提取不出纯文本时用本地化兜底名。
+    /// RTF only, with the system's plain-text bridge failing (valid RTF gets
+    /// bridged utf8/utf16 flavors and becomes text in the main chain; this
+    /// covers branch b when the bridge fails): becomes an .rtf file, with the
+    /// localized fallback name when no text can be extracted.
     func testFallback_rtfWithoutPlainTextBridge_materializesRTFFileItem() throws {
         let context = makeContext()
         defer { context.cleanup() }
-        let rtf = Data("not really rtf".utf8) // 无效 RTF：桥接转换读取时失败（探针实测）
+        let rtf = Data("not really rtf".utf8) // invalid RTF: the bridge fails when read
         let pasteboard = makePasteboard()
         pasteboard.declareTypes([PasteboardTypes.rtf], owner: nil)
         pasteboard.setData(rtf, forType: PasteboardTypes.rtf)
@@ -100,7 +91,8 @@ final class DropImportFallbackTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), rtf)
     }
 
-    /// HTML 提取不出纯文本（纯标签/图片）时回退本地化兜底名。
+    /// HTML with no extractable text (only tags or images) gets the localized
+/// fallback name.
     func testFallback_htmlWithoutExtractableText_usesLocalizedFallbackName() throws {
         let context = makeContext()
         defer { context.cleanup() }
@@ -114,10 +106,6 @@ final class DropImportFallbackTests: XCTestCase {
         XCTAssertEqual(item.displayName, String(localized: "Dropped HTML") + ".html")
     }
 
-    // MARK: - 分支 a：text/uri-list
-
-    /// uri-list（pasteboard 级 flavor；# 注释行与空行跳过，每行一个 URL 项）。
-    /// 附带验证去重：item 级的 dyn.* 桥接投影不会再经 d 分支产出重复的文本项。
     func testFallback_uriList_producesURLItemPerLine() throws {
         let context = makeContext()
         defer { context.cleanup() }
@@ -134,9 +122,7 @@ final class DropImportFallbackTests: XCTestCase {
         XCTAssertEqual(result.items.map(\.displayName), ["a.com", "b.com"])
     }
 
-    // MARK: - 分支 c：通用数据物化
-
-    /// vCard 数据：tier1（带 preferredFilenameExtension 的具体 UTI）→ .vcf 文件项。
+    /// vCard data: tier 1 (a concrete UTI with an extension) → a .vcf file.
     func testFallback_vCardData_materializesVCFFileItem() async throws {
         let context = makeContext()
         defer { context.cleanup() }
@@ -166,9 +152,6 @@ final class DropImportFallbackTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), vcf)
     }
 
-    /// 未声明的自定义类型（UTType 解析为 nil）→ tier3，物化为 .dat，内容保留。
-    /// payload 含 NUL/控制字节：保证即使 `string(forType:)` 做有损解码也
-    /// 通不过 `isMeaningfulText` 门槛（探针：纯可打印字节会被解码成字符串）。
     func testFallback_unknownBinaryData_materializesDatFileItem() async throws {
         let context = makeContext()
         defer { context.cleanup() }
@@ -196,9 +179,7 @@ final class DropImportFallbackTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), blob)
     }
 
-    // MARK: - 混合多 item（兜底链内逐 item 独立处理）
-
-    /// 一个 vCard item + 一个未知二进制 item：各走 c 分支独立物化，互不影响。
+    /// A vCard item and an unknown binary item each go through branch c on their own.
     func testFallback_mixedFallbackItems_eachMaterializesIndependently() async throws {
         let context = makeContext()
         defer { context.cleanup() }
@@ -228,10 +209,6 @@ final class DropImportFallbackTests: XCTestCase {
         XCTAssertEqual(context.coordinator.transferStore.currentTask?.itemIDs.count, 2)
     }
 
-    // MARK: - 分支 d：字符串兜底
-
-    /// item 声明了奇异的文本类类型（主链 .string 读不到）：d 分支按声明顺序
-    /// 取首个能 string(forType:) 出非空内容的类型产出文本项。
     func testFallback_exoticStringType_producesTextItem() throws {
         let context = makeContext()
         defer { context.cleanup() }
@@ -248,16 +225,14 @@ final class DropImportFallbackTests: XCTestCase {
         XCTAssertEqual(item.displayName, "exotic payload")
     }
 
-    // MARK: - 分支 e：零内容
-
-    /// 声明了类型但读不出任何内容：逐项日志（人工核查），整次零产出 →
-    /// 不接收拖放 + notice 提示（双语键见 Localizable.xcstrings）。
+    /// Types declared but nothing readable: every item is logged, nothing comes
+    /// out, so the drop is refused with a notice.
     func testFallback_itemWithNoReadableContent_isUnhandled_andShowsNotice() {
         let context = makeContext()
         defer { context.cleanup() }
         let pasteboard = makePasteboard()
         pasteboard.declareTypes([T("com.openyoink.test.void")], owner: nil)
-        // 不写任何数据 —— 零内容 item。
+        // No data written: an item without content.
 
         let result = context.coordinator.importItems(from: pasteboard, onAsyncItemReady: ignoringAsyncItems())
 

@@ -16,13 +16,7 @@ struct SettingsMigration {
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
-        // UX1 迁移必须在注册默认值之前读取：注册域会让「从未设置」与
-        // 「显式存过 immediate」无法区分（且 NSRegistrationDomain 进程内
-        // 共享，跨 UserDefaults 实例可见）。旧版布尔 edgeTriggerEnabled（悬停
-        // 触发开关）为开且从未持久化过 dragAutoAppearMode → 迁移为
-        // .edgeOnly（最接近旧意图的贴边唤出），并立即落盘让 UI 反映。
-        // 注意：dragAutoAppearMode 因此刻意不进 register(defaults:) ——
-        // 一旦注册，nil 判定即失效，迁移会永远不会发生。
+
         legacyEdgeTriggerEnabled = defaults.bool(forKey: SettingsKeys.edgeTriggerEnabled)
         persistedDragMode = defaults.string(forKey: SettingsKeys.dragAutoAppearMode)
         // Preserve settings written by an earlier development build of the

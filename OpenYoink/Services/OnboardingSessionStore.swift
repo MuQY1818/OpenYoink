@@ -1,7 +1,5 @@
 import Foundation
 
-/// 快速上手练习的独立、可恢复状态。这里只保存随机令牌、阶段和练习卡 id；
-/// 文件路径始终由 `Tutorial/<session-id>/` 推导，永不信任磁盘 JSON 提供路径。
 final class OnboardingSessionStore {
     struct Record: Codable, Equatable, Sendable {
         enum Phase: String, Codable, Sendable {
@@ -50,8 +48,6 @@ final class OnboardingSessionStore {
         return record
     }
 
-    /// 返回结构和路径均有效的未完成 session。损坏记录只返回 nil；调用方可
-    /// 用 `discardAll()` 清掉完全位于 Tutorial 根目录内的残留后重新开始。
     func load() -> Record? {
         guard let record = try? recordFile.decode(contentsOf: recordFile.url),
               !record.token.isEmpty,
@@ -76,8 +72,8 @@ final class OnboardingSessionStore {
             .appendingPathComponent(Self.tutorialFileName, isDirectory: false)
     }
 
-    /// 删除单个 session。删除前严格验证目录是 Tutorial 根目录的 UUID 直属
-    /// 子目录；任何外部路径都不会被接受。
+    /// Deletes one session, after verifying the directory is a UUID-named direct
+    /// child of the Tutorial root; nothing outside it is accepted.
     func discard(_ record: Record) throws {
         let directory = try sessionDirectory(for: record.sessionID)
         if fileManager.fileExists(atPath: directory.path) {
@@ -88,8 +84,6 @@ final class OnboardingSessionStore {
         }
     }
 
-    /// 清理全部教程残留。目标是构造时固定的 Tutorial 根目录本身，不从
-    /// 持久化数据读取，因此不会扩大到 Application Support 或用户目录。
     func discardAll() throws {
         if fileManager.fileExists(atPath: rootURL.path) {
             try fileManager.removeItem(at: rootURL)

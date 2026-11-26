@@ -1,29 +1,11 @@
 import AppKit
 
-/// EdgeTab：贴在屏幕边缘的常驻拉环（用户确认的交互设计）：
-/// 1. 单击 → 展开/收起 shelf（`onToggleShelf`）；
-/// 2. 拖文件到拉环上 → 复用 `DropImportCoordinator` 导入并唤出 shelf；
-/// 3. 按住拖动 → 沿边上下移动（持久化 `shelfEdgeOffset`）；光标越过屏幕
-///    中线逼近对缘（`ShelfLayoutEngine.shouldFlipSide`）→ 实时换边，抬起时
-///    持久化 `shelfPosition`；
-/// 4. 可见性状态机：`edgeTabEnabled && position != .custom && canShowEdgeTab` ——
-///    拉环只在 shelf 隐藏时出现（拉环与 shelf 是同一元素的两种状态，不同
-///    时可见，用户确认）；shelf 展开后由面板**贴缘侧外缘隐形热区**承担
-///    「同一点位再点收起」（见 ShelfView 的外缘收起热区）；custom 自由
-///    位置模式无拉环（标题栏拖拽已覆盖，见 `WindowDragHandle`）；
-/// 5. 拖拽进行中（`DragStartMonitor.isDragInProgress`）→ accent 描边/浅填充
-///    + 轻微放大（`ShelfLayoutEngine.edgeTabEmphasisFrame`）的投放暗示。
-///
-/// 布局全部为 `ShelfLayoutEngine` 纯函数（frame/offset/换边/强调/驻点
-/// frame），本类只做窗口与状态机；常态位贴附屏判定与 shelf 同规则（鼠标
-/// 所在屏，见 `ShelfWindowController.screen(containing:)`），驻点位取
-/// shelf 面板所在屏（`layoutVisibleFrame`）。
 @MainActor
 final class EdgeTabController: NSObject {
     private static let fadeDuration: TimeInterval = 0.18
     private static let handOffFadeDuration: TimeInterval = 0.08
     private static let emphasisDuration: TimeInterval = 0.15
-    /// 驻点/回位等 frame 迁移时长（与 ShelfWindowController 显隐动画同拍）。
+    /// Frame transitions, in step with the shelf's show/hide.
     private static let moveDuration: TimeInterval = 0.2
 
     private let appState: AppState
@@ -34,16 +16,12 @@ final class EdgeTabController: NSObject {
     private let dragStartMonitor: DragStartMonitor
     private let onToggleShelf: @MainActor () -> Void
     private let onShowShelf: @MainActor () -> Void
-    private let onPreviewSuppressed: @MainActor () -> Void
 
-    /// 拉环正被按住拖动（重定位会话进行中）。镜像到
-    /// `AppState.isEdgeTabBeingDragged` 供拖拽触发器抑制唤出（拖动拉环
-    /// 本身不应唤出 shelf）；本标志仅用于本地强调态与布局门控。
     private var isTabBeingDragged = false
 
-    /// 投放悬停（文件拖拽正悬停在拉环上且内容可导入）。
+    /// A file drag with importable content hovers over the tab.
     private var isDropTargeted = false
-    /// 当前已应用的强调态（用于变化检测，避免重复动画）。
+    /// The emphasis currently applied, to skip repeated animations.
     private var isEmphasized = false
     private var visibilityTransition = ShelfVisibilityTransitionState()
 
@@ -67,7 +45,6 @@ final class EdgeTabController: NSObject {
                                                           height: ShelfLayoutEngine.edgeTabHeight)))
         view.position = settings.shelfPosition
         view.onClick = { [weak self] in
-            self?.onPreviewSuppressed()
             self?.onToggleShelf()
         }
         view.onReposition = { [weak self] offset, position in
@@ -77,15 +54,13 @@ final class EdgeTabController: NSObject {
             guard let self else { return }
             self.isTabBeingDragged = active
             self.appState.setEdgeTabBeingDragged(active)
-            if active { self.onPreviewSuppressed() }
-            // 只置标志、不重估强调态：抬起时拖拽监视器的 isDragInProgress
-            // 要到下一 runloop 才复位，此时重估会闪一帧投放暗示；拖拽结束
-            // 的 observation 回调随后会做最终评估。
+            // Only set the flag: the drag monitor's isDragInProgress resets one run
+            // loop after mouse-up, and re-evaluating now would flash the drop hint.
+            // The drag-end observation does the final evaluation.
         }
         view.onDropTargetChanged = { [weak self] targeted in
             guard let self, self.isDropTargeted != targeted else { return }
             self.isDropTargeted = targeted
-            if targeted { self.onPreviewSuppressed() }
             self.updateEmphasis(animated: true)
         }
         view.acceptsDrop = { [weak self] sender in
@@ -108,8 +83,7 @@ final class EdgeTabController: NSObject {
          onDestinationEnded: @escaping (Int, Bool) -> Void,
          dragStartMonitor: DragStartMonitor,
          onToggleShelf: @escaping @MainActor () -> Void,
-         onShowShelf: @escaping @MainActor () -> Void,
-         onPreviewSuppressed: @escaping @MainActor () -> Void = {}) {
+         onShowShelf: @escaping @MainActor () -> Void) {
         self.appState = appState
         self.settings = settings
         self.dropHandler = dropHandler
@@ -118,19 +92,17 @@ final class EdgeTabController: NSObject {
         self.dragStartMonitor = dragStartMonitor
         self.onToggleShelf = onToggleShelf
         self.onShowShelf = onShowShelf
-        self.onPreviewSuppressed = onPreviewSuppressed
         super.init()
         beginObservation()
-        // 设置变更（edgeTabEnabled / shelfPosition / shelfEdgeOffset —— 含
-        // 拖动拉环抬起时的持久化写）统一重估。
-        // 插拔屏/改分辨率 → 按新几何重算（所在屏被拔掉时回退鼠标屏/主屏）。
+
+        // Displays or resolution changed: recompute from the new geometry.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(screenParametersDidChange(_:)),
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
-        // 初始评估（启动时 shelf 隐藏 → 拉环立即就位，无动画）。
+        // Initial evaluation: the shelf starts hidden, so the tab appears without animation.
         applyState(animated: false)
     }
 
@@ -140,8 +112,8 @@ final class EdgeTabController: NSObject {
 
     // MARK: - Visibility state machine
 
-    /// 拉环应在位 ⇔ 设置开启 && 非 custom（custom 无贴附缘）&& shelf 隐藏
-    /// （拉环与 shelf 互斥：shelf 展开时由面板外缘隐形热区承担同点位收起）。
+    /// Enabled, attached to an edge (not custom), and the shelf hidden: tab and
+    /// shelf never show together.
     private var shouldBeVisible: Bool {
         settings.classicShelfEnabled
             && settings.edgeTabEnabled
@@ -155,20 +127,20 @@ final class EdgeTabController: NSObject {
         applyState(animated: false)
     }
 
-    /// 统一状态评估：可见性 / 设置 / 屏幕参数 / 拖拽状态变更后调用。
+    /// Re-evaluates after visibility, settings, screen or drag changes.
     func applyState(animated: Bool) {
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         tabView.configure(appearance: settings.appearance,
                           iconVisible: settings.edgeTabIconVisible,
                           iconSize: settings.edgeTabIconSize)
-        // 贴附侧同步给视图（圆角朝向 / 换边基准）；拖动会话期间位置由手势
-        // 自管（可能已实时换边但尚未持久化），此处不覆盖。
+        // Keep the view's side in sync (corners, flip reference), except during
+        // a drag, which may have flipped live without persisting yet.
         if !isTabBeingDragged {
             tabView.position = settings.shelfPosition
         }
         guard shouldBeVisible else {
-            // 隐藏时强制清强调态：下次 showTab 总是从常态 frame 起步，
-            // 再由 updateEmphasis 按需放大（避免带着陈旧的放大 frame 出现）。
+            // Hiding clears the emphasis, so the next show starts from the resting
+            // frame and never reappears with a stale enlarged one.
             if isEmphasized {
                 isEmphasized = false
                 tabView.isEmphasized = false
@@ -182,8 +154,8 @@ final class EdgeTabController: NSObject {
             // Reversing a fade-out keeps the window ordered in. Restore alpha
             // as well as its layout; isVisible alone does not imply alpha == 1.
             if visibilityChanged || !animated { restoreTabAlpha(animated: animated) }
-            // 拖动拉环期间 frame 由手势直控，此处不抢夺。常态位迁移（设置/
-            // 屏幕参数变更）动画过渡。
+            // While dragged the gesture owns the frame. Resting-position changes
+            // (settings, screens) animate.
             if !isTabBeingDragged, panel.frame != target {
                 if animated {
                     PanelFrameAnimation.animate(panel, to: target, duration: Self.moveDuration,
@@ -242,12 +214,12 @@ final class EdgeTabController: NSObject {
         guard let generation else { return }
         NSAnimationContext.runAnimationGroup({ context in
             // The shelf's glass starts exactly on the tab and covers it, so the
-            // tab only needs a brief hand-off fade (issue #10).
+            // tab only needs a brief hand-off fade.
             context.duration = appState.isShelfVisible ? Self.handOffFadeDuration : Self.fadeDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
-            // 淡出期间若状态又变为应在位（设置重新开启），不抢断。
+            // Don't interrupt if the tab became due again while fading out.
             MainActor.assumeIsolated {
                 guard let self,
                       self.visibilityTransition.isCurrent(generation, visible: false),
@@ -259,13 +231,13 @@ final class EdgeTabController: NSObject {
 
     // MARK: - Layout
 
-    /// 拉环目标屏（与 shelf 同规则：鼠标所在屏，被拔掉回退主屏）。
+    /// Same rule as the shelf: the pointer's screen, else the main one.
     private func targetVisibleFrame() -> CGRect {
         ShelfWindowController.screen(containing: NSEvent.mouseLocation).visibleFrame
     }
 
-    /// 常态 frame：边缘常态位（custom 的 nil 只在状态机失守时出现，兜底
-    /// 一个原点 frame）。
+    /// The resting frame (a custom position only gets here if the state is
+    /// broken; fall back to the origin).
     private func baseFrame() -> NSRect {
         return ShelfLayoutEngine.edgeTabFrame(position: settings.shelfPosition,
                                               offset: CGFloat(settings.shelfEdgeOffset),
@@ -275,7 +247,7 @@ final class EdgeTabController: NSObject {
                       height: ShelfLayoutEngine.edgeTabHeight)
     }
 
-    /// 当前目标 frame：强调态取放大 frame。
+    /// The enlarged frame while emphasized.
     private func currentTargetFrame() -> NSRect {
         let base = baseFrame()
         guard isEmphasized else { return base }
@@ -286,8 +258,8 @@ final class EdgeTabController: NSObject {
 
     // MARK: - Emphasis (drag affordance / drop hover)
 
-    /// 强调态 = 投放悬停 ||（拖拽进行中且非拖动拉环本身）。变化时同步视图
-    /// 高亮并动画切换 frame（常态 ↔ 轻微放大）。
+    /// Emphasized while a drop hovers, or while any drag other than the tab's
+    /// own is in progress. Animates between resting and slightly enlarged.
     private func updateEmphasis(animated: Bool) {
         let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let emphasized = panel.isVisible
@@ -306,9 +278,9 @@ final class EdgeTabController: NSObject {
 
     // MARK: - Gesture results
 
-    /// 拖动结束（位移 ≥ 阈值）：持久化 offset 与贴附侧。写 UserDefaults 经
-    /// didChangeNotification 触发 applyState 重布局 —— 目标 frame 与手势
-    /// 终点一致，无视觉跳变。
+    /// After a drag (≥ threshold): persist offset and side. The store's change
+    /// notification re-lays out to a frame equal to where the gesture ended, so
+    /// nothing jumps.
     private func finishReposition(offset: CGFloat, position: SettingsStore.ShelfPosition) {
         settings.shelfEdgeOffset = Double(offset)
         if settings.shelfPosition != position {
@@ -316,15 +288,12 @@ final class EdgeTabController: NSObject {
         }
     }
 
-    /// 拖放上拉环：复用拖入分派（含 ⌘ 剪切模式，与 `DragContainerView` 同一
-    /// 判定）；同步 items 直接入架，异步物化逐个追加；有内容被处理即唤出
-    /// shelf 给出反馈。
     // MARK: - Observation
 
-    /// 跟踪 shelf 可见性与拖拽进行中状态。withObservationTracking 的
-    /// onChange 只触发一次，每次变更后重新注册；onChange 是 @Sendable
-    /// 非隔离闭包，桥回 MainActor 读最新值（同 userDefaultsDidChange 的
-    /// 桥接模式）。applyState 读的是最新值而非增量，多次变更合并安全。
+    /// Tracks shelf visibility and drag progress. `withObservationTracking`
+    /// fires once, so it re-registers after every change; its `onChange` is a
+    /// nonisolated @Sendable closure that hops back to the main actor.
+    /// `applyState` reads current values, so coalesced changes are safe.
     private func beginObservation() {
         withObservationTracking {
             _ = appState.shelfPresentation
@@ -338,8 +307,6 @@ final class EdgeTabController: NSObject {
         }
     }
 
-    /// 必须 nonisolated：通知按投递线程同步回调（同 ShelfWindowController /
-    /// AppDelegate 的说明）。
     @objc private nonisolated func screenParametersDidChange(_ notification: Notification) {
         Task { @MainActor in
             self.applyState(animated: true)
@@ -347,23 +314,22 @@ final class EdgeTabController: NSObject {
     }
 }
 
-/// EdgeTab 内容视图：跟随外观设置的系统材质 + 朝内圆角 + 1pt 内描边 +
-/// 小号 tray SF Symbol（secondary 色）。三个职责：
-/// 1. 鼠标手势（自管，不用 `performDrag` —— 要约束沿边移动 + 换边检测）：
-///    mouseDown 记起点 → mouseDragged 沿边移动（实时夹取；过中线逼近对缘
-///    实时换边，拉环吸附对缘同高度）→ mouseUp：位移 < 4pt 视为单击，
-///    否则上报 offset/贴附侧持久化；
-/// 2. NSDraggingDestination：注册 `PasteboardTypes.dragInTypes`，悬停/落下
-///    经回调交给 EdgeTabController；
-/// 3. 强调态外观（accent 描边 + 浅填充），由 controller 驱动。
+/// inner stroke and a small tray symbol. It handles:
+/// 1. its own mouse gesture (not `performDrag`: movement is constrained to
+///    the edge and may flip sides): down records the origin, dragged slides
+///    along the edge, up under 4 pt is a click, otherwise offset and side
+///    are reported;
+/// 2. drops (registers `PasteboardTypes.dragInTypes`), forwarded to the
+///    controller;
+/// 3. the emphasized look, driven by the controller.
 @MainActor
 final class EdgeTabView: NSView {
-    /// 单击/拖动的位移判据（点）。
+    /// Below this distance (points) mouse-up is a click.
     static let clickThreshold: CGFloat = 4
     static let cornerRadius: CGFloat = 8
 
-    /// 当前贴附侧（controller 布局时同步；拖动换边时本地即时更新），
-    /// 决定圆角朝向与描边路径。custom 无拉环，仅作兜底（不翻转）。
+    /// The attached side, synced by the controller and updated live while
+    /// flipping; sets the corner and stroke direction.
     var position: SettingsStore.ShelfPosition = .right {
         didSet {
             guard oldValue != position else { return }
@@ -371,7 +337,7 @@ final class EdgeTabView: NSView {
         }
     }
 
-    /// 强调态（拖拽暗示 / 投放悬停）：accent 描边 + 浅填充，平滑过渡。
+    /// Accent stroke and light fill, with a smooth transition.
     var isEmphasized = false {
         didSet {
             guard oldValue != isEmphasized else { return }
@@ -381,15 +347,13 @@ final class EdgeTabView: NSView {
         }
     }
 
-    /// 单击（位移 < clickThreshold 的抬起）。
+    /// Mouse-up within `clickThreshold`.
     var onClick: (@MainActor () -> Void)?
-    /// 拖动结束上报：最新 offset 与贴附侧（可能已换边）。
+    /// After a drag: the latest offset and side (possibly flipped).
     var onReposition: (@MainActor (CGFloat, SettingsStore.ShelfPosition) -> Void)?
-    /// 重定位会话开始/结束（controller 据此抑制拖拽唤出与强调态）。
+    /// A repositioning drag started or ended.
     var onRepositionStateChanged: (@MainActor (Bool) -> Void)?
-    /// 投放悬停变化。
     var onDropTargetChanged: (@MainActor (Bool) -> Void)?
-    /// 投放处理（pasteboard → 导入）；返回是否已处理。
     var onDrop: (@MainActor (NSDraggingInfo) -> Bool)?
     var acceptsDrop: (@MainActor (NSDraggingInfo) -> Bool)?
     var onDestinationEntered: ((Int) -> Void)?
@@ -407,7 +371,7 @@ final class EdgeTabView: NSView {
     private var isPointerInside = false
     private var trackingArea: NSTrackingArea?
 
-    // 手势状态（一次按下会话）。
+    // State of one press.
     private var isRepositioning = false
     private var dragMoved = false
     private var dragStartCursor: CGPoint = .zero
@@ -461,7 +425,7 @@ final class EdgeTabView: NSView {
         iconView.setAccessibilityHidden(true)
         addSubview(iconView)
 
-        // 内描边/强调填充层：path 只对朝内两角加圆弧，inset 0.5。
+        // Inner stroke and emphasis fill: only the inward corners are rounded, inset 0.5.
         strokeLayer.lineWidth = 1
         strokeLayer.zPosition = 1
         layer?.addSublayer(strokeLayer)
@@ -469,7 +433,7 @@ final class EdgeTabView: NSView {
         registerForDraggedTypes(PasteboardTypes.dragInTypes)
 
         setAccessibilityRole(.button)
-        // 拉环只在 shelf 隐藏时出现，点击即展开（互斥模型，见 controller）。
+        // The tab only shows while the shelf is hidden, so a click shows it.
         setAccessibilityLabel(String(localized: "Show Shelf"))
 
         updateCornering()
@@ -573,7 +537,7 @@ final class EdgeTabView: NSView {
                 appearance.tintOpacity(reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency)
             ).cgColor
         }
-        // issue #10: interactive glass inflates past the tab's window on press
+        // interactive glass inflates past the tab's window on press
         // and gets clipped into a hard outline. Hover/press feedback is drawn
         // by `applyEmphasisAppearance` instead.
         if #available(macOS 27.0, *), let glass = nativeGlassView as? NSGlassEffectView,
@@ -634,8 +598,8 @@ final class EdgeTabView: NSView {
         onRepositionStateChanged?(true)
     }
 
-    /// 沿边移动：y 由拖动位移驱动（起点中心 + Δy，经 offset 夹取）；
-    /// x 始终吸附当前贴附缘 —— 过中线逼近对缘时实时换边（贴对缘同高度）。
+    /// y follows the drag (start center + Δy, clamped through the offset); x
+    /// stays on the attached edge, flipping live past the midline.
     override func mouseDragged(with event: NSEvent) {
         guard isRepositioning, let window else { return }
         let cursor = NSEvent.mouseLocation
@@ -675,8 +639,6 @@ final class EdgeTabView: NSView {
 
     // MARK: - NSDraggingDestination
 
-    /// 来自本应用卡片的拖出（draggingSource 非空）不接受 —— 与
-    /// `DragContainerView` 同一规则，避免「拖出又放回」产生重复引用。
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard acceptsDrop?(sender) == true else { return [] }
         onDestinationEntered?(sender.draggingSequenceNumber)
@@ -715,8 +677,8 @@ final class EdgeTabView: NSView {
 
     // MARK: - Appearance
 
-    /// 圆角朝向屏内：右缘拉环绕左两角，左缘拉环绕右两角（上下对称，
-    /// 与图层坐标系是否翻转无关）。
+    /// Corners face inwards: a right-edge tab rounds its left corners, a
+    /// left-edge tab its right ones (symmetric, so the layer's flip doesn't matter).
     private func updateCornering() {
         let corners: CACornerMask = position == .left
             ? [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
@@ -751,7 +713,7 @@ final class EdgeTabView: NSView {
                 ? NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
                 : NSColor.labelColor.withAlphaComponent(isRepositioning ? (nativeGlass ? 0.08 : 0.10)
                                                          : (interacting ? (nativeGlass ? 0.04 : 0.05) : 0)).cgColor
-            // 平滑过渡：显式 CATransaction 时长让颜色变化走隐式动画。
+            // An explicit duration so the color change animates implicitly.
             CATransaction.begin()
             CATransaction.setDisableActions(!animated)
             CATransaction.setAnimationDuration(animated ? 0.15 : 0)
@@ -761,8 +723,8 @@ final class EdgeTabView: NSView {
         }
     }
 
-    /// 只对朝内两角加圆弧的圆角矩形路径（贴缘侧直角）。路径上下对称，
-    /// y-up / y-down 坐标系均正确。
+    /// Rounds only the inward corners (square on the edge side). Vertically
+    /// symmetric, so correct in y-up and y-down space.
     private static func innerRoundedPath(in rect: CGRect,
                                          radius: CGFloat,
                                          position: SettingsStore.ShelfPosition) -> CGPath {
@@ -771,7 +733,7 @@ final class EdgeTabView: NSView {
         let path = CGMutablePath()
         switch position {
         case .right:
-            // 朝内 = 左侧：左上、左下两角加圆弧。
+            // Inward is left: round the top-left and bottom-left corners.
             path.move(to: CGPoint(x: maxX, y: minY))
             path.addLine(to: CGPoint(x: maxX, y: maxY))
             path.addLine(to: CGPoint(x: minX + r, y: maxY))
@@ -782,7 +744,7 @@ final class EdgeTabView: NSView {
                         startAngle: .pi, endAngle: .pi * 1.5, clockwise: false)
             path.closeSubpath()
         case .left:
-            // 朝内 = 右侧：右上、右下两角加圆弧。
+            // Inward is right: round the top-right and bottom-right corners.
             path.move(to: CGPoint(x: minX, y: minY))
             path.addLine(to: CGPoint(x: minX, y: maxY))
             path.addLine(to: CGPoint(x: maxX - r, y: maxY))
@@ -793,7 +755,7 @@ final class EdgeTabView: NSView {
                         startAngle: 0, endAngle: .pi * 1.5, clockwise: true)
             path.closeSubpath()
         case .custom:
-            // 无拉环；完整圆角矩形兜底（不应到达）。
+            // No tab here; a fully rounded rectangle as a fallback (never reached).
             path.addPath(CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r,
                                 transform: nil))
         }

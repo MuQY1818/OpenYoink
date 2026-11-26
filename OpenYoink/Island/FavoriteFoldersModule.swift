@@ -82,7 +82,8 @@ final class FavoriteFoldersPersistenceController {
         case .missing:
             return .missing
         case .failed:
-            file.quarantine(logger: logger)
+            let suffix = "\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString)"
+            file.quarantine(logger: logger, suffix: suffix)
             return .failed
         }
     }
@@ -470,7 +471,6 @@ final class FavoriteFoldersStore {
     private func normalizedPath(_ url: URL) -> String {
         url.standardizedFileURL.path
     }
-
 
     private func persist() {
         persistence?.scheduleSave(items)

@@ -1,13 +1,12 @@
 import Foundation
 
-/// S10: shelf 网格几何共享模型 —— 顶层卡片在窗口内容坐标系（SwiftUI `.global`，
-/// 左上原点）中的 frame，含滚动偏移。由 `ShelfView` 的网格 cell 经
-/// `onGeometryChange` 实时上报；拖入插入定位（C6，`DragContainerView` →
-/// `DropInsertionLocator`）使用这份数据。
+/// Shared grid geometry: top-level card frames in window content coordinates
+/// (SwiftUI `.global`, top-left origin), scroll offset included. Grid cells
+
 @MainActor
 @Observable
 final class ShelfGridGeometry {
-    /// 卡片 frame，按顶层项目 id 索引。Stack 浮层子项不上报（不参与网格定位）。
+    /// By top-level item ID. Stack children aren't reported.
     var cardFrames: [UUID: CGRect] = [:]
     @ObservationIgnored private var frameOwners: [UUID: UUID] = [:]
 
@@ -23,21 +22,10 @@ final class ShelfGridGeometry {
     }
 }
 
-/// C6: 拖入鼠标位置 → 网格插入下标的纯逻辑映射（与 AppKit/SwiftUI 解耦，单测覆盖）。
-///
-/// 输入为 (items 数组下标, 卡片 frame) 列表与鼠标点（同一坐标系）。自适应网格
-/// 按行布局（同行 minY 一致），行内按 x 排序 —— 即阅读顺序与 items 顺序一致。
 enum DropInsertionLocator {
-    /// 行间空隙归并半径（网格间距 12pt 的一半）。
+    /// Half the 12 pt grid spacing: how far a row's territory reaches into the gaps.
     nonisolated static let rowGapSlack: CGFloat = 6
 
-    /// 计算插入下标（0...itemCount；itemCount = 追加到末尾，与 Yoink 语义一致）。
-    ///
-    /// 行领地纵向上扩/下延 `rowGapSlack`：行间空隙归属上一行；首行之上
-    /// （如标题栏区域）与末行之下（网格空白区）不命中任何行 → 追加末尾。
-    /// 行内取第一张激活线在点右侧的卡片之下标；点在本行末卡片右侧 →
-    /// 本行末尾之后（下一行首卡位置；末行即 itemCount）。
-    /// 无可用几何（布局尚未上报）时回退追加末尾（S4 的既有行为）。
     ///
     /// `activation` decides which line inside a card the dragged point has to
     /// cross before the slot moves in front of it:
@@ -63,7 +51,6 @@ enum DropInsertionLocator {
         let sorted = frames.sorted { $0.index < $1.index }
         guard !sorted.isEmpty else { return itemCount }
 
-        // 行分组：同一行的卡片垂直中心一致。Card heights can differ when a
         // title wraps, so minY would split one visual row into overlapping
         // pseudo-rows.
         var rows: [[(index: Int, frame: CGRect)]] = []

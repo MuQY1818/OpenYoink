@@ -8,7 +8,7 @@ import AppKit
 /// `reset()`) is the only way to re-arm it, so a cursor resting on the edge
 /// can never retrigger in a loop.
 ///
-/// UX2: since the UX batch the tracker is fed `leftMouseDragged` samples
+/// the tracker now receives `leftMouseDragged` samples
 /// (left button held) instead of `mouseMoved` — the edge trigger only fires
 /// mid-drag; pure hovering no longer reveals the shelf (confirmed design
 /// change). The tracker itself is input-agnostic and unchanged.
@@ -88,15 +88,12 @@ struct EdgeFileDragTracker: Sendable, Equatable {
     }
 }
 
-/// Screen-edge file-drag dwell trigger (UX2): while a real file or file promise
+/// Screen-edge file-drag dwell trigger: while a real file or file promise
 /// is being dragged, resting the cursor inside the band along the edge the shelf
 /// attaches to for longer than the sensitivity-dependent dwell time shows the
 /// shelf. Browser tabs, web URLs, text and in-memory image payloads do not arm
 /// the trigger.
-///
-/// UX2 设计变更（用户确认）：纯悬停（未按左键的 mouseMoved）不再触发；
-/// 只监听 `leftMouseDragged`。拖拽中的停留时间与带宽比原悬停版更短/更宽
-/// （见 `TriggerSensitivity.edgeDwellTime` / `.edgeBandWidth`）。
+
 ///
 /// The screen under the cursor is resolved with
 /// `ShelfWindowController.screen(containing:)` — the same rule the shelf
@@ -200,8 +197,7 @@ final class EdgeTriggerMonitor {
     /// Pure band test: full-height strip of `bandWidth` points along the
     /// given side of `screenFrame`. Points outside the screen never count.
     /// Coordinates live in the global screen space of `NSEvent.mouseLocation`.
-    /// S9: `.custom` 无贴附缘，永不命中（AppDelegate 在 custom 模式下也不
-    /// 启动本监听；此分支仅保证纯函数对全枚举有定义）。
+
     nonisolated static func isInsideEdgeBand(_ point: CGPoint,
                                              screenFrame: CGRect,
                                              side: SettingsStore.ShelfPosition,

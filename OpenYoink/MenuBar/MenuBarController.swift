@@ -1,36 +1,30 @@
 import AppKit
 
-/// 菜单栏入口：NSStatusItem + NSMenu。
-///
-/// 菜单含「Show/Hide Shelf」（勾选项跟随用户首选 Shelf 入口的展开状态）、
-/// 「Recent Items」最近拖出子菜单（S10，读 `RecentItemsService`）、
-/// 「Quick Start」「Usage Help」「Report an Issue」、设置、更新与退出。
-/// 用户可见字符串经 `String(localized:)` 走 Localizable.xcstrings（S10）。
 @MainActor
 final class MenuBarController: NSObject {
     private let isShelfExpanded: () -> Bool
     private let recents: RecentItemsService
     private let onToggleShelf: () -> Void
-    /// S10: 最近项目重新入架（条目构造在 AppDelegate，那里持有 shelfStore）。
+    /// Puts a recent item back on the shelf.
     private let onReaddRecent: (RecentEntry) -> Void
-    /// 打开设置窗口（由 AppDelegate 的 SettingsWindowController 提供）。
     private let onShowSettings: () -> Void
     private let onShowClipboardHistory: () -> Void
     private let onSaveClipboardImage: () -> Void
-    /// 可重播的两步真实拖放练习。
+    /// Replays the two-step drag exercise.
     private let onShowQuickStart: () -> Void
-    /// 打开公开使用帮助；不改变应用状态。
+    /// Opens the public usage help; changes no state.
     private let onOpenHelp: () -> Void
-    /// 用户主动打开 GitHub Issue，并预填不含内容与路径的诊断摘要。
+    /// Opens a GitHub issue prefilled with a diagnostics summary free of content
+/// and paths.
     private let onReportIssue: () -> Void
-    /// Sparkle 手动检查更新（由 AppDelegate 的 UpdateController 提供）。
+    /// A manual Sparkle check.
     private let onCheckForUpdates: () -> Void
-    /// 自动安装失败时可直接打开 GitHub Releases 手动下载。
+    /// Opens GitHub Releases when installing automatically failed.
     private let onOpenManualUpdate: () -> Void
 
     private let statusItem: NSStatusItem
     private let toggleItem = NSMenuItem()
-    /// 「Recent Items」父项；子菜单每次打开菜单时重建（entries 随拖出变化）。
+    /// Rebuilt every time the menu opens (entries change with every drag out).
     private let recentParentItem = NSMenuItem()
 
     init(isShelfExpanded: @escaping () -> Bool,
@@ -57,8 +51,7 @@ final class MenuBarController: NSObject {
         self.onReportIssue = onReportIssue
         self.onCheckForUpdates = onCheckForUpdates
         self.onOpenManualUpdate = onOpenManualUpdate
-        // 固定方形宽度：自适应宽度加上偏宽的托盘符号会占约 36pt，比多数菜单栏
-        // 图标宽三分之一；菜单栏拥挤时 macOS 会先藏掉放不下的图标。
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
         configureButton()
@@ -67,8 +60,8 @@ final class MenuBarController: NSObject {
 
     private func configureButton() {
         guard let button = statusItem.button else { return }
-        // SF Symbol template 渲染：isTemplate 让系统按菜单栏状态自动反色，
-        // 深浅色菜单栏与选中高亮下均正确（S10 确认保持符号方案）。
+        // A template symbol, so the system tints it for light and dark menu bars
+        // and the highlight.
         let image = NSImage(systemSymbolName: "tray.and.arrow.down.fill",
                             accessibilityDescription: "OpenYoink")
         image?.isTemplate = true
@@ -85,7 +78,7 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
-        // S10: 最近拖出历史子菜单（每次打开重建，见 rebuildRecentSubmenu）。
+        // Recent drag-outs (rebuilt on every open, see rebuildRecentSubmenu).
         recentParentItem.title = String(localized: "Recent Items")
         recentParentItem.submenu = NSMenu()
         menu.addItem(recentParentItem)
@@ -122,14 +115,13 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
-        // S8: 打开 SwiftUI Settings scene（见 showSettings(_:)）。
         let settingsItem = NSMenuItem(title: String(localized: "Settings…"),
                                       action: #selector(showSettings(_:)),
                                       keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        // Sparkle: 手动触发更新检查（自动检查开关在设置-通用）。
+        // Manual update check (automatic checks are in Settings › General).
         let updateItem = NSMenuItem(title: String(localized: "Check for Updates…"),
                                     action: #selector(checkForUpdates(_:)),
                                     keyEquivalent: "")
@@ -157,11 +149,11 @@ final class MenuBarController: NSObject {
         onToggleShelf()
     }
 
-    /// 打开自管理设置窗口（`SettingsWindowController`）。
+    /// Opens the self-managed `SettingsWindowController`.
     ///
-    /// 不再走 SwiftUI Settings scene 的 `showSettingsWindow:`——LSUIElement
-    /// 下该响应链 action 实测静默失败；自管理窗口无此问题。LSUIElement 的
-    /// 焦点处理（activate 前置）由 SettingsWindowController.show() 负责。
+    /// Not SwiftUI's `showSettingsWindow:`: in an agent (LSUIElement) app that
+    /// responder-chain action silently does nothing. The window controller
+    /// handles activation.
     @objc private func showSettings(_ sender: Any?) {
         onShowSettings()
     }
@@ -186,7 +178,7 @@ final class MenuBarController: NSObject {
         onReportIssue()
     }
 
-    /// 手动检查更新（Sparkle；空 feed 时走「已是最新」安全路径）。
+    /// A manual Sparkle check (an empty feed safely reports up to date).
     @objc private func checkForUpdates(_ sender: Any?) {
         onCheckForUpdates()
     }
@@ -195,11 +187,11 @@ final class MenuBarController: NSObject {
         onOpenManualUpdate()
     }
 
-    // MARK: - Recent Items submenu (S10)
+    // MARK: - Recent Items submenu
 
-    /// 重建最近项目子菜单：最新在前（上限 20 由 RecentItemsService 保证），
-    /// 条目带种类图标；文件不可访问/无法忠实恢复（text 摘要）的条目置灰；
-    /// 尾部「Clear Recent」清空历史。
+    /// Newest first (`RecentItemsService` caps it at 20), with kind icons.
+    /// Entries that can't be accessed or faithfully restored (a text summary)
+    /// are disabled; "Clear Recent" comes last.
     private func rebuildRecentSubmenu() {
         guard let submenu = recentParentItem.submenu else { return }
         submenu.removeAllItems()
@@ -230,9 +222,9 @@ final class MenuBarController: NSObject {
         submenu.addItem(clearItem)
     }
 
-    /// 重新入架可行性：文件类要求路径仍可读（沙箱下无访问权即置灰）；
-    /// URL 要求可解析；text 仅存 100 字符摘要、stack 拖出时已展开为子项，
-    /// 二者无法忠实恢复，置灰。
+    /// Files need a readable path (no sandbox access → disabled); URLs must
+    /// parse. Text keeps only a 100-character summary and stacks were expanded
+    /// on drag, so neither can be restored faithfully.
     nonisolated static func canReadd(_ entry: RecentEntry) -> Bool {
         switch entry.kind {
         case .file, .folder, .image:
@@ -245,7 +237,7 @@ final class MenuBarController: NSObject {
         }
     }
 
-    /// 子菜单条目 16pt 图标：文件类用 NSWorkspace 图标，其余用 SF Symbol。
+    /// 16 pt icons: workspace icons for files, symbols otherwise.
     private static func menuIcon(for entry: RecentEntry) -> NSImage? {
         let size = NSSize(width: 16, height: 16)
         let image: NSImage?
@@ -278,8 +270,8 @@ final class MenuBarController: NSObject {
 }
 
 extension MenuBarController: NSMenuDelegate {
-    /// 每次打开菜单时刷新勾选项与标题（跟随 shelf 实际可见性），并重建
-    /// 最近项目子菜单（entries 随拖出/Clear 变化）。
+    /// On every open: refresh the check mark and title (from the shelf's real
+    /// visibility) and rebuild Recent Items.
     func menuWillOpen(_ menu: NSMenu) {
         let isVisible = isShelfExpanded()
         toggleItem.title = isVisible

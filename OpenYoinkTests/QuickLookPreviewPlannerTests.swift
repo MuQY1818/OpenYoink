@@ -1,7 +1,7 @@
 import XCTest
 @testable import OpenYoink
 
-/// S6: Quick Look 预览集合解析规则（`QuickLookPreviewPlanner`，纯逻辑）。
+/// Which items Quick Look shows (`QuickLookPreviewPlanner`, pure).
 final class QuickLookPreviewPlannerTests: XCTestCase {
     // MARK: - Helpers
 
@@ -21,14 +21,14 @@ final class QuickLookPreviewPlannerTests: XCTestCase {
 
     // MARK: - Base set rules (§2.3 Quick Look)
 
-    /// 右键已选中的卡片：预览整个选中集合，顺序即展示序。
+    /// Right-clicking a selected card previews the whole selection, in display order.
     func testContextItemInSelection_previewsWholeSelectionInDisplayOrder() {
         let a = file("a"), b = file("b"), c = file("c")
         let result = QuickLookPreviewPlanner.previewItems(selection: [a, b, c], contextItem: b)
         XCTAssertEqual(ids(result), ids([a, b, c]))
     }
 
-    /// 右键未选中的卡片（或 Stack 浮层子项）：只预览它自身，忽略当前选中。
+    /// Right-clicking an unselected card (or a stack child) previews only it.
     func testContextItemOutsideSelection_previewsContextItemOnly() {
         let a = file("a"), b = file("b")
         let context = file("x")
@@ -36,7 +36,7 @@ final class QuickLookPreviewPlannerTests: XCTestCase {
         XCTAssertEqual(ids(result), [context.id])
     }
 
-    /// 空格路径（无上下文项）：预览当前选中集合；选中为空则无预览。
+    /// Space (no context item) previews the selection; nothing without one.
     func testNilContextItem_usesSelectionOrNothing() {
         let a = file("a"), b = file("b")
         XCTAssertEqual(ids(QuickLookPreviewPlanner.previewItems(selection: [a, b], contextItem: nil)),
@@ -46,7 +46,7 @@ final class QuickLookPreviewPlannerTests: XCTestCase {
 
     // MARK: - Stack flattening
 
-    /// stack 递归展开为 children（含子项中的嵌套 stack），保持顺序。
+    /// Stacks expand into their children (nested ones too), keeping order.
     func testStacksAreFlattenedRecursively() {
         let f1 = file("f1"), f2 = file("f2"), f3 = file("f3"), f4 = file("f4")
         let inner = stack("inner", children: [f2, f3])
@@ -55,7 +55,7 @@ final class QuickLookPreviewPlannerTests: XCTestCase {
         XCTAssertEqual(ids(result), ids([f1, f2, f3, f4]))
     }
 
-    /// 选中单个 stack 卡片作为上下文：展开其 children 而非预览 stack 本身。
+    /// A single selected stack as context previews its children, not the stack.
     func testContextStackExpandsToChildren() {
         let f1 = file("f1"), f2 = file("f2")
         let s = stack("s", children: [f1, f2])
@@ -65,8 +65,8 @@ final class QuickLookPreviewPlannerTests: XCTestCase {
 
     // MARK: - Stale filtering
 
-    /// stale 项（bookmark 失效，QL 打不开）从预览集合中剔除，含 stack 子项；
-    /// 全部 stale 时集合为空（调用方不打开面板）。
+    /// Unavailable items (Quick Look can't open them) are dropped, stack
+    /// children included; all unavailable means an empty set (the panel stays closed).
     func testStaleItemsAreFilteredIncludingStackChildren() {
         let a = file("a", stale: true), b = file("b")
         XCTAssertEqual(ids(QuickLookPreviewPlanner.previewItems(selection: [a, b], contextItem: nil)),
@@ -83,7 +83,7 @@ final class QuickLookPreviewPlannerTests: XCTestCase {
 
     // MARK: - Current index
 
-    /// 起始项 = 上下文项在展平集合中的位置；未提供/未命中时为 0。
+    /// The start is the context item's position in the flattened set; 0 when absent.
     func testCurrentIndex() {
         let f1 = file("f1"), f2 = file("f2"), f3 = file("f3")
         let flattened = [f1, f2, f3]

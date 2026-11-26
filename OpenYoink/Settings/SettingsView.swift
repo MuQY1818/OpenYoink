@@ -23,11 +23,11 @@ final class SettingsNavigationModel {
     }
 }
 
-/// Settings window (S8): sidebar buttons with native scrolling forms. The
+/// Settings window: sidebar buttons with native scrolling forms. The
 /// sidebar keeps all six destinations readable in Chinese and at larger text
 /// sizes without crowding the title bar. All user-visible strings are
 /// LocalizedStringKey literals,
-/// resolved through Localizable.xcstrings (S10); runtime-computed fallbacks
+/// resolved through Localizable.xcstrings; runtime-computed fallbacks
 /// use `String(localized:)` explicitly.
 ///
 /// Presented via the SwiftUI `Settings` scene (`OpenYoinkApp`); opened from
@@ -322,7 +322,6 @@ private struct StorageSettingsTab: View {
 
 // MARK: - General
 
-
 // MARK: - Triggers
 
 private struct TriggerSettingsTab: View {
@@ -333,8 +332,6 @@ private struct TriggerSettingsTab: View {
         @Bindable var settings = settings
         SettingsForm {
             Section("Side Shelf Reveal") {
-                Toggle("Preview side shelf on hover", isOn: $settings.classicShelfHoverRevealEnabled)
-                    .disabled(!settings.classicShelfEnabled)
                 Text("Drag the edge tab to reposition it. File drag reveal is configured below.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -360,8 +357,8 @@ private struct TriggerSettingsTab: View {
                     }
                 }
 
-                // UX3: 双击保存剪贴板。开启时单击带一个识别窗的延迟 —— 脚注
-                // 说明此取舍；关闭即恢复零延迟单击。
+                // Double-click to save the clipboard. While on, a single click waits for
+                // the double-click window, as the footnote explains; off means no delay.
                 Toggle("Double-press saves clipboard", isOn: $settings.hotKeyDoublePressSavesClipboard)
                     .disabled(!settings.hotKeyEnabled)
                 Text("When enabled, a single press toggles the shelf after a brief delay (0.3 s) so a double press can be recognized.")
@@ -375,8 +372,8 @@ private struct TriggerSettingsTab: View {
                 }
             }
 
-            // UX1/2: 拖拽自动出现（Yoink 核心交互）。三档单控：立即出现 /
-            // 拖到贴边唤出 / 无动作。边缘灵敏度沿用旧边缘触发的三档设置。
+            // Showing the shelf while dragging: immediately, at the screen edge, or
+            // never. Edge sensitivity keeps the edge trigger's three levels.
             Section("When Dragging Files") {
                 Picker("When Dragging Files", selection: $settings.dragAutoAppearMode) {
                     Text("Show immediately").tag(SettingsStore.DragAutoAppearMode.immediate)
@@ -413,8 +410,8 @@ private struct TriggerSettingsTab: View {
         }
     }
 
-    /// UX1/2: 随模式变化的说明文案（immediate 无需贴边；edgeOnly 在 custom
-    /// 位置下不可用）。
+    /// Footnote per mode (immediate needs no edge; edge-only is unavailable with
+    /// custom placement).
     private var dragModeFootnote: String {
         switch settings.dragAutoAppearMode {
         case .immediate:

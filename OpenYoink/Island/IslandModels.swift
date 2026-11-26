@@ -39,7 +39,7 @@ enum IslandMotion {
     static let collapseWindowDuration: TimeInterval = 0.30
 }
 
-/// Internal-only module contract. v1.4.x deliberately does not load external
+/// Lifecycle contract for built-in modules. The app does not load external
 /// bundles; the protocol keeps first-party lifecycles consistent and gives a
 /// future SDK a stable conceptual boundary.
 @MainActor

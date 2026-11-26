@@ -115,7 +115,7 @@ enum ClipboardHistoryPolicy {
     nonisolated static let storedImageTypes: Set<String> = ["public.png", "public.tiff", "public.jpeg"]
 
     /// Copied files are not recorded, except when the copy is really an image
-    /// (issue #13):
+    ///:
     /// - an app that copies an image as its bitmap plus a link to the file it
     ///   came from (WeChat links its cache file): the bitmap is recorded;
     /// - a single image file copied in Finder, which carries no bitmap: the

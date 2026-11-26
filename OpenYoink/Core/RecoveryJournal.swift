@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-/// A thread-safe, crash-safe list of in-flight transactions.
+/// A thread-safe, serialized list of in-flight transactions.
 ///
 /// Records are written before a risky file operation and removed once its
 /// result is durable, so every crash window can be reconciled on the next

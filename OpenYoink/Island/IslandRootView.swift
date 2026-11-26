@@ -76,7 +76,7 @@ struct IslandRootView: View {
                 floatingAwareCompactContent
                     // Upper bounds only: a fixed size here becomes the hosting
                     // window's minimum size, and the floating idle dot needs
-                    // the panel to shrink below the pill (issue #11).
+                    // the panel to shrink below the pill.
                     .frame(minWidth: 0,
                            maxWidth: coordinator.currentLayout?.compactFrame.width,
                            minHeight: 0,
@@ -183,7 +183,7 @@ struct IslandRootView: View {
     }
 
     /// Displays without a notch can shrink the idle pill into a dot or hide
-    /// it entirely (issue #11). The window controller sizes the panel.
+    /// it entirely. The window controller sizes the panel.
     private var floatingAwareCompactContent: some View {
         let presentation = hasPhysicalNotch ? .capsule : coordinator.floatingPresentation
         return ZStack(alignment: .top) {

@@ -59,9 +59,6 @@ final class LaunchMaintenance {
         bookmarkService.stopAccessingAll()
     }
 
-    /// 旧版没有 onboardingVersion，需从本版本写入前的持久化痕迹判断升级。
-    /// 注册域默认值不算证据；bundle 的持久化 domain 与 Application Support
-    /// 中既有数据任一存在即可。Tutorial 自身被排除，避免中断 session 被误判。
     func legacyInstallEvidence() -> Bool {
         switch initialShelfLoadResult {
         case .loaded, .failed:
@@ -83,13 +80,8 @@ final class LaunchMaintenance {
         }
     }
 
-    // MARK: - Bookmark resolution at launch (S4)
+    // MARK: - Bookmark resolution at launch
 
-    /// 启动时批量解析已持久化项目的 bookmark：
-    /// - 外部引用解析失败 → `externalFileOffline`，允许用户重新定位；
-    /// - 托管副本解析失败 → `managedCopyMissing`，只进入存储与恢复；
-    /// - 解析成功但 bookmark 过期（文件移动过）→ 重建 bookmark 并更新 path；
-    /// - Stack 子项递归处理。
     private func resolvePersistedBookmarks() {
         for item in shelfStore.items {
             if let refreshed = refreshedByResolvingBookmark(item) {
@@ -98,7 +90,6 @@ final class LaunchMaintenance {
         }
     }
 
-    /// 返回需要更新的项目副本；无需更新返回 nil。递归处理 Stack 子项。
     func refreshedByResolvingBookmark(_ item: ShelfItem) -> ShelfItem? {
         let result = ItemAvailabilityResolver.refresh(
             item,
@@ -107,7 +98,7 @@ final class LaunchMaintenance {
         return result.item == item ? nil : result.item
     }
 
-    // MARK: - Materialized file cleanup (S4)
+    // MARK: - Materialized file cleanup
 
     /// Reconciles crash-recovery transactions before any materialized cleanup.
     /// Any surviving managed copy is restored as the authoritative `isCut`
@@ -236,11 +227,8 @@ final class LaunchMaintenance {
         shelfStore.items.contains(id: id)
     }
 
-    /// 清理物化目录中的孤儿文件：保留仍被 shelf 项目（含 Stack 子项）引用的
-    /// 物化文件，其余视为上次会话中断的残留删除。
     private func cleanupMaterializedOrphans() {
-        // 上一份有效快照也可能引用 promise/图片物化文件；恢复功能存在时，
-        // 启动清理必须同时保护这些路径，否则“能恢复条目却丢了文件内容”。
+
         let paths = MaterializedFileGuard.protectedPaths(
             for: shelfStore.items, persistence: persistence, tempFiles: tempFileService,
             managedMoves: managedMoveJournal, pendingImports: pendingImportJournal

@@ -3457,6 +3457,20 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "显示暂存架" } }
       }
     },
+    "Stack Selected Items" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stack Selected Items" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "将所选项目堆叠" } }
+      }
+    },
+    "Unstack" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unstack" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消堆叠" } }
+      }
+    },
     "Stack" : {
       "extractionState" : "manual",
       "comment" : "Item kind name, used in accessibility labels",

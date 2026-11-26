@@ -59,11 +59,9 @@ final class CallbackIslandModuleRuntime: IslandModuleRuntime {
         self.descriptor = descriptor
         self.startAction = start
         self.stopAction = stop
-        var capturedContinuation: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { continuation in
-            capturedContinuation = continuation
-        }
-        continuation = capturedContinuation!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     func start() {
@@ -102,11 +100,9 @@ final class TransfersModuleRuntime: IslandModuleRuntime {
 
     init(transferStore: TransferStore) {
         self.transferStore = transferStore
-        var capturedContinuation: AsyncStream<IslandModuleEvent>.Continuation?
-        events = AsyncStream { continuation in
-            capturedContinuation = continuation
-        }
-        continuation = capturedContinuation!
+        let stream = AsyncStream<IslandModuleEvent>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
     }
 
     func start() {

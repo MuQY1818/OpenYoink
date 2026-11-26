@@ -1,7 +1,6 @@
 import AppKit
 
 /// Pure mouse-shake heuristic, decoupled from AppKit for unit testing
-/// (plan §6 「全局摇动误触」 countermeasure).
 ///
 /// A shake is a rapid horizontal back-and-forth: `requiredReversals` direction
 /// reversals within `window` seconds, where the cursor must travel at least
@@ -106,9 +105,9 @@ struct ShakeDetector: Sendable {
     }
 }
 
-/// Global mouse-shake trigger (S7). Registers `mouseMoved` monitors only
+/// Global mouse-shake trigger. Registers `mouseMoved` monitors only
 /// while started; `stop()` removes them so a disabled trigger leaves no
-/// event registration behind (plan §2.3).
+/// event registrations behind.
 ///
 /// Two monitors feed the same detector: the global monitor sees cursor
 /// movement in other apps, the local monitor covers movement over our own
