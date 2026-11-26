@@ -179,11 +179,8 @@ final class EdgeTabController: NSObject {
             // 屏幕参数变更）动画过渡。
             if !isTabBeingDragged, panel.frame != target {
                 if animated {
-                    NSAnimationContext.runAnimationGroup { context in
-                        context.duration = Self.moveDuration
-                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                        panel.animator().setFrame(target, display: true)
-                    }
+                    PanelFrameAnimation.animate(panel, to: target, duration: Self.moveDuration,
+                                                timing: CAMediaTimingFunction(name: .easeInEaseOut))
                 } else {
                     panel.setFrame(target, display: true)
                 }
@@ -296,11 +293,8 @@ final class EdgeTabController: NSObject {
             panel.setFrame(target, display: true)
             return
         }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.emphasisDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrame(target, display: true)
-        }
+        PanelFrameAnimation.animate(panel, to: target, duration: Self.emphasisDuration,
+                                    timing: CAMediaTimingFunction(name: .easeOut))
     }
 
     // MARK: - Gesture results

@@ -76,7 +76,7 @@ final class AppServices {
         additionalProtectedPaths: { [weak self] in
             (self?.deliveryCoordinator.protectedMaterializedPaths ?? [])
                 .union(self?.shelfStore.undoProtectedPaths ?? [])
-                .union(self?.shelfWindowController.favoriteFolderDropCoordinator.protectedPaths ?? [])
+                .union(self?.islandModules.favoriteFolderDropCoordinator.protectedPaths ?? [])
         },
         prepareRestoredItems: { [weak self] items in
             guard let self else { return items }
@@ -100,12 +100,16 @@ final class AppServices {
     /// Help, voluntary issue reporting and privacy-safe local diagnostics.
     lazy var supportController = SupportController(settings: settingsStore)
 
+    private lazy var islandModules = IslandModules(
+        settings: settingsStore, bookmarkService: bookmarkService, transferStore: transferStore
+    )
     lazy var shelfWindowController: ShelfWindowController = ShelfWindowController(appState: appState,
                                                                    store: shelfStore,
                                                                    importCoordinator: dropImportCoordinator,
                                                                    bookmarkService: bookmarkService,
                                                                    notices: shelfNotice,
                                                                    transferStore: transferStore,
+                                                                   islandModules: islandModules,
                                                                    tempFileService: tempFileService,
                                                                    settings: settingsStore,
                                                                    recents: recentItemsService,
