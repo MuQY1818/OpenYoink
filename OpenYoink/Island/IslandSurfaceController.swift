@@ -14,8 +14,23 @@ final class IslandSurfaceController: NSObject {
     private var islandModuleContainer: IslandModuleContainer { modules.islandModuleContainer }
     private var nowPlayingModuleStore: NowPlayingModuleStore { modules.nowPlayingModuleStore }
 
-    private var islandGlobalMonitor: Any?
-    private var islandLocalMonitor: Any?
+    private struct PointerEvent: Sendable {
+        let mouse: MouseEventSample
+        let eventNumber: Int
+        let windowNumber: Int
+
+        nonisolated init(_ event: NSEvent) {
+            mouse = MouseEventSample(event)
+            eventNumber = event.eventNumber
+            windowNumber = event.windowNumber
+        }
+    }
+
+    private lazy var pointerMonitor = EventMonitor(
+        matching: [.leftMouseDown, .mouseMoved],
+        capture: { PointerEvent($0) },
+        handler: { [weak self] in self?.handleIslandEvent($0) }
+    )
     private var islandHoverTask: Task<Void, Never>?
     private var islandLayoutTask: Task<Void, Never>?
     /// Floating Island idle dot / hidden mode (issue #11).
@@ -93,7 +108,7 @@ final class IslandSurfaceController: NSObject {
             if panel.level != level { panel.level = level }
             panel.hasShadow = false
             startEnabledIslandModules()
-            startIslandEventMonitoring()
+            pointerMonitor.start()
             if islandActivityCoordinator.surfaceState == .hidden {
                 islandActivityCoordinator.setSurfaceState(.compact)
             }
@@ -381,39 +396,17 @@ final class IslandSurfaceController: NSObject {
         }
     }
 
-    private func startIslandEventMonitoring() {
-        guard islandGlobalMonitor == nil, islandLocalMonitor == nil else { return }
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .mouseMoved]
-        islandGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) {
-            [weak self] event in
-            let point = NSEvent.mouseLocation
-            Task { @MainActor in self?.handleIslandEvent(event, at: point) }
-        }
-        islandLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) {
-            [weak self] event in
-            let point = NSEvent.mouseLocation
-            Task { @MainActor in self?.handleIslandEvent(event, at: point) }
-            return event
-        }
-    }
-
     private func stopIslandEventMonitoring() {
-        if let islandGlobalMonitor {
-            NSEvent.removeMonitor(islandGlobalMonitor)
-            self.islandGlobalMonitor = nil
-        }
-        if let islandLocalMonitor {
-            NSEvent.removeMonitor(islandLocalMonitor)
-            self.islandLocalMonitor = nil
-        }
+        pointerMonitor.stop()
         islandHoverTask?.cancel()
         islandHoverTask = nil
         islandActivityCoordinator.setPointerHovering(false)
     }
 
-    private func handleIslandEvent(_ event: NSEvent, at point: CGPoint) {
+    private func handleIslandEvent(_ event: PointerEvent) {
+        let point = event.mouse.location
         guard settings.islandEnabled else { return }
-        switch event.type {
+        switch event.mouse.type {
         case .leftMouseDown:
             if !islandActivityCoordinator.surfaceState.isExpanded {
                 let layout = islandLayout(at: point)

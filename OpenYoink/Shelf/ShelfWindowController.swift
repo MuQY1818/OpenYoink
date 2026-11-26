@@ -73,8 +73,11 @@ final class ShelfWindowController: NSObject {
     /// ShelfStore, but each owns an independent panel and visibility state.
     private var classicHoverPreviewState = ClassicShelfHoverPreviewStateMachine()
     private var classicHoverExitTask: Task<Void, Never>?
-    private var classicHoverGlobalMonitor: Any?
-    private var classicHoverLocalMonitor: Any?
+    private lazy var classicHoverMonitor = EventMonitor(
+        matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged]
+    ) { [weak self] sample in
+        self?.handleClassicHoverPreviewEvent(sample)
+    }
     private var isOpeningClassicHoverPreview = false
     /// 快速上手期间只暂停自动隐藏，不改写用户的 autoHide 设置。
     private var onboardingPresentationCount = 0
@@ -306,7 +309,7 @@ final class ShelfWindowController: NSObject {
     func shutdown() {
         quickActionLayoutTask?.cancel()
         classicHoverExitTask?.cancel()
-        stopClassicHoverPreviewMonitoring()
+        classicHoverMonitor.stop()
         islandSurface.shutdown()
     }
 
@@ -631,7 +634,7 @@ final class ShelfWindowController: NSObject {
         performClassicHoverActions(classicHoverPreviewState.handle(.shelfHidden))
         guard appState.isShelfVisible,
               let generation = classicVisibilityTransition.request(visible: false) else { return }
-        stopClassicHoverPreviewMonitoring()
+        classicHoverMonitor.stop()
         quickActionLayoutTask?.cancel()
         quickActionLayoutTask = nil
         classicResizeGeneration &+= 1
@@ -721,7 +724,7 @@ final class ShelfWindowController: NSObject {
                 isOpeningClassicHoverPreview = true
                 showShelf(animated: true, takeKeyboardFocus: false)
                 isOpeningClassicHoverPreview = false
-                startClassicHoverPreviewMonitoring()
+                classicHoverMonitor.start()
                 updateClassicHoverPreviewPointer(at: NSEvent.mouseLocation)
             case .scheduleExit:
                 guard classicHoverExitTask == nil else { continue }
@@ -737,47 +740,18 @@ final class ShelfWindowController: NSObject {
                 classicHoverExitTask?.cancel()
                 classicHoverExitTask = nil
             case .hidePreview:
-                stopClassicHoverPreviewMonitoring()
+                classicHoverMonitor.stop()
                 if appState.isShelfVisible { hideShelf(animated: true) }
             case .promoteToPersistent:
                 classicHoverExitTask?.cancel()
                 classicHoverExitTask = nil
-                stopClassicHoverPreviewMonitoring()
+                classicHoverMonitor.stop()
             }
         }
     }
 
-    private func startClassicHoverPreviewMonitoring() {
-        guard classicHoverGlobalMonitor == nil, classicHoverLocalMonitor == nil else { return }
-        let mask: NSEvent.EventTypeMask = [
-            .mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown,
-            .leftMouseDragged,
-        ]
-        classicHoverGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) {
-            [weak self] event in
-            let point = NSEvent.mouseLocation
-            Task { @MainActor in self?.handleClassicHoverPreviewEvent(event, at: point) }
-        }
-        classicHoverLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) {
-            [weak self] event in
-            let point = NSEvent.mouseLocation
-            Task { @MainActor in self?.handleClassicHoverPreviewEvent(event, at: point) }
-            return event
-        }
-    }
-
-    private func stopClassicHoverPreviewMonitoring() {
-        if let classicHoverGlobalMonitor {
-            NSEvent.removeMonitor(classicHoverGlobalMonitor)
-            self.classicHoverGlobalMonitor = nil
-        }
-        if let classicHoverLocalMonitor {
-            NSEvent.removeMonitor(classicHoverLocalMonitor)
-            self.classicHoverLocalMonitor = nil
-        }
-    }
-
-    private func handleClassicHoverPreviewEvent(_ event: NSEvent, at point: CGPoint) {
+    private func handleClassicHoverPreviewEvent(_ event: MouseEventSample) {
+        let point = event.location
         guard classicHoverPreviewState.isPreview else { return }
         guard !IgnoreListService.frontmostAppIsIgnored(
             in: settings.ignoredAppBundleIDs

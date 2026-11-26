@@ -88,23 +88,6 @@ struct EdgeFileDragTracker: Sendable, Equatable {
     }
 }
 
-struct DragPasteboardSnapshot: Sendable {
-    let changeCount: Int
-    let typeIdentifiers: [String]
-
-    var types: [NSPasteboard.PasteboardType] {
-        typeIdentifiers.map { NSPasteboard.PasteboardType($0) }
-    }
-
-    nonisolated static func current() -> DragPasteboardSnapshot {
-        let pasteboard = NSPasteboard(name: .drag)
-        return DragPasteboardSnapshot(
-            changeCount: pasteboard.changeCount,
-            typeIdentifiers: pasteboard.types?.map(\.rawValue) ?? []
-        )
-    }
-}
-
 /// Screen-edge file-drag dwell trigger (UX2): while a real file or file promise
 /// is being dragged, resting the cursor inside the band along the edge the shelf
 /// attaches to for longer than the sensitivity-dependent dwell time shows the
@@ -131,8 +114,7 @@ final class EdgeTriggerMonitor {
     private var fileDragTracker = EdgeFileDragTracker()
     private var side: SettingsStore.ShelfPosition = .right
     private var bandWidth: CGFloat = 4
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+    private let eventSource: DragEventSource
 
     /// Suppression gate (shelf already visible, frontmost app ignored),
     /// evaluated only when the dwell completes.
@@ -140,9 +122,11 @@ final class EdgeTriggerMonitor {
     private let onTrigger: @MainActor () -> Void
 
     init(
-        shouldSuppress: @escaping @MainActor () -> Bool,
+        eventSource: DragEventSource = DragEventSource(),
+         shouldSuppress: @escaping @MainActor () -> Bool,
         onTrigger: @escaping @MainActor () -> Void
     ) {
+        self.eventSource = eventSource
         self.shouldSuppress = shouldSuppress
         self.onTrigger = onTrigger
     }
@@ -160,41 +144,16 @@ final class EdgeTriggerMonitor {
         self.bandWidth = bandWidth
         tracker = EdgeDwellTracker(dwellTime: dwellTime)
 
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
-            guard let self else { return }
-            let location = NSEvent.mouseLocation
-            let type = event.type
-            let timestamp = event.timestamp
-            let snapshot = DragPasteboardSnapshot.current()
-            Task { @MainActor in
-                self.handle(eventType: type, at: location, timestamp: timestamp, snapshot: snapshot)
-            }
-        }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            guard let self else { return event }
-            let location = NSEvent.mouseLocation
-            let type = event.type
-            let timestamp = event.timestamp
-            let snapshot = DragPasteboardSnapshot.current()
-            Task { @MainActor in
-                self.handle(eventType: type, at: location, timestamp: timestamp, snapshot: snapshot)
-            }
-            return event
+        eventSource.start(.edge) { [weak self] sample in
+            self?.handle(eventType: sample.mouse.type, at: sample.mouse.location,
+                         timestamp: sample.mouse.timestamp, snapshot: sample.pasteboard)
         }
         isMonitoring = true
     }
 
     /// Removes all event registrations.
     func stop() {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-            self.globalMonitor = nil
-        }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
-            self.localMonitor = nil
-        }
+        eventSource.stop(.edge)
         tracker = nil
         fileDragTracker.reset()
         isMonitoring = false

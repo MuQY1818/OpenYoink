@@ -106,7 +106,7 @@ final class HotKeyMonitor {
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
     private var handlerUserData: UnsafeMutableRawPointer?
-    private var nsEventMonitor: Any?
+    private var nsEventMonitor: EventMonitor<Bool>?
 
     private let logger = Log.make(category: "HotKey")
 
@@ -263,13 +263,13 @@ final class HotKeyMonitor {
     private func installNSEventFallback() {
         guard let shortcut else { return }
         let actionBox = requireActionBox()
-        nsEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            guard HotKeyMonitor.matches(event, shortcut: shortcut) else { return }
-            Task { @MainActor in
-                actionBox.action()
-            }
+        let monitor = EventMonitor(matching: .keyDown, includesLocal: false,
+                                   capture: { HotKeyMonitor.matches($0, shortcut: shortcut) }) { matches in
+            if matches { actionBox.action() }
         }
-        if nsEventMonitor != nil {
+        nsEventMonitor = monitor
+        monitor.start()
+        if monitor.isRunning {
             isActive = true
             activeBackend = .nsEvent
         }
@@ -291,10 +291,8 @@ final class HotKeyMonitor {
             Unmanaged<HotKeyActionBox>.fromOpaque(handlerUserData).release()
             self.handlerUserData = nil
         }
-        if let nsEventMonitor {
-            NSEvent.removeMonitor(nsEventMonitor)
-            self.nsEventMonitor = nil
-        }
+        nsEventMonitor?.stop()
+        nsEventMonitor = nil
         isActive = false
         activeBackend = nil
     }

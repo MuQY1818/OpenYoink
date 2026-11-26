@@ -215,7 +215,8 @@ final class AppServices {
     /// 短停留唤出；custom 位置无贴附缘时暂停（applyTriggerSettings）。
     /// EdgeTab: 拖动拉环本身（isEdgeTabBeingDragged）也是 leftMouseDragged，
     /// 会路过贴缘带 —— 抑制，避免重定位拉环时误唤出。
-    lazy var edgeTriggerMonitor = EdgeTriggerMonitor(shouldSuppress: { [weak self] in
+    private let dragEventSource = DragEventSource()
+    lazy var edgeTriggerMonitor = EdgeTriggerMonitor(eventSource: dragEventSource, shouldSuppress: { [weak self] in
         guard let self else { return true }
         return self.appState.isShelfVisible
             || self.appState.isEdgeTabBeingDragged
@@ -233,7 +234,7 @@ final class AppServices {
     /// 同样保持注册（applyTriggerSettings）。
     /// EdgeTab: 拖动拉环本身被识别为拖拽是正常的，但不应唤出 shelf ——
     /// 经 isEdgeTabBeingDragged 抑制（拉环此时独占该手势）。
-    lazy var dragStartMonitor = DragStartMonitor(shouldSuppress: { [weak self] in
+    lazy var dragStartMonitor = DragStartMonitor(eventSource: dragEventSource, shouldSuppress: { [weak self] in
         guard let self else { return false }
         return self.appState.isEdgeTabBeingDragged
             || IgnoreListService.frontmostAppIsIgnored(in: self.settingsStore.ignoredAppBundleIDs)
