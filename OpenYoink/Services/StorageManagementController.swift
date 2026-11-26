@@ -55,7 +55,7 @@ final class StorageManagementController {
     var canCleanUnusedFiles: Bool {
         !hasQuarantinedData
             && !snapshots.contains { !$0.isRecoverable }
-            && (managedMoveJournal?.permitsManagedOrphanCleanup ?? true)
+            && (managedMoveJournal?.permitsOrphanCleanup ?? true)
             && (pendingImportJournal?.permitsOrphanCleanup ?? true)
     }
 
@@ -96,7 +96,7 @@ final class StorageManagementController {
         }
 
         do {
-            if containsItem(id: pending.id, in: shelfStore.items) {
+            if shelfStore.items.contains(id: pending.id) {
                 try journal.remove(id: pending.id)
                 statusMessage = String(localized: "This file was already imported. Its recovery record was cleared.")
                 refresh()
@@ -179,7 +179,7 @@ final class StorageManagementController {
         do {
             // A stale record may survive a crash immediately after shelf save.
             // Never delete the payload of an already-persisted item.
-            if containsItem(id: pending.id, in: shelfStore.items) {
+            if shelfStore.items.contains(id: pending.id) {
                 try journal.remove(id: pending.id)
             } else {
                 try journal.remove(id: pending.id)
@@ -231,7 +231,7 @@ final class StorageManagementController {
     func cleanUnusedFiles() {
         statusMessage = nil
         errorMessage = nil
-        guard managedMoveJournal?.permitsManagedOrphanCleanup ?? true else {
+        guard managedMoveJournal?.permitsOrphanCleanup ?? true else {
             errorMessage = String(localized: "Resolve managed move recovery data before cleaning files.")
             refresh()
             return
@@ -248,8 +248,8 @@ final class StorageManagementController {
         }
 
         let protectedItems = shelfStore.items + persistence.recoverableSnapshotItems()
-        var protectedPaths = materializedPaths(in: protectedItems)
-        protectedPaths.formUnion(managedMoveJournal?.protectedManagedPaths() ?? [])
+        var protectedPaths = protectedItems.materializedPaths(in: tempFileService.directoryURL)
+        protectedPaths.formUnion(managedMoveJournal?.protectedPaths() ?? [])
         protectedPaths.formUnion(pendingImportJournal?.protectedPaths() ?? [])
         protectedPaths.formUnion(additionalProtectedPaths())
         protectedPaths.formUnion(shelfStore.undoProtectedPaths)
@@ -280,29 +280,6 @@ final class StorageManagementController {
         }
     }
 
-    private func materializedPaths(in items: [ShelfItem]) -> Set<String> {
-        let root = tempFileService.directoryURL.standardizedFileURL.path
-        let prefix = root.hasSuffix("/") ? root : root + "/"
-        var result = Set<String>()
-        for item in items {
-            if let path = item.path {
-                let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-                if standardized.hasPrefix(prefix) {
-                    result.insert(standardized)
-                }
-            }
-            if let children = item.children {
-                result.formUnion(materializedPaths(in: children))
-            }
-        }
-        return result
-    }
-
-    private func containsItem(id: UUID, in items: [ShelfItem]) -> Bool {
-        items.contains { item in
-            item.id == id || containsItem(id: id, in: item.children ?? [])
-        }
-    }
 }
 
 private enum PendingImportRecoveryError: LocalizedError {

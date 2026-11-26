@@ -42,7 +42,7 @@ struct EmptyShelfAutoHideRule: Sendable, Equatable {
 @MainActor
 final class ShelfWindowController: NSObject {
     private static let animationDuration: TimeInterval = 0.2
-    private let islandLogger = Logger(subsystem: "com.weijue.OpenYoink", category: "IslandPresentation")
+    private let islandLogger = Log.make(category: "IslandPresentation")
     var onClassicDestinationEntered: ((Int) -> Void)?
     var onClassicDestinationEnded: ((Int, Bool) -> Void)?
     var onClassicPresentationRequested: (() -> Void)?

@@ -377,7 +377,7 @@ final class ShelfStoreTests: XCTestCase {
         persistence.flushPendingSave()
 
         // 解散后的存活子项被持久化（stack 已不存在）。
-        XCTAssertEqual(persistence.load().map(\.id), [b.id])
+        XCTAssertEqual(persistence.loadResult().contents.map(\.id), [b.id])
     }
 
     // MARK: - Item updates
@@ -415,7 +415,7 @@ final class ShelfStoreTests: XCTestCase {
         XCTAssertTrue(try store.updateRecursivelyAndPersistNow(relocated))
 
         XCTAssertEqual(store.itemRecursively(withID: child.id)?.path, "/tmp/reconnected")
-        XCTAssertEqual(persistence.load()[0].children?[0].bookmark, Data([1, 2, 3]))
+        XCTAssertEqual(persistence.loadResult().contents[0].children?[0].bookmark, Data([1, 2, 3]))
     }
 
     func testRecursiveDurableUpdate_saveFailureLeavesRuntimeUntouched() throws {
@@ -443,13 +443,13 @@ final class ShelfStoreTests: XCTestCase {
         let item = makeItem("managed")
         var callbackSawDurableItem = false
         store.onItemsDidChange = {
-            callbackSawDurableItem = persistence.load().contains { $0.id == item.id }
+            callbackSawDurableItem = persistence.loadResult().contents.contains { $0.id == item.id }
         }
 
         try store.addAndPersistNow(item)
 
         XCTAssertEqual(store.items.map(\.id), [item.id])
-        XCTAssertEqual(persistence.load().map(\.id), [item.id])
+        XCTAssertEqual(persistence.loadResult().contents.map(\.id), [item.id])
         XCTAssertTrue(callbackSawDurableItem)
     }
 
@@ -476,14 +476,14 @@ final class ShelfStoreTests: XCTestCase {
         try persistence.saveNow(store.items)
         var callbackSawDurableRemoval = false
         store.onItemsDidChange = {
-            callbackSawDurableRemoval = !persistence.load().contains { $0.id == remove.id }
+            callbackSawDurableRemoval = !persistence.loadResult().contents.contains { $0.id == remove.id }
         }
 
         let removed = try store.removeAndPersistNow(ids: [remove.id])
 
         XCTAssertEqual(removed.map(\.id), [remove.id])
         XCTAssertEqual(store.items.map(\.id), [keep.id])
-        XCTAssertEqual(persistence.load().map(\.id), [keep.id])
+        XCTAssertEqual(persistence.loadResult().contents.map(\.id), [keep.id])
         XCTAssertTrue(callbackSawDurableRemoval)
     }
 
@@ -509,7 +509,7 @@ final class ShelfStoreTests: XCTestCase {
         store.add(makeItem("a"))
         store.add(makeItem("b"))
         persistence.flushPendingSave()
-        XCTAssertEqual(persistence.load().map(\.displayName), ["a", "b"])
+        XCTAssertEqual(persistence.loadResult().contents.map(\.displayName), ["a", "b"])
 
         // A second store over the same controller sees the saved contents.
         let reloaded = ShelfStore(persistence: persistence)
@@ -517,6 +517,6 @@ final class ShelfStoreTests: XCTestCase {
 
         store.removeAll()
         persistence.flushPendingSave()
-        XCTAssertEqual(persistence.load(), [])
+        XCTAssertEqual(persistence.loadResult().contents, [])
     }
 }

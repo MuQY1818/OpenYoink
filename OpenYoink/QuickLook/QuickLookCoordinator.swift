@@ -15,7 +15,7 @@ import SwiftUI
 enum QuickLookPreviewPlanner {
     /// 解析预览集合（展平 + 剔除 stale 后的最终结果）。
     static func previewItems(selection: [ShelfItem], contextItem: ShelfItem?) -> [ShelfItem] {
-        flatten(baseItems(selection: selection, contextItem: contextItem))
+        baseItems(selection: selection, contextItem: contextItem).flattened
             .filter { !$0.isStale }
     }
 
@@ -39,15 +39,6 @@ enum QuickLookPreviewPlanner {
         return contextItem.map { [$0] } ?? []
     }
 
-    /// stack 递归展开为 children；其余项目原样保留。
-    static func flatten(_ items: [ShelfItem]) -> [ShelfItem] {
-        items.flatMap { item -> [ShelfItem] in
-            if item.kind == .stack, let children = item.children {
-                return flatten(children)
-            }
-            return [item]
-        }
-    }
 }
 
 // MARK: - Item actions (Open / Show in Finder)
@@ -215,7 +206,7 @@ final class QuickLookCoordinator: NSObject, @MainActor QLPreviewPanelDataSource,
     private let store: ShelfStore
     private let bookmarkService: BookmarkService
     private let tempFileService: TempFileService
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "QuickLook")
+    private let logger = Log.make(category: "QuickLook")
 
     /// QLPreviewPanel 进程内共享单例。SDK 声明返回可选值（实践中恒非 nil），
     /// 统一经此访问以避免散落解包。

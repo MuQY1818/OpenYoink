@@ -108,7 +108,7 @@ final class HotKeyMonitor {
     private var handlerUserData: UnsafeMutableRawPointer?
     private var nsEventMonitor: Any?
 
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "HotKey")
+    private let logger = Log.make(category: "HotKey")
 
     /// Four-character signature for our hot key IDs ('OYHK').
     private nonisolated static let hotKeySignature = OSType(0x4F59_484B)

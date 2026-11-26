@@ -36,7 +36,7 @@ final class ShelfStore {
     private var removalUndo: [[RemovalChange]] = []
     var canUndoRemoval: Bool { !removalUndo.isEmpty }
     var undoProtectedPaths: Set<String> {
-        Set(removalUndo.flatMap { $0.flatMap { DragPayloadBuilder.flattenedItems([$0.before]).compactMap(\.path) } })
+        Set(removalUndo.flatMap { $0.flatMap { [$0.before].flattened.compactMap(\.path) } })
     }
 
     /// Only explicit card removal is undoable; delivered files are never restored.
@@ -85,7 +85,7 @@ final class ShelfStore {
                 guard let index = items.firstIndex(where: { $0 == after }) else { continue }
                 items[index] = change.before
             } else {
-                let ids = Set(DragPayloadBuilder.flattenedItems([change.before]).map(\.id))
+                let ids = Set([change.before].flattened.map(\.id))
                 guard itemRecursively(withID: change.before.id) == nil,
                       ids.allSatisfy({ itemRecursively(withID: $0) == nil }) else { continue }
                 items.insert(change.before, at: min(change.index, items.count))
@@ -98,7 +98,7 @@ final class ShelfStore {
 
     func invalidateUndoForDeliveredItem(_ id: UUID) {
         removalUndo.removeAll { changes in
-            changes.contains { DragPayloadBuilder.flattenedItems([$0.before]).contains { $0.id == id } }
+            changes.contains { [$0.before].flattened.contains { $0.id == id } }
         }
     }
 
@@ -118,7 +118,7 @@ final class ShelfStore {
 
     /// Creates a store preloaded with the persisted shelf contents.
     convenience init(persistence: PersistenceController) {
-        self.init(items: persistence.load(), persistence: persistence)
+        self.init(items: persistence.loadResult().contents, persistence: persistence)
     }
 
     // MARK: - Queries
@@ -134,10 +134,7 @@ final class ShelfStore {
 
     /// Finds a top-level item or a descendant of a stack.
     func itemRecursively(withID id: UUID) -> ShelfItem? {
-        for item in items {
-            if let match = Self.item(withID: id, inside: item) { return match }
-        }
-        return nil
+        items.item(withID: id)
     }
 
     func index(ofItemWithID id: UUID) -> Int? {
@@ -456,13 +453,6 @@ final class ShelfStore {
         onItemsDidChange?()
     }
 
-    private static func item(withID id: UUID, inside item: ShelfItem) -> ShelfItem? {
-        if item.id == id { return item }
-        for child in item.children ?? [] {
-            if let match = self.item(withID: id, inside: child) { return match }
-        }
-        return nil
-    }
 
     private static func replace(_ replacement: ShelfItem, inside items: inout [ShelfItem]) -> Bool {
         for index in items.indices {

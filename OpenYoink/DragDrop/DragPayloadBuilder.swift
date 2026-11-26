@@ -73,16 +73,6 @@ enum DragPayloadBuilder {
         }
     }
 
-    /// 展开 stack 为全部子项（递归，防御嵌套 stack），非 stack 项目原样保留、
-    /// 顺序不变。语义：stack 卡片拖出 = 拖出其全部子项（计划 §2.3）。
-    static func flattenedItems(_ items: [ShelfItem]) -> [ShelfItem] {
-        items.flatMap { item -> [ShelfItem] in
-            guard item.kind == .stack, let children = item.children, !children.isEmpty else {
-                return [item]
-            }
-            return flattenedItems(children)
-        }
-    }
 
     /// promise 声明的内容 UTI：文件夹 → `public.folder`；其余按扩展名经系统
     /// 声明表推断；无/未知扩展名回退 `public.data`。
@@ -115,7 +105,7 @@ enum DragPayloadBuilder {
     static func makeFileAccessLease(for items: [ShelfItem],
                                     bookmarkService: BookmarkService) -> BookmarkAccessLease {
         var accessedURLs: [URL] = []
-        for item in flattenedItems(items) where !item.isCut {
+        for item in items.flattened where !item.isCut {
             guard strategy(for: item) == .fileBacked || strategy(for: item) == .fileBackedImage,
                   let bookmark = item.bookmark,
                   let resolved = try? bookmarkService.resolve(bookmark) else { continue }
@@ -159,7 +149,7 @@ enum DragPayloadBuilder {
                                   delivery: DeliverySink? = nil,
                                   tutorialTokensByItemID: [UUID: String] = [:],
                                   cardPreviewImage: NSImage? = nil) -> [NSDraggingItem] {
-        let flattened = flattenedItems(items)
+        let flattened = items.flattened
         let singleItemPreview = flattened.count == 1 ? cardPreviewImage : nil
         return flattened.compactMap { item in
             guard let writer = makePasteboardWriter(

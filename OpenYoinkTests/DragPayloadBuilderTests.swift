@@ -86,7 +86,7 @@ final class DragPayloadBuilderTests: XCTestCase {
         let d = ShelfItem(kind: .file, path: "/tmp/d.txt", displayName: "d.txt")
         let stack = ShelfItem(kind: .stack, displayName: "s", children: [b, c])
 
-        let flat = DragPayloadBuilder.flattenedItems([a, stack, d])
+        let flat = [a, stack, d].flattened
 
         XCTAssertEqual(flat.map(\.displayName), ["a.txt", "b", "c", "d.txt"])
         XCTAssertEqual(flat.map(\.id), [a.id, b.id, c.id, d.id])
@@ -99,7 +99,7 @@ final class DragPayloadBuilderTests: XCTestCase {
         let empty = ShelfItem(kind: .stack, displayName: "empty", children: [])
 
         // 嵌套 stack 递归展开；空 stack 原样保留（交由 writer 构造判 nil 丢弃）。
-        let flat = DragPayloadBuilder.flattenedItems([outer, empty])
+        let flat = [outer, empty].flattened
         XCTAssertEqual(flat.map(\.displayName), ["leaf.txt", "empty"])
     }
 

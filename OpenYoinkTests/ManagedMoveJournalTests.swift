@@ -38,8 +38,8 @@ final class ManagedMoveJournalTests: XCTestCase {
         defer { context.cleanup() }
 
         XCTAssertEqual(context.journal.loadResult(), .missing)
-        XCTAssertTrue(context.journal.permitsManagedOrphanCleanup)
-        XCTAssertEqual(context.journal.protectedManagedPaths(), [])
+        XCTAssertTrue(context.journal.permitsOrphanCleanup)
+        XCTAssertEqual(context.journal.protectedPaths(), [])
     }
 
     func testPreparedRecordRoundTripsAndProtectsManagedPath() throws {
@@ -58,7 +58,7 @@ final class ManagedMoveJournalTests: XCTestCase {
         XCTAssertEqual(records[0].referenceItem, items.reference)
         XCTAssertEqual(records[0].managedItem, items.managed)
         XCTAssertEqual(records[0].id, items.managed.id)
-        XCTAssertEqual(context.journal.protectedManagedPaths(), [items.managed.path!])
+        XCTAssertEqual(context.journal.protectedPaths(), [items.managed.path!])
     }
 
     func testOriginalTrashedTransitionPersistsResultingPath() throws {
@@ -89,7 +89,7 @@ final class ManagedMoveJournalTests: XCTestCase {
         try context.journal.remove(id: items.managed.id)
 
         XCTAssertEqual(context.journal.loadResult(), .missing)
-        XCTAssertTrue(context.journal.permitsManagedOrphanCleanup)
+        XCTAssertTrue(context.journal.permitsOrphanCleanup)
     }
 
     func testRemovingAllRecordsAlsoDeletesStaleBackup() throws {
@@ -123,7 +123,7 @@ final class ManagedMoveJournalTests: XCTestCase {
         let items = makeItems(root: context.root)
 
         XCTAssertEqual(context.journal.loadResult(), .failed)
-        XCTAssertFalse(context.journal.permitsManagedOrphanCleanup)
+        XCTAssertFalse(context.journal.permitsOrphanCleanup)
         XCTAssertThrowsError(try context.journal.createPrepared(
             referenceItem: items.reference,
             managedItem: items.managed
@@ -145,7 +145,7 @@ final class ManagedMoveJournalTests: XCTestCase {
         try text.write(to: journalURL, atomically: true, encoding: .utf8)
 
         XCTAssertEqual(context.journal.loadResult(), .failed)
-        XCTAssertFalse(context.journal.permitsManagedOrphanCleanup)
+        XCTAssertFalse(context.journal.permitsOrphanCleanup)
     }
 
     // MARK: - Recovery decision table

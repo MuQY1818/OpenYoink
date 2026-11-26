@@ -156,7 +156,7 @@ nonisolated final class FilePromiseDelegate: NSObject, NSFilePromiseProviderDele
     private let onDelivered: (@Sendable (URL) -> Void)?
     private let onError: (@Sendable (Error) -> Void)?
     private let writeQueue: OperationQueue
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "FilePromiseProvider")
+    private let logger = Log.make(category: "FilePromiseProvider")
 
     init(payload: FilePromiseProvider.Payload,
          bookmarkService: BookmarkService,

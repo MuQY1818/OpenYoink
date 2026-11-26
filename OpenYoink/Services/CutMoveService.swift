@@ -57,7 +57,7 @@ final class CutMoveService: Sendable {
     /// 原文件进废纸篓；测试注入 mock 验证编排与失败分支。
     let trashOriginal: @Sendable (URL) throws -> URL?
 
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "CutMove")
+    private let logger = Log.make(category: "CutMove")
 
     init(tempFileService: TempFileService,
          bookmarkService: BookmarkService,
@@ -72,7 +72,7 @@ final class CutMoveService: Sendable {
         // 容器 Data 根 = `~/Library/Containers/<id>/Data`；非沙箱（测试宿主）
         // 下回退为用户 Library 的父目录语义不可靠，故测试必须注入。
         self.containerURL = containerURL
-            ?? AppDirectories.applicationSupport()  // <Data>/Library/Application Support/OpenYoink
+            ?? AppPaths.applicationSupport()  // <Data>/Library/Application Support/OpenYoink
                 .deletingLastPathComponent()        // <Data>/Library/Application Support
                 .deletingLastPathComponent()        // <Data>/Library
                 .deletingLastPathComponent()        // <Data>
@@ -118,7 +118,7 @@ final class CutMoveService: Sendable {
         let referenceItem = request.referenceItem
 
         // 1. 防套娃：源已在 app 容器内（例如保管目录里的文件被再次 ⌘ 拖入）。
-        guard !isInsideContainer(sourceURL) else {
+        guard !isContainedInAppContainer(sourceURL) else {
             return .fallbackToReference(referenceItem, .sourceInsideContainer)
         }
 
@@ -192,11 +192,7 @@ final class CutMoveService: Sendable {
         return .moved(item)
     }
 
-    /// 源路径（标准化 + 解符号链接）是否位于容器根之内。
-    private func isInsideContainer(_ url: URL) -> Bool {
-        let containerPath = containerURL.standardizedFileURL.resolvingSymlinksInPath().path
-        let sourcePath = url.standardizedFileURL.resolvingSymlinksInPath().path
-        let prefix = containerPath.hasSuffix("/") ? containerPath : containerPath + "/"
-        return sourcePath.hasPrefix(prefix)
+    private func isContainedInAppContainer(_ url: URL) -> Bool {
+        url.isContained(in: containerURL)
     }
 }

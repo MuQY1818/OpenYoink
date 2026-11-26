@@ -84,26 +84,24 @@ final class FavoriteFolderDropCoordinator {
     }
     private func fileBookmarks(_ context: DragContainerDropContext) -> [Data] {
         if let items = context.internalItems {
-            let leaves = DragPayloadBuilder.flattenedItems(items)
+            let leaves = items.flattened
             guard !leaves.isEmpty, leaves.allSatisfy({ [.file, .folder, .image].contains($0.kind)
                 && $0.availability == .available && $0.bookmark != nil }) else { return [] }
             return leaves.compactMap(\.bookmark)
         }
         if context.isInternal { return [] }
-        let urls = (context.pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) ?? [])
-            .compactMap { ($0 as? NSURL).map { $0 as URL } }
+        let urls = context.pasteboard.fileURLs()
         let data = urls.compactMap { try? bookmarks.createBookmark(for: $0) }
         return data.count == urls.count ? data : []
     }
     static func hasFiles(_ context: DragContainerDropContext) -> Bool {
         if let items = context.internalItems {
-            let leaves = DragPayloadBuilder.flattenedItems(items)
+            let leaves = items.flattened
             return !leaves.isEmpty && leaves.allSatisfy {
                 [.file, .folder, .image].contains($0.kind) && $0.availability == .available && $0.bookmark != nil
             }
         }
-        return !context.isInternal && !(context.pasteboard.readObjects(forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]) ?? []).isEmpty
+        return !context.isInternal && !context.pasteboard.fileURLs().isEmpty
     }
     private func updateProgress(_ done: Int, total: Int) { completed = done; self.total = total }
     private func resolveConflict(_ name: String) async -> FolderCopyConflictDecision {

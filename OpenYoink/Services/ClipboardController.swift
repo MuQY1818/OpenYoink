@@ -63,7 +63,7 @@ enum ClipboardController {
     static func copy(_ items: [ShelfItem],
                      to pasteboard: NSPasteboard = .general,
                      bookmarkService: BookmarkService) -> Result {
-        let flattened = DragPayloadBuilder.flattenedItems(items)
+        let flattened = items.flattened
         var writers: [NSPasteboardWriting] = []
         var accessedURLs: [URL] = []
         defer {

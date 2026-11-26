@@ -25,11 +25,12 @@ final class OnboardingSessionStore {
     let rootURL: URL
     private let fileManager: FileManager
 
-    private var recordURL: URL { rootURL.appendingPathComponent("tutorial-session.json") }
+    private let recordFile: JSONFileStore<Record>
 
     init(rootURL: URL? = nil, fileManager: FileManager = .default) {
         self.rootURL = rootURL
-            ?? AppDirectories.applicationSupport().appendingPathComponent("Tutorial", isDirectory: true)
+            ?? AppPaths.applicationSupport().appendingPathComponent("Tutorial", isDirectory: true)
+        self.recordFile = JSONFileStore(self.rootURL.appendingPathComponent("tutorial-session.json"))
         self.fileManager = fileManager
     }
 
@@ -52,8 +53,7 @@ final class OnboardingSessionStore {
     /// 返回结构和路径均有效的未完成 session。损坏记录只返回 nil；调用方可
     /// 用 `discardAll()` 清掉完全位于 Tutorial 根目录内的残留后重新开始。
     func load() -> Record? {
-        guard let data = try? Data(contentsOf: recordURL),
-              let record = try? JSONDecoder().decode(Record.self, from: data),
+        guard let record = try? recordFile.decode(contentsOf: recordFile.url),
               !record.token.isEmpty,
               (record.phase == .awaitingImport || record.tutorialItemID != nil),
               (try? sessionDirectory(for: record.sessionID)) != nil else {
@@ -83,8 +83,8 @@ final class OnboardingSessionStore {
         if fileManager.fileExists(atPath: directory.path) {
             try fileManager.removeItem(at: directory)
         }
-        if fileManager.fileExists(atPath: recordURL.path) {
-            try fileManager.removeItem(at: recordURL)
+        if fileManager.fileExists(atPath: recordFile.url.path) {
+            try fileManager.removeItem(at: recordFile.url)
         }
     }
 
@@ -103,9 +103,7 @@ final class OnboardingSessionStore {
     private func save(_ record: Record) throws {
         _ = try sessionDirectory(for: record.sessionID)
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(record).write(to: recordURL, options: .atomic)
+        try recordFile.writeAtomically(record)
     }
 
     private func sessionDirectory(for sessionID: UUID) throws -> URL {

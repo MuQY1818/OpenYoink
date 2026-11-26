@@ -119,14 +119,14 @@ final class DragOutController {
             for: effectiveContents.items,
             bookmarkService: bookmarkService
         )
-        let flattenedPreviewItems = DragPayloadBuilder.flattenedItems(effectiveContents.items)
+        let flattenedPreviewItems = effectiveContents.items.flattened
         let draggingItems = DragPayloadBuilder.makeDraggingItems(
             for: effectiveContents.items,
             frame: sourceView.bounds,
             bookmarkService: bookmarkService,
             delivery: sink,
             tutorialTokensByItemID: Dictionary(
-                uniqueKeysWithValues: DragPayloadBuilder.flattenedItems(effectiveContents.items).compactMap { item in
+                uniqueKeysWithValues: effectiveContents.items.flattened.compactMap { item in
                     tutorialTokenForItem(item.id).map { (item.id, $0) }
                 }
             ),
@@ -147,7 +147,7 @@ final class DragOutController {
                                            recents: recents,
                                            delivery: deliveryCoordinator,
                                            policyExcludedItemIDs: Set(
-                                               DragPayloadBuilder.flattenedItems(effectiveContents.items).compactMap { item in
+                                               effectiveContents.items.flattened.compactMap { item in
                                                    tutorialTokenForItem(item.id) == nil ? nil : item.id
                                                }
                                            ),
@@ -401,7 +401,7 @@ final class DragSessionController: NSObject, NSDraggingSource {
     /// F-05: 剔除剪切项后的展开项目集合（最近历史只记非剪切项；剪切项在
     /// 交付确认时由 DeliveryCoordinator 单独记录）。
     private var nonCutFlattenedItems: [ShelfItem] {
-        DragPayloadBuilder.flattenedItems(contents.items).filter {
+        contents.items.flattened.filter {
             !$0.isCut && !policyExcludedItemIDs.contains($0.id)
         }
     }
@@ -508,7 +508,7 @@ final class DeliveryCoordinator {
     private let recents: RecentItemsService
     private let tempFileService: TempFileService
     private let transferStore: TransferStore
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "Delivery")
+    private let logger = Log.make(category: "Delivery")
 
     init(store: ShelfStore,
          recents: RecentItemsService,
@@ -521,7 +521,7 @@ final class DeliveryCoordinator {
     }
 
     func noteSessionBegan(id: UUID, contents: DragOutContents) {
-        let flattened = DragPayloadBuilder.flattenedItems(contents.items)
+        let flattened = contents.items.flattened
             .filter(DragPayloadBuilder.canMakePasteboardWriter)
         var itemsByID: [UUID: PendingItem] = [:]
         var orderedItemIDs: [UUID] = []
@@ -659,24 +659,15 @@ final class DeliveryCoordinator {
     /// a materialized card before a target makes a late promise request; these
     /// snapshots prevent manual cleanup from deleting the only retained bytes.
     var protectedMaterializedPaths: Set<String> {
-        let root = tempFileService.directoryURL.standardizedFileURL.path
-        let prefix = root.hasSuffix("/") ? root : root + "/"
-        var result = Set<String>()
-        for session in sessions.values where session.accepted == true {
-            for pending in session.itemsByID.values {
-                guard case .delivered = pending.promiseState else {
-                    if !containsItem(pending.item.id),
-                       let path = pending.item.path {
-                        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-                        if standardized.hasPrefix(prefix) {
-                            result.insert(standardized)
-                        }
-                    }
-                    continue
-                }
+        let undelivered = sessions.values
+            .filter { $0.accepted == true }
+            .flatMap(\.itemsByID.values)
+            .filter { pending in
+                if case .delivered = pending.promiseState { return false }
+                return !containsItem(pending.item.id)
             }
-        }
-        return result
+            .map(\.item)
+        return undelivered.materializedPaths(in: tempFileService.directoryURL)
     }
 
     private func registerFailure(_ item: ShelfItem,
@@ -708,7 +699,7 @@ final class DeliveryCoordinator {
         if store.item(withID: item.id) != nil {
             store.remove(ids: [item.id])
         } else if let stack = store.items.first(where: {
-            containsItem(item.id, in: $0.children ?? [])
+            ($0.children ?? []).contains(id: item.id)
         }) {
             store.removeChild(item.id, fromStack: stack.id)
         }
@@ -721,20 +712,12 @@ final class DeliveryCoordinator {
         if let index = store.index(ofItemWithID: itemID) {
             return index
         }
-        return store.items.firstIndex { containsItem(itemID, in: $0.children ?? []) }
+        return store.items.firstIndex { ($0.children ?? []).contains(id: itemID) }
             ?? store.items.count
     }
 
     private func containsItem(_ itemID: UUID) -> Bool {
-        store.items.contains { item in
-            item.id == itemID || containsItem(itemID, in: item.children ?? [])
-        }
-    }
-
-    private func containsItem(_ itemID: UUID, in items: [ShelfItem]) -> Bool {
-        items.contains { item in
-            item.id == itemID || containsItem(itemID, in: item.children ?? [])
-        }
+        store.items.contains(id: itemID)
     }
 
     private func discardSession(_ id: UUID) {

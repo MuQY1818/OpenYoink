@@ -86,7 +86,7 @@ final class DropImportCoordinator {
     let transferStore: TransferStore
     private let tempFileService: TempFileService
     private let promiseReceiver: FilePromiseReceiver
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "DropImport")
+    private let logger = Log.make(category: "DropImport")
 
     init(bookmarkService: BookmarkService,
          tempFileService: TempFileService,
@@ -513,13 +513,7 @@ final class DropImportCoordinator {
     // MARK: - fileURL
 
     private func fileURLItems(from pasteboard: NSPasteboard) -> [ShelfItem] {
-        guard let urls = pasteboard.readObjects(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL] else {
-            return []
-        }
-        return urls.map { Self.makeFileBackedItem(for: $0, displayName: $0.lastPathComponent, bookmarkService: bookmarkService, logger: logger) }
+        pasteboard.fileURLs().map { Self.makeFileBackedItem(for: $0, displayName: $0.lastPathComponent, bookmarkService: bookmarkService, logger: logger) }
     }
 
     // MARK: - fileURL（F-05 剪切模式）
@@ -534,13 +528,7 @@ final class DropImportCoordinator {
         onManagedMoveReady: (@MainActor (ShelfItem) -> Bool)?,
         onItemReady: @escaping @MainActor (ShelfItem) -> Void
     ) -> Int {
-        guard let urls = pasteboard.readObjects(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL] else {
-            return 0
-        }
-
+        let urls = pasteboard.fileURLs()
         let service = cutMoveService
         let requests = urls.map {
             service.prepareRequest(for: $0, displayName: $0.lastPathComponent)

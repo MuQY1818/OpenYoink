@@ -40,7 +40,7 @@ final class UpdateController: NSObject {
     private(set) var status: Status = .idle
 
     private let settings: SettingsStore
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "Update")
+    private let logger = Log.make(category: "Update")
 
     /// UpdateController 本身由 AppDelegate 懒加载，故 updater controller 可在
     /// init 直接创建。startingUpdater: false，由 start() 在应用完设置后显式启动。

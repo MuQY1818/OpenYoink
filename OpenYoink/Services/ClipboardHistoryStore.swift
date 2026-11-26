@@ -28,7 +28,7 @@ final class ClipboardHistoryStore {
     var onShowWindow: (() -> Void)?
 
     init(settings: SettingsStore, pasteboard: NSPasteboard = .general,
-         directoryURL: URL = AppDirectories.applicationSupport(), now: @escaping () -> Date = Date.init,
+         directoryURL: URL = AppPaths.applicationSupport(), now: @escaping () -> Date = Date.init,
          sourceIsIgnored: (() -> Bool)? = nil) {
         self.settings = settings
         self.pasteboard = pasteboard
@@ -120,10 +120,7 @@ final class ClipboardHistoryStore {
         let types = Set((pasteboard.pasteboardItems ?? []).flatMap { $0.types.map(\.rawValue) })
             .union((pasteboard.types ?? []).map(\.rawValue))
         let isFileCopy = types.contains(NSPasteboard.PasteboardType.fileURL.rawValue)
-        let fileURLs = isFileCopy
-            ? (pasteboard.readObjects(forClasses: [NSURL.self],
-                                      options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-            : []
+        let fileURLs = isFileCopy ? pasteboard.fileURLs() : []
         guard ClipboardHistoryPolicy.permits(types: types, fileURLs: fileURLs,
                                              sourceIsIgnored: sourceIsIgnored()) else { return }
         let copiedAt = now()

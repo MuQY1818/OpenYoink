@@ -26,11 +26,10 @@ final class TempFileService: Sendable {
     /// 必须共用它，否则目录会永远清不到，或在文件仍写入时被提前删除。
     private static let promiseStagingPrefix = "PromiseStaging-"
 
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "TempFileService")
+    private let logger = Log.make(category: "TempFileService")
 
     init(directoryURL: URL? = nil) {
-        self.directoryURL = directoryURL
-            ?? AppDirectories.applicationSupport().appendingPathComponent("Materialized", isDirectory: true)
+        self.directoryURL = directoryURL ?? AppPaths.materialized()
     }
 
     /// Returns a unique, non-existent file URL inside the managed directory.
@@ -65,7 +64,7 @@ final class TempFileService: Sendable {
     /// Throws `outsideManagedDirectory` for any URL outside the managed
     /// directory, so a caller bug can never delete a user's original file.
     func removeMaterializedFile(at url: URL) throws {
-        guard isInsideManagedDirectory(url) else {
+        guard url.isContained(in: directoryURL) else {
             throw TempFileServiceError.outsideManagedDirectory(url)
         }
         if FileManager.default.fileExists(atPath: url.path) {
@@ -146,13 +145,6 @@ final class TempFileService: Sendable {
             values?.fileSize,
         ].compactMap { $0 }
         return Int64(candidates.first(where: { $0 > 0 }) ?? 0)
-    }
-
-    private func isInsideManagedDirectory(_ url: URL) -> Bool {
-        let directoryPath = directoryURL.standardizedFileURL.resolvingSymlinksInPath().path
-        let filePath = url.standardizedFileURL.resolvingSymlinksInPath().path
-        let prefix = directoryPath.hasSuffix("/") ? directoryPath : directoryPath + "/"
-        return filePath.hasPrefix(prefix)
     }
 
     /// 清理 promise 物化的共享 staging 目录（`PromiseStaging-*`）：只删

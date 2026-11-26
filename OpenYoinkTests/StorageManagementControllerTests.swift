@@ -36,7 +36,7 @@ final class StorageManagementControllerTests: XCTestCase {
         controller.restore(backup)
 
         XCTAssertEqual(store.items.map(\.displayName), ["old"])
-        XCTAssertEqual(persistence.load().map(\.displayName), ["old"])
+        XCTAssertEqual(persistence.loadResult().contents.map(\.displayName), ["old"])
         XCTAssertNil(controller.errorMessage)
         // 恢复前的 current 被 saveNow 反向保存在同一个 backup，可再次撤回。
         let undo = try XCTUnwrap(controller.latestRecoverableSnapshot)
@@ -237,7 +237,7 @@ final class StorageManagementControllerTests: XCTestCase {
         XCTAssertEqual(store.items[0].path, destinationURL.path)
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: stagingURL.path))
-        XCTAssertEqual(persistence.load().map(\.id), [record.id])
+        XCTAssertEqual(persistence.loadResult().contents.map(\.id), [record.id])
         XCTAssertEqual(journal.loadResult(), .missing)
         XCTAssertNil(controller.errorMessage)
     }

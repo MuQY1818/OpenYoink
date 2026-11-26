@@ -60,7 +60,7 @@ final class FilePromiseReceiverRecoveryTests: XCTestCase {
         XCTAssertNotNil(item.bookmark)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(item.path)))
-        XCTAssertEqual(context.journal.loadResult().records.first?.id, recoveryID)
+        XCTAssertEqual(context.journal.loadResult().contents.first?.id, recoveryID)
         XCTAssertNil(failure)
     }
 
@@ -84,7 +84,7 @@ final class FilePromiseReceiverRecoveryTests: XCTestCase {
         )
 
         XCTAssertEqual(failure, .openStorageRecovery)
-        XCTAssertEqual(context.journal.loadResult().records.count, 1)
+        XCTAssertEqual(context.journal.loadResult().contents.count, 1)
     }
 
     func testSourceErrorBeforeJournalRequiresNewSourceDrag() {

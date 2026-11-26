@@ -22,7 +22,7 @@ final class FilePromiseReceiver {
     private let pendingImportJournal: PendingImportJournal
     private let transferStore: TransferStore
     private let operationQueue: OperationQueue
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "FilePromiseReceiver")
+    private let logger = Log.make(category: "FilePromiseReceiver")
 
     init(tempFileService: TempFileService,
          bookmarkService: BookmarkService,

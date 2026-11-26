@@ -5,12 +5,8 @@ import OSLog
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let uiTestingDefaultsSuite = "com.weijue.OpenYoink.UITests"
 
-    private static var isUITestingEnvironment: Bool {
-        ProcessInfo.processInfo.environment["OPENYOINK_UI_TESTING"] == "1"
-    }
-
     private static func makeSettingsDefaults() -> UserDefaults {
-        guard isUITestingEnvironment else { return .standard }
+        guard AppPaths.isUITesting else { return .standard }
         guard let defaults = UserDefaults(suiteName: uiTestingDefaultsSuite) else {
             fatalError("Unable to create the isolated UI-testing defaults suite")
         }
@@ -37,15 +33,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let shelfNotice = ShelfNoticeModel()
     /// 仅承载活动 tutorial item 的 token，避免 shelf 与 onboarding lazy init 成环。
     private let onboardingDragContext = OnboardingDragContext()
-    private let logger = Logger(subsystem: "com.weijue.OpenYoink", category: "App")
+    private let logger = Log.make(category: "App")
     private var isUITesting: Bool {
-        Self.isUITestingEnvironment
+        AppPaths.isUITesting
     }
     /// shelf.json 在整个启动链路中只读取一次。读取失败会隔离损坏文件；若再读
     /// 一次就会得到 `.missing`，从而错误放行 Materialized 孤儿清理。
     private lazy var initialShelfLoadResult = persistence.loadResult()
     /// Shelf 数据（S3 起由 AppDelegate 持有并注入 ShelfView）。
-    private lazy var shelfStore = ShelfStore(items: initialShelfLoadResult.items,
+    private lazy var shelfStore = ShelfStore(items: initialShelfLoadResult.contents,
                                              persistence: persistence)
     /// S4: 拖入分派器（pasteboard → ShelfItem）。S10: 失败路径经 shelfNotice 反馈。
     private lazy var dropImportCoordinator = DropImportCoordinator(bookmarkService: bookmarkService,
@@ -272,7 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // directory, selected only by the explicit UI-test environment.
             // Clearing it makes every launch deterministic without touching
             // the user's real Application Support data.
-            try? FileManager.default.removeItem(at: AppDirectories.applicationSupport())
+            try? FileManager.default.removeItem(at: AppPaths.applicationSupport())
         }
         if !isUITesting {
             applyLanguageOverride()
@@ -349,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // shelf.json.corrupt-* 供人工恢复；只要恢复快照仍在，跨重启也持续
         // 保留 Materialized 文件，避免第二次启动把恢复材料删掉。
         if !persistence.canSafelyCleanupMaterializedOrphans(after: initialShelfLoadResult)
-            || !managedMoveJournal.permitsManagedOrphanCleanup
+            || !managedMoveJournal.permitsOrphanCleanup
             || !pendingImportJournal.permitsOrphanCleanup {
             logger.warning("Skipping materialized orphan cleanup because shelf recovery data is present or persistence could not be trusted")
         } else {
@@ -619,7 +615,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let persistenceIsTrusted = persistence.canSafelyCleanupMaterializedOrphans(
             after: initialShelfLoadResult
         )
-        let persistedItemIDs = itemIDs(in: shelfStore.items)
+        let persistedItemIDs = shelfStore.items.ids
 
         for record in records {
             let sourceExists = record.referenceItem.path.map(fileManager.fileExists(atPath:)) ?? false
@@ -655,7 +651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 unresolvedCount += 1
                 continue
             }
-            if !containsItem(id: itemToRecover.id, in: recoveredItems) {
+            if !recoveredItems.contains(id: itemToRecover.id) {
                 recoveredItems.append(itemToRecover)
             }
             resolved.append(record)
@@ -721,49 +717,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func shelfContainsItem(id: UUID) -> Bool {
-        containsItem(id: id, in: shelfStore.items)
-    }
-
-    private func containsItem(id: UUID, in items: [ShelfItem]) -> Bool {
-        items.contains { item in
-            item.id == id || containsItem(id: id, in: item.children ?? [])
-        }
-    }
-
-    private func itemIDs(in items: [ShelfItem]) -> Set<UUID> {
-        var ids = Set<UUID>()
-        for item in items {
-            ids.insert(item.id)
-            ids.formUnion(itemIDs(in: item.children ?? []))
-        }
-        return ids
+        shelfStore.items.contains(id: id)
     }
 
     /// 清理物化目录中的孤儿文件：保留仍被 shelf 项目（含 Stack 子项）引用的
     /// 物化文件，其余视为上次会话中断的残留删除。
     private func cleanupMaterializedOrphans() {
-        let managedPrefix = tempFileService.directoryURL.standardizedFileURL.path + "/"
         // 上一份有效快照也可能引用 promise/图片物化文件；恢复功能存在时，
         // 启动清理必须同时保护这些路径，否则“能恢复条目却丢了文件内容”。
         let protectedItems = shelfStore.items + persistence.recoverableSnapshotItems()
-        var protectedPaths = materializedPaths(in: protectedItems, managedPrefix: managedPrefix)
-        protectedPaths.formUnion(managedMoveJournal.protectedManagedPaths())
+        var protectedPaths = protectedItems.materializedPaths(in: tempFileService.directoryURL)
+        protectedPaths.formUnion(managedMoveJournal.protectedPaths())
         protectedPaths.formUnion(pendingImportJournal.protectedPaths())
         tempFileService.cleanupOrphans(keepingPaths: protectedPaths)
     }
 
-    private func materializedPaths(in items: [ShelfItem], managedPrefix: String) -> Set<String> {
-        var paths = Set<String>()
-        for item in items {
-            if let path = item.path, path.hasPrefix(managedPrefix) {
-                paths.insert(path)
-            }
-            if let children = item.children {
-                paths.formUnion(materializedPaths(in: children, managedPrefix: managedPrefix))
-            }
-        }
-        return paths
-    }
 
     // MARK: - Trigger wiring (S7)
 
