@@ -28,9 +28,9 @@ final class EdgeTabController: NSObject {
 
     private let appState: AppState
     private let settings: SettingsStore
-    private let store: ShelfStore
-    private let importCoordinator: DropImportCoordinator
-    private let notices: ShelfNoticeModel
+    private let dropHandler: ShelfDropHandler
+    private let onDestinationEntered: (Int) -> Void
+    private let onDestinationEnded: (Int, Bool) -> Void
     private let dragStartMonitor: DragStartMonitor
     private let onToggleShelf: @MainActor () -> Void
     private let onShowShelf: @MainActor () -> Void
@@ -88,26 +88,33 @@ final class EdgeTabController: NSObject {
             if targeted { self.onPreviewSuppressed() }
             self.updateEmphasis(animated: true)
         }
-        view.onDrop = { [weak self] pasteboard in
-            self?.handleDrop(pasteboard) ?? false
+        view.acceptsDrop = { [weak self] sender in
+            self?.dropHandler.accepts(sender) ?? false
+        }
+        view.onDestinationEntered = { [weak self] in self?.onDestinationEntered($0) }
+        view.onDestinationEnded = { [weak self] in self?.onDestinationEnded($0, $1) }
+        view.onDrop = { [weak self] sender in
+            guard let self, dropHandler.performDrop(sender) else { return false }
+            onShowShelf()
+            return true
         }
         return view
     }()
 
     init(appState: AppState,
          settings: SettingsStore,
-         store: ShelfStore,
-         importCoordinator: DropImportCoordinator,
-         notices: ShelfNoticeModel,
+         dropHandler: ShelfDropHandler,
+         onDestinationEntered: @escaping (Int) -> Void,
+         onDestinationEnded: @escaping (Int, Bool) -> Void,
          dragStartMonitor: DragStartMonitor,
          onToggleShelf: @escaping @MainActor () -> Void,
          onShowShelf: @escaping @MainActor () -> Void,
          onPreviewSuppressed: @escaping @MainActor () -> Void = {}) {
         self.appState = appState
         self.settings = settings
-        self.store = store
-        self.importCoordinator = importCoordinator
-        self.notices = notices
+        self.dropHandler = dropHandler
+        self.onDestinationEntered = onDestinationEntered
+        self.onDestinationEnded = onDestinationEnded
         self.dragStartMonitor = dragStartMonitor
         self.onToggleShelf = onToggleShelf
         self.onShowShelf = onShowShelf
@@ -312,40 +319,6 @@ final class EdgeTabController: NSObject {
     /// 拖放上拉环：复用拖入分派（含 ⌘ 剪切模式，与 `DragContainerView` 同一
     /// 判定）；同步 items 直接入架，异步物化逐个追加；有内容被处理即唤出
     /// shelf 给出反馈。
-    private func handleDrop(_ pasteboard: NSPasteboard) -> Bool {
-        let mode = DropImportCoordinator.dropMode(for: pasteboard, modifiers: NSEvent.modifierFlags)
-        let result = importCoordinator.importItems(
-            from: pasteboard,
-            mode: mode,
-            onManagedMoveReady: { [store, importCoordinator, notices] item in
-                do {
-                    try store.addAndPersistNow(item)
-                    importCoordinator.markManagedMoveCommitted(itemID: item.id)
-                    return true
-                } catch {
-                    store.add(item)
-                    notices.show(String(localized: "The moved item is being kept for recovery because the shelf could not be saved immediately."))
-                    return false
-                }
-            },
-            onPromisedItemReady: { [store, notices] item in
-                do {
-                    try store.addAndPersistNow(item)
-                    return true
-                } catch {
-                    notices.show(String(localized: "The received file was kept safely. Open Recovery to finish importing it."))
-                    return false
-                }
-            }
-        ) { [store] item in
-            store.add(item)
-        }
-        guard result.handled else { return false }
-        store.add(contentsOf: result.items)
-        onShowShelf()
-        return true
-    }
-
     // MARK: - Observation
 
     /// 跟踪 shelf 可见性与拖拽进行中状态。withObservationTracking 的
@@ -417,7 +390,10 @@ final class EdgeTabView: NSView {
     /// 投放悬停变化。
     var onDropTargetChanged: (@MainActor (Bool) -> Void)?
     /// 投放处理（pasteboard → 导入）；返回是否已处理。
-    var onDrop: (@MainActor (NSPasteboard) -> Bool)?
+    var onDrop: (@MainActor (NSDraggingInfo) -> Bool)?
+    var acceptsDrop: (@MainActor (NSDraggingInfo) -> Bool)?
+    var onDestinationEntered: ((Int) -> Void)?
+    var onDestinationEnded: ((Int, Bool) -> Void)?
 
     private let vibrancyView = NSVisualEffectView()
     private var nativeGlassView: NSView?
@@ -702,13 +678,16 @@ final class EdgeTabView: NSView {
     /// 来自本应用卡片的拖出（draggingSource 非空）不接受 —— 与
     /// `DragContainerView` 同一规则，避免「拖出又放回」产生重复引用。
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard Self.isAcceptableDrop(sender) else { return [] }
+        guard acceptsDrop?(sender) == true else { return [] }
+        onDestinationEntered?(sender.draggingSequenceNumber)
         onDropTargetChanged?(true)
         return .copy
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        Self.isAcceptableDrop(sender) ? .copy : []
+        guard acceptsDrop?(sender) == true else { return [] }
+        onDestinationEntered?(sender.draggingSequenceNumber)
+        return .copy
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -720,17 +699,18 @@ final class EdgeTabView: NSView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        onDrop?(sender.draggingPasteboard) ?? false
+        let accepted = onDrop?(sender) ?? false
+        onDestinationEnded?(sender.draggingSequenceNumber, accepted)
+        return accepted
     }
 
     override func concludeDragOperation(_ sender: NSDraggingInfo?) {
         onDropTargetChanged?(false)
     }
 
-    private static func isAcceptableDrop(_ sender: NSDraggingInfo) -> Bool {
-        // 「Drop everything」语义同 DragContainerView（任务一）。
-        sender.draggingSource == nil
-            && PasteboardTypes.hasImportableContent(in: sender.draggingPasteboard.types ?? [])
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        onDestinationEnded?(sender.draggingSequenceNumber, false)
+        onDropTargetChanged?(false)
     }
 
     // MARK: - Appearance

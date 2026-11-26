@@ -70,10 +70,10 @@ final class DropImportCoordinator {
 
     /// 共享的书签服务（ShelfWindowController 把它注入 SwiftUI 环境，
     /// 供卡片缩略图/打开操作经 bookmark 解析文件访问权）。
-    let bookmarkService: BookmarkService
+    private let bookmarkService: BookmarkService
     /// D10: 拖入/物化失败的内联提示中心（ShelfWindowController 注入 SwiftUI 环境，
     /// ShelfView 渲染标题栏下方的瞬态胶囊）。
-    let noticeCenter: ShelfNoticeModel
+    private let noticeCenter: ShelfNoticeModel
     /// F-05: ⌘+拖入（剪切模式）的搬运编排（copy → 校验 → trash → isCut item）。
     let cutMoveService: CutMoveService
     /// v1.2: 托管移动恢复事务。只有 managed item 已同步写入 shelf snapshot

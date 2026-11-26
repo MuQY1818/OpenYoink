@@ -100,12 +100,15 @@ final class AppServices {
     /// Help, voluntary issue reporting and privacy-safe local diagnostics.
     lazy var supportController = SupportController(settings: settingsStore)
 
+    private lazy var dropHandler = ShelfDropHandler(
+        store: shelfStore, coordinator: dropImportCoordinator, notices: shelfNotice
+    )
     private lazy var islandModules = IslandModules(
         settings: settingsStore, bookmarkService: bookmarkService, transferStore: transferStore
     )
     lazy var shelfWindowController: ShelfWindowController = ShelfWindowController(appState: appState,
                                                                    store: shelfStore,
-                                                                   importCoordinator: dropImportCoordinator,
+                                                                   dropHandler: dropHandler,
                                                                    bookmarkService: bookmarkService,
                                                                    notices: shelfNotice,
                                                                    transferStore: transferStore,
@@ -251,9 +254,17 @@ final class AppServices {
     lazy var edgeTabController = EdgeTabController(
         appState: appState,
         settings: settingsStore,
-        store: shelfStore,
-        importCoordinator: dropImportCoordinator,
-        notices: shelfNotice,
+        dropHandler: dropHandler,
+        onDestinationEntered: { [weak self] in
+            self?.dragAutoShowSession.destinationEntered(sequenceNumber: $0)
+        },
+        onDestinationEnded: { [weak self] sequence, accepted in
+            guard let self else { return }
+            if dragAutoShowSession.destinationEnded(sequenceNumber: sequence, accepted: accepted),
+               appState.isShelfVisible {
+                shelfWindowController.hideShelf(animated: true)
+            }
+        },
         dragStartMonitor: dragStartMonitor,
         onToggleShelf: { [weak self] in
             self?.shelfPresentationCoordinator.toggleClassic(animated: true)

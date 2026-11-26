@@ -30,7 +30,7 @@ final class ShelfWindowController: NSObject {
     private var emptyAutoHideRule = EmptyShelfAutoHideRule()
     private var isUserRemovalInProgress = false
     /// S4: 拖入分派（pasteboard → ShelfItem），供 DragContainerView 调用。
-    let importCoordinator: DropImportCoordinator
+    let dropHandler: ShelfDropHandler
     let bookmarkService: BookmarkService
     let notices: ShelfNoticeModel
     let transferStore: TransferStore
@@ -173,7 +173,7 @@ final class ShelfWindowController: NSObject {
 
     init(appState: AppState,
          store: ShelfStore,
-         importCoordinator: DropImportCoordinator,
+         dropHandler: ShelfDropHandler,
          bookmarkService: BookmarkService,
          notices: ShelfNoticeModel,
          transferStore: TransferStore,
@@ -189,7 +189,7 @@ final class ShelfWindowController: NSObject {
          tutorialTokenForItem: @escaping @MainActor (UUID) -> String? = { _ in nil }) {
         self.appState = appState
         self.store = store
-        self.importCoordinator = importCoordinator
+        self.dropHandler = dropHandler
         self.bookmarkService = bookmarkService
         self.notices = notices
         self.transferStore = transferStore

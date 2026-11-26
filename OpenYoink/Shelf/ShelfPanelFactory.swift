@@ -100,7 +100,7 @@ extension ShelfWindowController {
             : nil
         panel.contentView = DragContainerView(
             store: store,
-            coordinator: importCoordinator,
+            dropHandler: dropHandler,
             dropTargetState: dropTargetState,
             gridGeometry: gridGeometry,
             dropOverride: dropOverride,
